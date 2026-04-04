@@ -18,6 +18,10 @@ export default function Join() {
   const [name, setName] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [referrer, setReferrer] = useState(null)
+  const [invalidRef, setInvalidRef] = useState(false)
+  const [loadingRef, setLoadingRef] = useState(true)
+  const [acceptedInvite, setAcceptedInvite] = useState(false)
 
   useEffect(() => {
     if (stepParam === 'register') {
@@ -25,6 +29,34 @@ export default function Join() {
       if (emailParam) setEmail(decodeURIComponent(emailParam))
     }
   }, [stepParam, emailParam])
+
+  useEffect(() => {
+    if (refCode) {
+      fetchReferrer()
+    } else {
+      setLoadingRef(false)
+    }
+  }, [refCode])
+
+  async function fetchReferrer() {
+    try {
+      const { data, error } = await supabase
+        .from('cng_members')
+        .select('full_name, email, ref_code, avatar_url, created_at')
+        .eq('ref_code', refCode)
+        .eq('payment_status', 'active')
+        .single()
+      if (error || !data) {
+        setInvalidRef(true)
+      } else {
+        setReferrer(data)
+      }
+    } catch (e) {
+      setInvalidRef(true)
+    } finally {
+      setLoadingRef(false)
+    }
+  }
 
   // No ref code = no access
   if (!refCode) {
@@ -41,6 +73,36 @@ export default function Join() {
             Si alguien te compartió un enlace, úsalo para acceder.
           </p>
           <Link to="/" style={styles.linkBtn}>← Volver al inicio</Link>
+        </div>
+      </div>
+    )
+  }
+
+  if (loadingRef) {
+    return (
+      <div style={styles.container}>
+        <div style={styles.card}>
+          <div style={styles.logoRow}>
+            <div style={styles.logo}>C</div>
+            <span style={styles.logoText}>CHILL N GO</span>
+          </div>
+          <p style={{...styles.subtitle, marginTop: 20}}>Verificando invitación...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (invalidRef) {
+    return (
+      <div style={styles.container}>
+        <div style={styles.card}>
+          <div style={styles.logoRow}>
+            <div style={styles.logo}>C</div>
+            <span style={styles.logoText}>CHILL N GO</span>
+          </div>
+          <h1 style={styles.title}>Link inválido</h1>
+          <p style={styles.subtitle}>El código de referido no existe o la cuenta del referidor no está activa. Pide un link nuevo a quien te invitó.</p>
+          <a href="/" style={{...styles.button, display:'block', textAlign:'center', textDecoration:'none', marginTop:20}}>Volver al inicio</a>
         </div>
       </div>
     )
@@ -133,14 +195,51 @@ export default function Join() {
           <span style={styles.logoText}>CHILL N GO</span>
         </div>
 
-        {/* Ref code badge */}
-        <div style={styles.refBadge}>
-          Invitado por: {refCode}
-        </div>
-
-        {/* STEP 1: Payment */}
-        {step === 1 && (
+        {/* STEP 1: Invitation confirmation */}
+        {step === 1 && !acceptedInvite && referrer && (
           <>
+            <h1 style={styles.title}>Te han invitado a CNG+</h1>
+            <p style={styles.subtitle}>Verifica que conoces a esta persona antes de continuar</p>
+
+            <div style={{background:'rgba(127,119,221,0.08)', border:'1px solid rgba(127,119,221,0.2)', borderRadius:16, padding:24, textAlign:'center', marginBottom:24}}>
+              <div style={{width:64, height:64, borderRadius:'50%', background:'linear-gradient(135deg, #7F77DD, #534AB7)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:24, fontWeight:700, color:'white', margin:'0 auto 12px'}}>
+                {(referrer.full_name || referrer.email)[0].toUpperCase()}
+              </div>
+              <div style={{fontSize:18, fontWeight:600, color:'#f1efe8', marginBottom:4}}>
+                {referrer.full_name || referrer.email.split('@')[0]}
+              </div>
+              <div style={{fontSize:13, color:'#AFA9EC', marginBottom:8}}>
+                {referrer.email}
+              </div>
+              <div style={{fontSize:11, color:'#888', marginTop:8}}>
+                Miembro desde {new Date(referrer.created_at).toLocaleDateString('es-MX', {month:'long', year:'numeric'})}
+              </div>
+            </div>
+
+            <div style={{background:'rgba(239,159,39,0.06)', border:'1px solid rgba(239,159,39,0.15)', borderRadius:12, padding:16, marginBottom:24}}>
+              <div style={{fontSize:13, color:'#FAC775', fontWeight:500, marginBottom:8}}>Importante</div>
+              <div style={{fontSize:12, color:'#999', lineHeight:1.6}}>
+                Al aceptar esta invitación, {referrer.full_name || referrer.email.split('@')[0]} será tu referidor permanente dentro del ecosistema CNG+. Esta relación no se puede cambiar después. Solo se permite una cuenta por persona.
+              </div>
+            </div>
+
+            <button onClick={() => setAcceptedInvite(true)} style={styles.button}>
+              Sí, acepto la invitación de {referrer.full_name || referrer.email.split('@')[0]}
+            </button>
+
+            <p style={{fontSize:12, color:'#666', textAlign:'center', marginTop:16, lineHeight:1.5}}>
+              ¿No conoces a esta persona? No continúes y pide un link a alguien de tu confianza.
+            </p>
+          </>
+        )}
+
+        {/* STEP 1: Payment (after accepting invite) */}
+        {step === 1 && acceptedInvite && (
+          <>
+            <div style={{...styles.refBadge, background:'rgba(29,158,117,0.1)', borderColor:'rgba(29,158,117,0.3)', color:'#5DCAA5'}}>
+              Invitado por: {referrer.full_name || referrer.email.split('@')[0]}
+            </div>
+
             <h1 style={styles.title}>Únete a CNG+</h1>
             <p style={styles.subtitle}>Membresía del ecosistema Chill N Go</p>
 
@@ -159,17 +258,18 @@ export default function Join() {
                 <div style={styles.priceFeature}>1 Chillium = 1 USD</div>
               </div>
 
-              <div style={{ ...styles.field, marginTop: 20, width: '100%' }}>
+              {error && <div style={{...styles.error, marginTop:16}}>{error}</div>}
+
+              <div style={{...styles.field, marginTop:20}}>
                 <label style={styles.label}>Tu correo electrónico</label>
                 <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={styles.input} placeholder="tu@email.com" required />
               </div>
 
-              <button onClick={handlePayment} style={{ ...styles.button, width: '100%', marginTop: 16 }} disabled={loading}>
+              <button onClick={handlePayment} style={{...styles.button, marginTop:16}} disabled={loading}>
                 {loading ? 'Procesando...' : 'Pagar $7 USD/mes'}
               </button>
-              <p style={styles.footerText}>
-                Pago seguro con Stripe. Cancela cuando quieras.
-              </p>
+
+              <p style={{fontSize:11, color:'#666', textAlign:'center', marginTop:12}}>Pago seguro con Stripe. Cancela cuando quieras.</p>
             </div>
           </>
         )}
