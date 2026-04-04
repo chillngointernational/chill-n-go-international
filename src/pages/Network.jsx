@@ -1,0 +1,661 @@
+import { useState, useEffect } from 'react'
+import { useAuth } from '../context/AuthContext'
+import { supabase } from '../lib/supabase'
+import { Link } from 'react-router-dom'
+
+export default function Network() {
+    const { user, member } = useAuth()
+    const [referrals, setReferrals] = useState([])
+    const [ledger, setLedger] = useState([])
+    const [loading, setLoading] = useState(true)
+    const [copied, setCopied] = useState(false)
+    const [activeTab, setActiveTab] = useState('network')
+
+    const refLink = member?.ref_code
+        ? `${window.location.origin}/join?ref=${member.ref_code}`
+        : null
+
+    useEffect(() => {
+        if (member?.id) {
+            fetchReferrals()
+            fetchLedger()
+        }
+    }, [member])
+
+    async function fetchReferrals() {
+        try {
+            const { data } = await supabase
+                .from('cng_referral_tree')
+                .select(`
+          *,
+          referred_member:referred_member_id (
+            id, email, full_name, ref_code, payment_status, 
+            chilliums_balance, created_at, referrals_level1
+          )
+        `)
+                .eq('member_id', member.id)
+                .order('created_at', { ascending: false })
+
+            setReferrals(data || [])
+        } catch (e) {
+            console.error(e)
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    async function fetchLedger() {
+        try {
+            const { data } = await supabase
+                .from('cng_chilliums_ledger')
+                .select('*')
+                .eq('member_id', member.id)
+                .order('created_at', { ascending: false })
+                .limit(50)
+
+            setLedger(data || [])
+        } catch (e) {
+            console.error(e)
+        }
+    }
+
+    function copyLink() {
+        if (refLink) {
+            navigator.clipboard.writeText(refLink)
+            setCopied(true)
+            setTimeout(() => setCopied(false), 2000)
+        }
+    }
+
+    const l1 = referrals.filter(r => r.level === 1)
+    const l2 = referrals.filter(r => r.level === 2)
+
+    const earnings = {
+        cashback: ledger.filter(l => l.type === 'cashback').reduce((s, l) => s + Number(l.amount), 0),
+        referral_l1: ledger.filter(l => l.type === 'referral_l1' || l.type === 'membership_l1').reduce((s, l) => s + Number(l.amount), 0),
+        referral_l2: ledger.filter(l => l.type === 'referral_l2' || l.type === 'membership_l2').reduce((s, l) => s + Number(l.amount), 0),
+        bonus: ledger.filter(l => l.type === 'bonus').reduce((s, l) => s + Number(l.amount), 0),
+        redeemed: ledger.filter(l => l.type === 'redemption').reduce((s, l) => s + Math.abs(Number(l.amount)), 0),
+    }
+
+    const typeLabels = {
+        cashback: 'Cashback',
+        referral_l1: 'Referido N1',
+        referral_l2: 'Referido N2',
+        membership_l1: 'Membresía N1',
+        membership_l2: 'Membresía N2',
+        bonus: 'Bono mensual',
+        redemption: 'Redención',
+    }
+
+    const typeColors = {
+        cashback: '#1D9E75',
+        referral_l1: '#7F77DD',
+        referral_l2: '#D85A30',
+        membership_l1: '#7F77DD',
+        membership_l2: '#D85A30',
+        bonus: '#EF9F27',
+        redemption: '#E24B4A',
+    }
+
+    return (
+        <div style={s.container}>
+            {/* Nav */}
+            <nav style={s.nav}>
+                <Link to="/dashboard" style={s.navBack}>← Dashboard</Link>
+                <div style={s.navRight}>
+                    <div style={s.balancePill}>
+                        <svg width="16" height="16" viewBox="0 0 30 30">
+                            <ellipse cx="15" cy="15" rx="12" ry="5" fill="#EF9F27" opacity="0.6" />
+                            <text x="15" y="18" textAnchor="middle" fontSize="8" fontWeight="bold" fill="#633806">C</text>
+                        </svg>
+                        <span style={s.balanceText}>{member?.chilliums_balance?.toFixed(2) || '0.00'}</span>
+                    </div>
+                </div>
+            </nav>
+
+            <div style={s.content}>
+                {/* Header with big balance */}
+                <div style={s.header}>
+                    <div style={s.headerLeft}>
+                        <h1 style={s.title}>Mi red CNG+</h1>
+                        <p style={s.subtitle}>{member?.full_name || user?.email}</p>
+                    </div>
+                </div>
+
+                {/* Big balance card */}
+                <div style={s.bigBalance}>
+                    <div style={s.bigBalanceInner}>
+                        <svg width="40" height="35" viewBox="0 0 50 40" style={{ flexShrink: 0 }}>
+                            <ellipse cx="25" cy="28" rx="18" ry="6" fill="#BA7517" opacity="0.4" />
+                            <ellipse cx="25" cy="22" rx="18" ry="6" fill="#EF9F27" opacity="0.5" />
+                            <ellipse cx="25" cy="16" rx="18" ry="6" fill="#FAC775" opacity="0.7" stroke="#854F0B" strokeWidth="0.5" />
+                            <text x="25" y="20" textAnchor="middle" fontSize="9" fontWeight="bold" fill="#633806">C</text>
+                        </svg>
+                        <div>
+                            <div style={s.bigBalanceLabel}>Balance total</div>
+                            <div style={s.bigBalanceAmount}>{member?.chilliums_balance?.toFixed(2) || '0.00'} <span style={s.bigBalanceCurrency}>Chilliums</span></div>
+                        </div>
+                    </div>
+
+                    {/* Earnings breakdown */}
+                    <div style={s.earningsGrid}>
+                        <div style={s.earningItem}>
+                            <div style={s.earningDot('#1D9E75')} />
+                            <div style={s.earningInfo}>
+                                <span style={s.earningLabel}>Cashback</span>
+                                <span style={s.earningValue}>{earnings.cashback.toFixed(2)}</span>
+                            </div>
+                        </div>
+                        <div style={s.earningItem}>
+                            <div style={s.earningDot('#7F77DD')} />
+                            <div style={s.earningInfo}>
+                                <span style={s.earningLabel}>Nivel 1</span>
+                                <span style={s.earningValue}>{earnings.referral_l1.toFixed(2)}</span>
+                            </div>
+                        </div>
+                        <div style={s.earningItem}>
+                            <div style={s.earningDot('#D85A30')} />
+                            <div style={s.earningInfo}>
+                                <span style={s.earningLabel}>Nivel 2</span>
+                                <span style={s.earningValue}>{earnings.referral_l2.toFixed(2)}</span>
+                            </div>
+                        </div>
+                        <div style={s.earningItem}>
+                            <div style={s.earningDot('#EF9F27')} />
+                            <div style={s.earningInfo}>
+                                <span style={s.earningLabel}>Bonos</span>
+                                <span style={s.earningValue}>{earnings.bonus.toFixed(2)}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Referral link card */}
+                <div style={s.refCard}>
+                    <div style={s.refCardHeader}>
+                        <h3 style={s.refCardTitle}>Tu link de referido</h3>
+                        <div style={s.refStats}>
+                            <span style={s.refStatBadge('#7F77DD')}>{l1.length} nivel 1</span>
+                            <span style={s.refStatBadge('#D85A30')}>{l2.length} nivel 2</span>
+                        </div>
+                    </div>
+                    {refLink ? (
+                        <div style={s.refLinkRow}>
+                            <div style={s.refLinkBox}>{refLink}</div>
+                            <button onClick={copyLink} style={s.copyBtn}>
+                                {copied ? 'Copiado' : 'Copiar'}
+                            </button>
+                        </div>
+                    ) : (
+                        <p style={s.refPending}>Activa tu membresía para obtener tu link</p>
+                    )}
+                </div>
+
+                {/* Tabs */}
+                <div style={s.tabs}>
+                    {['network', 'history'].map(tab => (
+                        <button
+                            key={tab}
+                            onClick={() => setActiveTab(tab)}
+                            style={{ ...s.tab, ...(activeTab === tab ? s.tabActive : {}) }}
+                        >
+                            {tab === 'network' ? 'Mi red' : 'Historial'}
+                        </button>
+                    ))}
+                </div>
+
+                {/* Network tab */}
+                {activeTab === 'network' && (
+                    <div style={s.networkSection}>
+                        {/* Visual tree */}
+                        <div style={s.treeContainer}>
+                            {/* YOU at top */}
+                            <div style={s.treeYou}>
+                                <div style={s.treeYouAvatar}>
+                                    {(member?.full_name || 'U')[0].toUpperCase()}
+                                </div>
+                                <div style={s.treeYouName}>{member?.full_name || 'Tú'}</div>
+                                <div style={s.treeYouCode}>{member?.ref_code}</div>
+                            </div>
+
+                            {/* Level 1 */}
+                            {l1.length > 0 && (
+                                <>
+                                    <div style={s.treeLine} />
+                                    <div style={s.treeLevelLabel}>
+                                        <span style={s.treeLevelBadge('#7F77DD')}>Nivel 1 — {l1.length} referidos</span>
+                                    </div>
+                                    <div style={s.treeRow}>
+                                        {l1.map((ref) => (
+                                            <div key={ref.id} style={s.treeNode('#7F77DD', '#EEEDFE', '#3C3489')}>
+                                                <div style={s.treeNodeAvatar('#7F77DD')}>
+                                                    {(ref.referred_member?.full_name || ref.referred_member?.email || '?')[0].toUpperCase()}
+                                                </div>
+                                                <div style={s.treeNodeName}>
+                                                    {ref.referred_member?.full_name || ref.referred_member?.email?.split('@')[0]}
+                                                </div>
+                                                <div style={s.treeNodeStatus(ref.referred_member?.payment_status)}>
+                                                    {ref.referred_member?.payment_status === 'active' ? 'Activo' : 'Pendiente'}
+                                                </div>
+                                                {ref.referred_member?.referrals_level1 > 0 && (
+                                                    <div style={s.treeNodeSubs}>
+                                                        +{ref.referred_member.referrals_level1} referidos
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
+
+                            {/* Level 2 */}
+                            {l2.length > 0 && (
+                                <>
+                                    <div style={s.treeLine} />
+                                    <div style={s.treeLevelLabel}>
+                                        <span style={s.treeLevelBadge('#D85A30')}>Nivel 2 — {l2.length} referidos</span>
+                                    </div>
+                                    <div style={s.treeRow}>
+                                        {l2.map((ref) => (
+                                            <div key={ref.id} style={s.treeNode('#D85A30', '#FAECE7', '#712B13')}>
+                                                <div style={s.treeNodeAvatar('#D85A30')}>
+                                                    {(ref.referred_member?.full_name || ref.referred_member?.email || '?')[0].toUpperCase()}
+                                                </div>
+                                                <div style={s.treeNodeName}>
+                                                    {ref.referred_member?.full_name || ref.referred_member?.email?.split('@')[0]}
+                                                </div>
+                                                <div style={s.treeNodeStatus(ref.referred_member?.payment_status)}>
+                                                    {ref.referred_member?.payment_status === 'active' ? 'Activo' : 'Pendiente'}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
+
+                            {/* Empty state */}
+                            {l1.length === 0 && l2.length === 0 && (
+                                <div style={s.emptyState}>
+                                    <div style={s.emptyIcon}>
+                                        <svg width="60" height="60" viewBox="0 0 60 60" fill="none">
+                                            <circle cx="30" cy="18" r="8" stroke="#444" strokeWidth="1.5" fill="none" />
+                                            <path d="M16 42c0-7.7 6.3-14 14-14s14 6.3 14 14" stroke="#444" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+                                            <circle cx="12" cy="30" r="5" stroke="#555" strokeWidth="1" fill="none" opacity="0.5" />
+                                            <circle cx="48" cy="30" r="5" stroke="#555" strokeWidth="1" fill="none" opacity="0.5" />
+                                            <line x1="20" y1="22" x2="15" y2="28" stroke="#555" strokeWidth="0.8" strokeDasharray="2 2" opacity="0.5" />
+                                            <line x1="40" y1="22" x2="45" y2="28" stroke="#555" strokeWidth="0.8" strokeDasharray="2 2" opacity="0.5" />
+                                        </svg>
+                                    </div>
+                                    <p style={s.emptyTitle}>Tu red está vacía</p>
+                                    <p style={s.emptyText}>Comparte tu link de referido para empezar a construir tu red y ganar Chilliums</p>
+                                    {refLink && (
+                                        <button onClick={copyLink} style={s.emptyBtn}>
+                                            {copied ? 'Link copiado' : 'Copiar link de referido'}
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Network summary cards */}
+                        <div style={s.summaryGrid}>
+                            <div style={s.summaryCard}>
+                                <div style={s.summaryIcon('#7F77DD')}>
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7F77DD" strokeWidth="1.5">
+                                        <circle cx="12" cy="8" r="4" /><path d="M6 20c0-3.3 2.7-6 6-6s6 2.7 6 6" strokeLinecap="round" />
+                                    </svg>
+                                </div>
+                                <div style={s.summaryNumber}>{member?.referrals_level1 || 0}</div>
+                                <div style={s.summaryLabel}>Referidos directos</div>
+                                <div style={s.summarySub}>$3.50/mes c/u</div>
+                            </div>
+                            <div style={s.summaryCard}>
+                                <div style={s.summaryIcon('#D85A30')}>
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#D85A30" strokeWidth="1.5">
+                                        <circle cx="9" cy="8" r="3.5" /><circle cx="16" cy="10" r="3" opacity="0.6" />
+                                        <path d="M4 20c0-3 2.2-5.5 5-5.5s5 2.5 5 5.5" strokeLinecap="round" />
+                                    </svg>
+                                </div>
+                                <div style={s.summaryNumber}>{member?.referrals_level2 || 0}</div>
+                                <div style={s.summaryLabel}>Red extendida</div>
+                                <div style={s.summarySub}>$2.00/mes c/u</div>
+                            </div>
+                            <div style={s.summaryCard}>
+                                <div style={s.summaryIcon('#EF9F27')}>
+                                    <svg width="20" height="20" viewBox="0 0 30 30">
+                                        <ellipse cx="15" cy="17" rx="10" ry="4" fill="#BA7517" opacity="0.4" />
+                                        <ellipse cx="15" cy="13" rx="10" ry="4" fill="#EF9F27" opacity="0.6" />
+                                        <text x="15" y="16" textAnchor="middle" fontSize="7" fontWeight="bold" fill="#633806">C</text>
+                                    </svg>
+                                </div>
+                                <div style={s.summaryNumber}>{member?.total_earnings?.toFixed(2) || '0.00'}</div>
+                                <div style={s.summaryLabel}>Ganado total</div>
+                                <div style={s.summarySub}>Chilliums</div>
+                            </div>
+                            <div style={s.summaryCard}>
+                                <div style={s.summaryIcon('#E24B4A')}>
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#E24B4A" strokeWidth="1.5">
+                                        <path d="M12 2v20M2 12h20" strokeLinecap="round" opacity="0.6" />
+                                        <circle cx="12" cy="12" r="9" />
+                                    </svg>
+                                </div>
+                                <div style={s.summaryNumber}>{earnings.redeemed.toFixed(2)}</div>
+                                <div style={s.summaryLabel}>Redimidos</div>
+                                <div style={s.summarySub}>Usados en compras</div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* History tab */}
+                {activeTab === 'history' && (
+                    <div style={s.historySection}>
+                        {ledger.length === 0 ? (
+                            <div style={s.emptyState}>
+                                <p style={s.emptyTitle}>Sin movimientos</p>
+                                <p style={s.emptyText}>Tu historial de Chilliums aparecerá aquí</p>
+                            </div>
+                        ) : (
+                            <div style={s.historyList}>
+                                {ledger.map((entry) => (
+                                    <div key={entry.id} style={s.historyItem}>
+                                        <div style={s.historyDot(typeColors[entry.type] || '#888')} />
+                                        <div style={s.historyInfo}>
+                                            <div style={s.historyType}>{typeLabels[entry.type] || entry.type}</div>
+                                            <div style={s.historyDesc}>{entry.description || '-'}</div>
+                                            <div style={s.historyDate}>
+                                                {new Date(entry.created_at).toLocaleDateString('es-MX', {
+                                                    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+                                                })}
+                                            </div>
+                                        </div>
+                                        <div style={{
+                                            ...s.historyAmount,
+                                            color: Number(entry.amount) >= 0 ? '#5DCAA5' : '#F09595',
+                                        }}>
+                                            {Number(entry.amount) >= 0 ? '+' : ''}{Number(entry.amount).toFixed(2)}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+        </div>
+    )
+}
+
+const s = {
+    container: {
+        minHeight: '100vh',
+        background: '#0D1117',
+        fontFamily: "'DM Sans', system-ui, sans-serif",
+        color: '#e6e4dc',
+    },
+    nav: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: '14px 24px',
+        borderBottom: '1px solid rgba(255,255,255,0.04)',
+    },
+    navBack: {
+        color: '#888',
+        textDecoration: 'none',
+        fontSize: 13,
+    },
+    navRight: { display: 'flex', alignItems: 'center', gap: 12 },
+    balancePill: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        background: 'rgba(239,159,39,0.08)',
+        border: '1px solid rgba(239,159,39,0.15)',
+        borderRadius: 20,
+        padding: '6px 14px',
+    },
+    balanceText: { fontSize: 13, fontWeight: 600, color: '#FAC775' },
+    content: { maxWidth: 800, margin: '0 auto', padding: '24px 20px 60px' },
+    header: { marginBottom: 24 },
+    title: { fontSize: 26, fontWeight: 600, marginBottom: 4 },
+    subtitle: { fontSize: 14, color: '#888' },
+
+    // Big balance
+    bigBalance: {
+        background: 'rgba(239,159,39,0.04)',
+        border: '1px solid rgba(239,159,39,0.12)',
+        borderRadius: 16,
+        padding: '24px',
+        marginBottom: 20,
+    },
+    bigBalanceInner: { display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 },
+    bigBalanceLabel: { fontSize: 13, color: '#888' },
+    bigBalanceAmount: { fontSize: 32, fontWeight: 700, color: '#FAC775' },
+    bigBalanceCurrency: { fontSize: 14, fontWeight: 400, color: '#854F0B' },
+    earningsGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 },
+    earningItem: { display: 'flex', alignItems: 'center', gap: 8 },
+    earningDot: (color) => ({ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }),
+    earningInfo: { display: 'flex', flexDirection: 'column' },
+    earningLabel: { fontSize: 11, color: '#888' },
+    earningValue: { fontSize: 14, fontWeight: 600, color: '#e6e4dc' },
+
+    // Ref card
+    refCard: {
+        background: 'rgba(255,255,255,0.02)',
+        border: '1px solid rgba(255,255,255,0.06)',
+        borderRadius: 12,
+        padding: '20px',
+        marginBottom: 20,
+    },
+    refCardHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 },
+    refCardTitle: { fontSize: 15, fontWeight: 600 },
+    refStats: { display: 'flex', gap: 6 },
+    refStatBadge: (color) => ({
+        fontSize: 11,
+        padding: '3px 10px',
+        borderRadius: 12,
+        background: color + '15',
+        color: color,
+        fontWeight: 500,
+    }),
+    refLinkRow: { display: 'flex', gap: 8 },
+    refLinkBox: {
+        flex: 1,
+        background: 'rgba(255,255,255,0.04)',
+        border: '1px solid rgba(255,255,255,0.08)',
+        borderRadius: 8,
+        padding: '10px 12px',
+        fontSize: 12,
+        color: '#5DCAA5',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+    },
+    copyBtn: {
+        background: 'rgba(29,158,117,0.15)',
+        border: '1px solid rgba(29,158,117,0.3)',
+        borderRadius: 8,
+        padding: '10px 18px',
+        fontSize: 12,
+        color: '#5DCAA5',
+        cursor: 'pointer',
+        fontWeight: 600,
+        fontFamily: 'inherit',
+        whiteSpace: 'nowrap',
+    },
+    refPending: { fontSize: 13, color: '#666', fontStyle: 'italic' },
+
+    // Tabs
+    tabs: {
+        display: 'flex',
+        gap: 4,
+        marginBottom: 24,
+        background: 'rgba(255,255,255,0.02)',
+        borderRadius: 10,
+        padding: 4,
+    },
+    tab: {
+        flex: 1,
+        padding: '10px 16px',
+        fontSize: 13,
+        fontWeight: 500,
+        color: '#888',
+        background: 'none',
+        border: 'none',
+        borderRadius: 8,
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+        transition: 'all 0.2s',
+    },
+    tabActive: {
+        background: 'rgba(255,255,255,0.06)',
+        color: '#f1efe8',
+    },
+
+    // Tree
+    treeContainer: {
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        padding: '20px 0',
+    },
+    treeYou: { textAlign: 'center', marginBottom: 8 },
+    treeYouAvatar: {
+        width: 56,
+        height: 56,
+        borderRadius: '50%',
+        background: 'linear-gradient(135deg, #1D9E75, #5DCAA5)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: 22,
+        fontWeight: 700,
+        color: '#0D1117',
+        margin: '0 auto 8px',
+        border: '3px solid rgba(29,158,117,0.3)',
+    },
+    treeYouName: { fontSize: 15, fontWeight: 600 },
+    treeYouCode: { fontSize: 11, color: '#5DCAA5', marginTop: 2 },
+    treeLine: {
+        width: 2,
+        height: 30,
+        background: 'rgba(255,255,255,0.08)',
+        margin: '4px 0',
+    },
+    treeLevelLabel: { marginBottom: 12 },
+    treeLevelBadge: (color) => ({
+        fontSize: 12,
+        padding: '4px 14px',
+        borderRadius: 12,
+        background: color + '15',
+        color: color,
+        fontWeight: 500,
+    }),
+    treeRow: {
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: 10,
+        justifyContent: 'center',
+        marginBottom: 8,
+        maxWidth: '100%',
+    },
+    treeNode: (color, bgColor, textColor) => ({
+        background: 'rgba(255,255,255,0.02)',
+        border: `1px solid ${color}30`,
+        borderRadius: 12,
+        padding: '14px 16px',
+        minWidth: 120,
+        textAlign: 'center',
+    }),
+    treeNodeAvatar: (color) => ({
+        width: 36,
+        height: 36,
+        borderRadius: '50%',
+        background: color + '20',
+        border: `1px solid ${color}40`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: 14,
+        fontWeight: 600,
+        color: color,
+        margin: '0 auto 8px',
+    }),
+    treeNodeName: { fontSize: 12, fontWeight: 500, color: '#e6e4dc', marginBottom: 4 },
+    treeNodeStatus: (status) => ({
+        fontSize: 10,
+        color: status === 'active' ? '#5DCAA5' : '#FAC775',
+        fontWeight: 500,
+    }),
+    treeNodeSubs: { fontSize: 10, color: '#888', marginTop: 4 },
+
+    // Empty state
+    emptyState: { textAlign: 'center', padding: '40px 20px' },
+    emptyIcon: { marginBottom: 16 },
+    emptyTitle: { fontSize: 16, fontWeight: 600, marginBottom: 8, color: '#e6e4dc' },
+    emptyText: { fontSize: 13, color: '#888', maxWidth: 300, margin: '0 auto 20px', lineHeight: 1.6 },
+    emptyBtn: {
+        background: 'linear-gradient(135deg, #1D9E75, #0F6E56)',
+        border: 'none',
+        borderRadius: 8,
+        padding: '12px 24px',
+        fontSize: 13,
+        fontWeight: 600,
+        color: 'white',
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+    },
+
+    // Summary grid
+    summaryGrid: {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(4, 1fr)',
+        gap: 10,
+        marginTop: 24,
+    },
+    summaryCard: {
+        background: 'rgba(255,255,255,0.02)',
+        border: '1px solid rgba(255,255,255,0.06)',
+        borderRadius: 12,
+        padding: '16px 12px',
+        textAlign: 'center',
+    },
+    summaryIcon: (color) => ({
+        width: 36,
+        height: 36,
+        borderRadius: '50%',
+        background: color + '12',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        margin: '0 auto 10px',
+    }),
+    summaryNumber: { fontSize: 20, fontWeight: 700, marginBottom: 4 },
+    summaryLabel: { fontSize: 11, color: '#999' },
+    summarySub: { fontSize: 10, color: '#666', marginTop: 2 },
+
+    // History
+    historySection: { marginTop: 8 },
+    historyList: { display: 'flex', flexDirection: 'column', gap: 2 },
+    historyItem: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 14,
+        padding: '14px 16px',
+        borderBottom: '1px solid rgba(255,255,255,0.04)',
+    },
+    historyDot: (color) => ({
+        width: 10,
+        height: 10,
+        borderRadius: '50%',
+        background: color,
+        flexShrink: 0,
+    }),
+    historyInfo: { flex: 1 },
+    historyType: { fontSize: 13, fontWeight: 500, color: '#e6e4dc' },
+    historyDesc: { fontSize: 12, color: '#888', marginTop: 2 },
+    historyDate: { fontSize: 11, color: '#666', marginTop: 2 },
+    historyAmount: { fontSize: 15, fontWeight: 600, whiteSpace: 'nowrap' },
+}
