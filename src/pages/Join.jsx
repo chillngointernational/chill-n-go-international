@@ -214,6 +214,7 @@ export default function Join() {
               <div style={{fontSize:11, color:'#888', marginTop:8}}>
                 Miembro desde {new Date(referrer.created_at).toLocaleDateString('es-MX', {month:'long', year:'numeric'})}
               </div>
+              <div style={{fontSize:12, color:'#888', marginTop:6}}>Código: {referrer.ref_code}</div>
             </div>
 
             <div style={{background:'rgba(239,159,39,0.06)', border:'1px solid rgba(239,159,39,0.15)', borderRadius:12, padding:16, marginBottom:24}}>
@@ -285,15 +286,9 @@ export default function Join() {
 
             <form onSubmit={handleRegister} style={styles.form}>
               <div style={styles.field}>
-                <label style={styles.label}>Nombre completo</label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  style={styles.input}
-                  placeholder="Tu nombre"
-                  required
-                />
+                <label style={styles.label}>Nombre completo (como aparece en tu identificación oficial)</label>
+                <input type="text" value={name} onChange={(e) => setName(e.target.value)} style={styles.input} placeholder="Nombre(s) y Apellido(s)" required />
+                <span style={{fontSize:11, color:'#666', marginTop:4, display:'block'}}>Este nombre no podrá ser modificado después del registro</span>
               </div>
 
               <div style={styles.field}>
