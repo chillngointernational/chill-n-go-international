@@ -1,5 +1,6 @@
 import { useAuth } from '../context/AuthContext'
 import { useNavigate, Link } from 'react-router-dom'
+import { C, FONT, Icon, GRADIENT } from '../stitch'
 
 export default function Dashboard() {
   const { user, member, signOut } = useAuth()
@@ -46,7 +47,7 @@ export default function Dashboard() {
             <span style={styles.logoText}>CHILL N GO</span>
           </Link>
         </div>
-        <button onClick={handleSignOut} style={styles.signOutBtn}>Cerrar sesión</button>
+        <button onClick={handleSignOut} style={styles.signOutBtn}>Cerrar sesion</button>
       </nav>
 
       <div style={styles.content}>
@@ -58,23 +59,23 @@ export default function Dashboard() {
         {/* Status cards */}
         <div style={styles.statusGrid}>
           <div style={{ ...styles.statusCard, borderColor: isPaid ? 'rgba(29,158,117,0.3)' : 'rgba(239,159,39,0.3)' }}>
-            <div style={{ ...styles.statusDot, background: isPaid ? '#1D9E75' : '#EF9F27' }} />
+            <div style={{ ...styles.statusDot, background: isPaid ? C.primaryBright : '#EF9F27' }} />
             <div>
-              <div style={styles.statusLabel}>Membresía</div>
-              <div style={{ ...styles.statusValue, color: isPaid ? '#5DCAA5' : '#FAC775' }}>
+              <div style={styles.statusLabel}>Membresia</div>
+              <div style={{ ...styles.statusValue, color: isPaid ? C.primary : '#FAC775' }}>
                 {isPaid ? 'Activa' : 'Pago pendiente'}
               </div>
             </div>
-            <button onClick={handleManageBilling} style={{ background: 'linear-gradient(135deg, #1D9E75, #0F6E56)', border: 'none', borderRadius: 8, padding: '10px 20px', fontSize: 13, fontWeight: 600, color: 'white', cursor: 'pointer', fontFamily: 'inherit', marginTop: 12, width: '100%' }}>
-              {isPaid ? 'Gestionar membresía' : 'Reactivar membresía'}
+            <button onClick={handleManageBilling} style={{ background: GRADIENT.primary, border: 'none', borderRadius: 8, padding: '10px 20px', fontSize: 13, fontWeight: 600, color: 'white', cursor: 'pointer', fontFamily: 'inherit', marginTop: 12, width: '100%' }}>
+              {isPaid ? 'Gestionar membresia' : 'Reactivar membresia'}
             </button>
           </div>
 
           <div style={{ ...styles.statusCard, borderColor: isVerified ? 'rgba(29,158,117,0.3)' : 'rgba(239,159,39,0.3)' }}>
-            <div style={{ ...styles.statusDot, background: isVerified ? '#1D9E75' : '#EF9F27' }} />
+            <div style={{ ...styles.statusDot, background: isVerified ? C.primaryBright : '#EF9F27' }} />
             <div>
-              <div style={styles.statusLabel}>Verificación</div>
-              <div style={{ ...styles.statusValue, color: isVerified ? '#5DCAA5' : '#FAC775' }}>
+              <div style={styles.statusLabel}>Verificacion</div>
+              <div style={{ ...styles.statusValue, color: isVerified ? C.primary : '#FAC775' }}>
                 {isVerified ? 'Verificado' : 'Pendiente'}
               </div>
             </div>
@@ -115,12 +116,12 @@ export default function Dashboard() {
             </div>
           ) : (
             <div style={styles.refPending}>
-              Tu link se generará cuando tu membresía esté activa
+              Tu link se generara cuando tu membresia este activa
             </div>
           )}
         </div>
 
-        <Link to="/network" style={{ display: 'block', background: 'linear-gradient(135deg, #1D9E75, #0F6E56)', border: 'none', borderRadius: 8, padding: '14px', fontSize: 14, fontWeight: 600, color: 'white', textDecoration: 'none', textAlign: 'center', marginBottom: 24 }}>Ver mi red completa</Link>
+        <Link to="/network" style={{ display: 'block', background: GRADIENT.primary, border: 'none', borderRadius: 8, padding: '14px', fontSize: 14, fontWeight: 600, color: 'white', textDecoration: 'none', textAlign: 'center', marginBottom: 24 }}>Ver mi red completa</Link>
 
         {/* Network stats */}
         <div style={styles.networkGrid}>
@@ -146,15 +147,15 @@ export default function Dashboard() {
           <h3 style={styles.lobsTitle}>Tu ecosistema</h3>
           <div style={styles.lobsGrid}>
             {[
-              { name: 'Travel', icon: '✈', color: '#1D9E75', url: 'https://chillngotravel.com' },
-              { name: 'Nutrition', icon: '🌿', color: '#639922', url: 'https://chillngonutrition.com' },
-              { name: 'Real Estate', icon: '🏠', color: '#378ADD', url: 'https://chillngorealestate.com' },
-              { name: 'Store', icon: '🛍', color: '#D85A30', url: 'https://chillngostore.com' },
-              { name: 'Online', icon: '🌐', color: '#7F77DD', url: 'https://chillngoonline.com' },
-              { name: 'CandyStakes', icon: '🍬', color: '#D4537E', url: 'https://candystakes.com' },
+              { name: 'Travel', icon: 'flight_takeoff', color: '#1D9E75', url: 'https://chillngotravel.com' },
+              { name: 'Nutrition', icon: 'restaurant', color: '#639922', url: 'https://chillngonutrition.com' },
+              { name: 'Real Estate', icon: 'domain', color: '#378ADD', url: 'https://chillngorealestate.com' },
+              { name: 'Store', icon: 'shopping_bag', color: '#D85A30', url: 'https://chillngostore.com' },
+              { name: 'Online', icon: 'language', color: '#7F77DD', url: 'https://chillngoonline.com' },
+              { name: 'CandyStakes', icon: 'military_tech', color: '#D4537E', url: 'https://candystakes.com' },
             ].map((lob) => (
               <a key={lob.name} href={lob.url} target="_blank" rel="noopener noreferrer" style={{ ...styles.lobChip, borderColor: lob.color + '30', textDecoration: 'none' }}>
-                <span style={{ fontSize: 16 }}>{lob.icon}</span>
+                <Icon name={lob.icon} size={16} style={{ color: lob.color }} />
                 <span style={{ fontSize: 12, color: lob.color, fontWeight: 500 }}>{lob.name}</span>
               </a>
             ))}
@@ -168,9 +169,9 @@ export default function Dashboard() {
 const styles = {
   container: {
     minHeight: '100vh',
-    background: '#0D1117',
-    fontFamily: "'DM Sans', system-ui, sans-serif",
-    color: '#e6e4dc',
+    background: C.surface,
+    fontFamily: FONT.body,
+    color: C.text,
   },
   nav: {
     display: 'flex',
@@ -190,18 +191,18 @@ const styles = {
     width: 28,
     height: 28,
     borderRadius: 6,
-    background: 'linear-gradient(135deg, #1D9E75, #5DCAA5)',
+    background: GRADIENT.primary,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     fontSize: 12,
     fontWeight: 700,
-    color: '#0D1117',
+    color: C.surface,
   },
   logoText: {
     fontWeight: 700,
     fontSize: 14,
-    color: '#e6e4dc',
+    color: C.text,
     letterSpacing: 1,
   },
   signOutBtn: {
@@ -210,7 +211,7 @@ const styles = {
     borderRadius: 6,
     padding: '8px 16px',
     fontSize: 12,
-    color: '#888',
+    color: C.onSurfaceVariant,
     cursor: 'pointer',
     fontFamily: 'inherit',
   },
@@ -226,7 +227,7 @@ const styles = {
   },
   email: {
     fontSize: 14,
-    color: '#888',
+    color: C.onSurfaceVariant,
     marginBottom: 32,
   },
   statusGrid: {
@@ -252,7 +253,7 @@ const styles = {
   },
   statusLabel: {
     fontSize: 12,
-    color: '#888',
+    color: C.onSurfaceVariant,
   },
   statusValue: {
     fontSize: 15,
@@ -302,7 +303,7 @@ const styles = {
   },
   refDesc: {
     fontSize: 13,
-    color: '#888',
+    color: C.onSurfaceVariant,
     lineHeight: 1.5,
     marginBottom: 16,
   },
@@ -318,7 +319,7 @@ const styles = {
     borderRadius: 8,
     padding: '10px 12px',
     fontSize: 12,
-    color: '#5DCAA5',
+    color: C.primary,
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
@@ -329,7 +330,7 @@ const styles = {
     borderRadius: 8,
     padding: '10px 16px',
     fontSize: 12,
-    color: '#5DCAA5',
+    color: C.primary,
     cursor: 'pointer',
     fontWeight: 600,
     fontFamily: 'inherit',
@@ -337,7 +338,7 @@ const styles = {
   },
   refPending: {
     fontSize: 13,
-    color: '#666',
+    color: C.textFaint,
     fontStyle: 'italic',
   },
   networkGrid: {
@@ -356,16 +357,16 @@ const styles = {
   networkNumber: {
     fontSize: 24,
     fontWeight: 700,
-    color: '#f1efe8',
+    color: C.text,
     marginBottom: 4,
   },
   networkLabel: {
     fontSize: 12,
-    color: '#999',
+    color: C.onSurfaceVariant,
   },
   networkSub: {
     fontSize: 11,
-    color: '#666',
+    color: C.textFaint,
     marginTop: 2,
   },
   lobsSection: {

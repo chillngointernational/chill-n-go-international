@@ -10,6 +10,7 @@ import CandyStakesScreen from '../pages/app/CandyStakesScreen'
 import RealEstateScreen from '../pages/app/RealEstateScreen'
 import NutritionScreen from '../pages/app/NutritionScreen'
 import StoreScreen from '../pages/app/StoreScreen'
+import NetworkScreen from '../pages/app/NetworkScreen'
 
 const TABS = [
     { id: 'feed', icon: 'home', label: 'Feed' },
@@ -48,6 +49,7 @@ export default function AppShell() {
             case 'realestate': return <RealEstateScreen onBack={goBack} />
             case 'nutrition': return <NutritionScreen onBack={goBack} />
             case 'store': return <StoreScreen onBack={goBack} />
+            case 'network': return <NetworkScreen onBack={goBack} />
             default: return null
         }
     }
@@ -58,7 +60,7 @@ export default function AppShell() {
             case 'explore': return <ExploreScreen onNavigate={navSub} isDesktop={isDesktop} />
             case 'create': return <CreateScreen />
             case 'messages': return <MessagesScreen />
-            case 'profile': return <ProfileScreen />
+            case 'profile': return <ProfileScreen onNavigate={navSub} />
             default: return <FeedScreen />
         }
     }

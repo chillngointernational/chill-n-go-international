@@ -1,7 +1,7 @@
 ﻿import { C, FONT, Icon, GRADIENT } from '../../stitch'
 import { useAuth } from '../../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
-export default function ProfileScreen() {
+export default function ProfileScreen({ onNavigate }) {
   const { user, member, signOut } = useAuth()
   const navigate = useNavigate()
   const refLink = member?.ref_code ? window.location.origin + '/join?ref=' + member.ref_code : null
@@ -43,7 +43,7 @@ export default function ProfileScreen() {
         <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
           <button onClick={handleManageBilling} style={{ flex: 1, height: 48, background: GRADIENT.primary, color: '#003827', borderRadius: 12, fontWeight: 700, fontSize: 14, border: 'none', cursor: 'pointer', fontFamily: FONT.body }}>Manage Plan</button>
           <button onClick={() => { if (refLink) navigator.clipboard.writeText(refLink) }} style={{ width: 48, height: 48, background: C.surfaceLow, color: C.onSurface, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', cursor: 'pointer' }}><Icon name="share" size={20} /></button>
-          <button onClick={() => navigate('/network')} style={{ flex: 1, height: 48, border: '2px solid ' + C.secondary, color: C.secondary, borderRadius: 12, fontWeight: 700, fontSize: 14, background: 'transparent', cursor: 'pointer', fontFamily: FONT.body }}>My Network</button>
+          <button onClick={() => onNavigate('network')} style={{ flex: 1, height: 48, border: '2px solid ' + C.secondary, color: C.secondary, borderRadius: 12, fontWeight: 700, fontSize: 14, background: 'transparent', cursor: 'pointer', fontFamily: FONT.body }}>My Network</button>
         </div>
       </div>
       <div style={{ padding: '0 24px', marginTop: 40 }}>

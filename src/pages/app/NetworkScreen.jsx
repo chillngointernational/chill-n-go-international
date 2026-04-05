@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react'
-import { useAuth } from '../context/AuthContext'
-import { supabase } from '../lib/supabase'
-import { Link } from 'react-router-dom'
-import { C, FONT, Icon, GRADIENT } from '../stitch'
+import { useAuth } from '../../context/AuthContext'
+import { supabase } from '../../lib/supabase'
+import { C, FONT, Icon, GRADIENT } from '../../stitch'
+import TopBar from '../../components/TopBar'
 
-export default function Network() {
+export default function NetworkScreen({ onBack }) {
     const { user, member } = useAuth()
     const [referrals, setReferrals] = useState([])
     const [ledger, setLedger] = useState([])
@@ -108,28 +108,13 @@ export default function Network() {
     }
 
     return (
-        <div style={s.container}>
-            {/* Nav */}
-            <nav style={{ ...s.nav, ...(isMobile ? { padding: '12px 16px' } : {}) }}>
-                <Link to="/dashboard" style={s.navBack}>← Dashboard</Link>
-                <div style={s.navRight}>
-                    <div style={s.balancePill}>
-                        <svg width="16" height="16" viewBox="0 0 30 30">
-                            <ellipse cx="15" cy="15" rx="12" ry="5" fill="#EF9F27" opacity="0.6" />
-                            <text x="15" y="18" textAnchor="middle" fontSize="8" fontWeight="bold" fill="#633806">C</text>
-                        </svg>
-                        <span style={s.balanceText}>{member?.chilliums_balance?.toFixed(2) || '0.00'}</span>
-                    </div>
-                </div>
-            </nav>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <TopBar title="Mi Red CNG+" leftIcon="arrow_back" onLeft={onBack} />
 
-            <div style={{ ...s.content, ...(isMobile ? { padding: '16px 16px 60px' } : {}) }}>
-                {/* Header with big balance */}
-                <div style={s.header}>
-                    <div style={s.headerLeft}>
-                        <h1 style={s.title}>Mi red CNG+</h1>
-                        <p style={s.subtitle}>{member?.full_name || user?.email}</p>
-                    </div>
+            <div style={{ padding: isMobile ? '16px 16px 120px' : '24px 20px 60px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+                {/* Header */}
+                <div style={{ marginBottom: 24 }}>
+                    <p style={{ fontSize: 14, color: C.onSurfaceVariant }}>{member?.full_name || user?.email}</p>
                 </div>
 
                 {/* Big balance card */}
@@ -216,7 +201,7 @@ export default function Network() {
 
                 {/* Network tab */}
                 {activeTab === 'network' && (
-                    <div style={s.networkSection}>
+                    <div>
                         {/* Visual tree */}
                         <div style={{ ...s.treeContainer, ...(isMobile ? { padding: '12px 0', gap: 4 } : {}) }}>
                             {/* YOU at top */}
@@ -347,18 +332,18 @@ export default function Network() {
 
                 {/* History tab */}
                 {activeTab === 'history' && (
-                    <div style={s.historySection}>
+                    <div style={{ marginTop: 8 }}>
                         {ledger.length === 0 ? (
                             <div style={s.emptyState}>
                                 <p style={s.emptyTitle}>Sin movimientos</p>
                                 <p style={s.emptyText}>Tu historial de Chilliums aparecerá aquí</p>
                             </div>
                         ) : (
-                            <div style={s.historyList}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                                 {ledger.map((entry) => (
                                     <div key={entry.id} style={s.historyItem}>
                                         <div style={s.historyDot(typeColors[entry.type] || C.onSurfaceVariant)} />
-                                        <div style={s.historyInfo}>
+                                        <div style={{ flex: 1 }}>
                                             <div style={s.historyType}>{typeLabels[entry.type] || entry.type}</div>
                                             <div style={s.historyDesc}>{entry.description || '-'}</div>
                                             <div style={s.historyDate}>
@@ -368,7 +353,7 @@ export default function Network() {
                                             </div>
                                         </div>
                                         <div style={{
-                                            ...s.historyAmount,
+                                            fontSize: 15, fontWeight: 600, whiteSpace: 'nowrap',
                                             color: Number(entry.amount) >= 0 ? C.primary : C.error,
                                         }}>
                                             {Number(entry.amount) >= 0 ? '+' : ''}{Number(entry.amount).toFixed(2)}
@@ -385,41 +370,6 @@ export default function Network() {
 }
 
 const s = {
-    container: {
-        minHeight: '100vh',
-        background: C.surface,
-        fontFamily: FONT.body,
-        color: C.text,
-    },
-    nav: {
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: '14px 24px',
-        borderBottom: '1px solid rgba(255,255,255,0.04)',
-    },
-    navBack: {
-        color: C.onSurfaceVariant,
-        textDecoration: 'none',
-        fontSize: 13,
-    },
-    navRight: { display: 'flex', alignItems: 'center', gap: 12 },
-    balancePill: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: 6,
-        background: 'rgba(239,159,39,0.08)',
-        border: '1px solid rgba(239,159,39,0.15)',
-        borderRadius: 20,
-        padding: '6px 14px',
-    },
-    balanceText: { fontSize: 13, fontWeight: 600, color: '#FAC775' },
-    content: { maxWidth: 800, margin: '0 auto', padding: '24px 20px 60px' },
-    header: { marginBottom: 24 },
-    title: { fontSize: 26, fontWeight: 600, marginBottom: 4 },
-    subtitle: { fontSize: 14, color: C.onSurfaceVariant },
-
-    // Big balance
     bigBalance: {
         background: 'rgba(239,159,39,0.04)',
         border: '1px solid rgba(239,159,39,0.12)',
@@ -438,7 +388,6 @@ const s = {
     earningLabel: { fontSize: 11, color: C.onSurfaceVariant },
     earningValue: { fontSize: 14, fontWeight: 600, color: C.text },
 
-    // Ref card
     refCard: {
         background: 'rgba(255,255,255,0.02)',
         border: '1px solid rgba(255,255,255,0.06)',
@@ -484,7 +433,6 @@ const s = {
     },
     refPending: { fontSize: 13, color: C.textFaint, fontStyle: 'italic' },
 
-    // Tabs
     tabs: {
         display: 'flex',
         gap: 4,
@@ -511,7 +459,6 @@ const s = {
         color: C.text,
     },
 
-    // Tree
     treeContainer: {
         display: 'flex',
         flexDirection: 'column',
@@ -558,7 +505,7 @@ const s = {
         marginBottom: 8,
         maxWidth: '100%',
     },
-    treeNode: (color, bgColor, textColor) => ({
+    treeNode: (color) => ({
         background: 'rgba(255,255,255,0.02)',
         border: `1px solid ${color}30`,
         borderRadius: 12,
@@ -588,7 +535,6 @@ const s = {
     }),
     treeNodeSubs: { fontSize: 10, color: C.onSurfaceVariant, marginTop: 4 },
 
-    // Empty state
     emptyState: { textAlign: 'center', padding: '40px 20px' },
     emptyIcon: { marginBottom: 16 },
     emptyTitle: { fontSize: 16, fontWeight: 600, marginBottom: 8, color: C.text },
@@ -605,7 +551,6 @@ const s = {
         fontFamily: 'inherit',
     },
 
-    // Summary grid
     summaryGrid: {
         display: 'grid',
         gridTemplateColumns: 'repeat(4, 1fr)',
@@ -633,9 +578,6 @@ const s = {
     summaryLabel: { fontSize: 11, color: C.onSurfaceVariant },
     summarySub: { fontSize: 10, color: C.textFaint, marginTop: 2 },
 
-    // History
-    historySection: { marginTop: 8 },
-    historyList: { display: 'flex', flexDirection: 'column', gap: 2 },
     historyItem: {
         display: 'flex',
         alignItems: 'center',
@@ -650,9 +592,7 @@ const s = {
         background: color,
         flexShrink: 0,
     }),
-    historyInfo: { flex: 1 },
     historyType: { fontSize: 13, fontWeight: 500, color: C.text },
     historyDesc: { fontSize: 12, color: C.onSurfaceVariant, marginTop: 2 },
     historyDate: { fontSize: 11, color: C.textFaint, marginTop: 2 },
-    historyAmount: { fontSize: 15, fontWeight: 600, whiteSpace: 'nowrap' },
 }

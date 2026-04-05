@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { C, FONT, GRADIENT } from '../stitch'
 
 const COUNTRIES = [
   { code: 'MX', name: 'México', phoneCode: '+52' },
@@ -265,7 +266,7 @@ export default function RegistrationWizard({ email, refCode, referrerName, onCom
               ...s.subStepDot,
               background: subStep >= ss.num ? 'rgba(29,158,117,0.15)' : 'rgba(255,255,255,0.04)',
               borderColor: subStep >= ss.num ? 'rgba(29,158,117,0.4)' : 'rgba(255,255,255,0.1)',
-              color: subStep >= ss.num ? '#5DCAA5' : '#888',
+              color: subStep >= ss.num ? C.primary : C.onSurfaceVariant,
             }}>
               {subStep > ss.num ? '✓' : ss.num}
             </div>
@@ -427,12 +428,12 @@ export default function RegistrationWizard({ email, refCode, referrerName, onCom
               <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} style={{ ...s.input, paddingRight: 44 }} placeholder="Mínimo 8 caracteres" />
               <button type="button" onClick={() => setShowPassword(!showPassword)} style={s.eyeBtn}>
                 {showPassword ? (
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.onSurfaceVariant} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24" />
                     <line x1="1" y1="1" x2="23" y2="23" />
                   </svg>
                 ) : (
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.onSurfaceVariant} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
                     <circle cx="12" cy="12" r="3" />
                   </svg>
@@ -447,12 +448,12 @@ export default function RegistrationWizard({ email, refCode, referrerName, onCom
               <input type={showPassword ? 'text' : 'password'} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} style={{ ...s.input, paddingRight: 44 }} placeholder="Repite tu contraseña" />
               <button type="button" onClick={() => setShowPassword(!showPassword)} style={s.eyeBtn}>
                 {showPassword ? (
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.onSurfaceVariant} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24" />
                     <line x1="1" y1="1" x2="23" y2="23" />
                   </svg>
                 ) : (
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.onSurfaceVariant} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
                     <circle cx="12" cy="12" r="3" />
                   </svg>
@@ -519,16 +520,16 @@ export default function RegistrationWizard({ email, refCode, referrerName, onCom
             <>
               <div style={s.verifyIconWrap}>
                 <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
-                  <circle cx="28" cy="28" r="26" stroke="#5DCAA5" strokeWidth="2" />
-                  <path d="M28 16v4M28 36v4M16 28h4M36 28h4" stroke="#5DCAA5" strokeWidth="2" strokeLinecap="round" />
-                  <circle cx="28" cy="28" r="8" stroke="#5DCAA5" strokeWidth="2" />
+                  <circle cx="28" cy="28" r="26" stroke={C.primary} strokeWidth="2" />
+                  <path d="M28 16v4M28 36v4M16 28h4M36 28h4" stroke={C.primary} strokeWidth="2" strokeLinecap="round" />
+                  <circle cx="28" cy="28" r="8" stroke={C.primary} strokeWidth="2" />
                 </svg>
               </div>
               <h3 style={s.stepTitle}>Verifica tu identidad</h3>
               <p style={s.stepDesc}>
                 Tu cuenta fue creada exitosamente. Ahora necesitamos verificar tu identidad
                 para proteger tu cuenta y tu dinero. Este proceso es seguro y está
-                gestionado por <strong style={{ color: '#f1efe8' }}>Stripe</strong>, la plataforma
+                gestionado por <strong style={{ color: C.text }}>Stripe</strong>, la plataforma
                 de pagos más confiable del mundo.
               </p>
 
@@ -566,7 +567,7 @@ export default function RegistrationWizard({ email, refCode, referrerName, onCom
               >
                 Verificar después (acceso limitado)
               </button>
-              <p style={{ fontSize: 11, color: '#666', textAlign: 'center', marginTop: 6 }}>
+              <p style={{ fontSize: 11, color: C.textFaint, textAlign: 'center', marginTop: 6 }}>
                 Sin verificación no podrás redimir Chilliums ni acceder a funciones financieras
               </p>
             </>
@@ -576,8 +577,8 @@ export default function RegistrationWizard({ email, refCode, referrerName, onCom
             <>
               <div style={s.verifyIconWrap}>
                 <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
-                  <circle cx="28" cy="28" r="26" stroke="#5DCAA5" strokeWidth="2" />
-                  <path d="M20 28L26 34L38 22" stroke="#5DCAA5" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                  <circle cx="28" cy="28" r="26" stroke={C.primary} strokeWidth="2" />
+                  <path d="M20 28L26 34L38 22" stroke={C.primary} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </div>
               <h3 style={s.stepTitle}>Documentos enviados</h3>
@@ -601,8 +602,8 @@ export default function RegistrationWizard({ email, refCode, referrerName, onCom
             <>
               <div style={s.verifyIconWrap}>
                 <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
-                  <circle cx="28" cy="28" r="26" stroke="#E24B4A" strokeWidth="2" />
-                  <path d="M22 22L34 34M34 22L22 34" stroke="#E24B4A" strokeWidth="2.5" strokeLinecap="round" />
+                  <circle cx="28" cy="28" r="26" stroke={C.errorBright} strokeWidth="2" />
+                  <path d="M22 22L34 34M34 22L22 34" stroke={C.errorBright} strokeWidth="2.5" strokeLinecap="round" />
                 </svg>
               </div>
               <h3 style={s.stepTitle}>Hubo un problema</h3>
@@ -656,30 +657,30 @@ const s = {
     fontSize: 11,
     fontWeight: 600,
   },
-  subStepLabel: { fontSize: 10, color: '#888' },
+  subStepLabel: { fontSize: 10, color: C.onSurfaceVariant },
   error: {
     background: 'rgba(224,49,49,0.1)',
     border: '1px solid rgba(224,49,49,0.3)',
     borderRadius: 8,
     padding: '10px 14px',
     fontSize: 13,
-    color: '#F09595',
+    color: C.error,
     marginBottom: 16,
     textAlign: 'center',
   },
   stepContent: {},
-  stepTitle: { fontSize: 18, fontWeight: 600, color: '#f1efe8', marginBottom: 8, textAlign: 'center' },
-  stepDesc: { fontSize: 13, color: '#888', lineHeight: 1.6, marginBottom: 20, textAlign: 'center' },
+  stepTitle: { fontSize: 18, fontWeight: 600, color: C.text, marginBottom: 8, textAlign: 'center' },
+  stepDesc: { fontSize: 13, color: C.onSurfaceVariant, lineHeight: 1.6, marginBottom: 20, textAlign: 'center' },
   field: { display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 },
   fieldRow: { display: 'flex', gap: 12, marginBottom: 16 },
-  label: { fontSize: 13, color: '#999', fontWeight: 500 },
+  label: { fontSize: 13, color: C.onSurfaceVariant, fontWeight: 500 },
   input: {
     background: 'rgba(255,255,255,0.04)',
     border: '1px solid rgba(255,255,255,0.1)',
     borderRadius: 8,
     padding: '12px 14px',
     fontSize: 14,
-    color: '#f1efe8',
+    color: C.text,
     outline: 'none',
     fontFamily: 'inherit',
     width: '100%',
@@ -691,18 +692,18 @@ const s = {
     borderRadius: 8,
     padding: '12px 14px',
     fontSize: 14,
-    color: '#f1efe8',
+    color: C.text,
     outline: 'none',
     fontFamily: 'inherit',
     width: '100%',
     boxSizing: 'border-box',
   },
-  hint: { fontSize: 11, color: '#666', marginTop: 4 },
+  hint: { fontSize: 11, color: C.textFaint, marginTop: 4 },
   phoneRow: { display: 'flex', gap: 8 },
   navRow: { display: 'flex', gap: 12, marginTop: 8 },
   btn: {
     flex: 1,
-    background: 'linear-gradient(135deg, #1D9E75, #0F6E56)',
+    background: GRADIENT.primary,
     border: 'none',
     borderRadius: 8,
     padding: '14px',
@@ -719,7 +720,7 @@ const s = {
     borderRadius: 8,
     padding: '14px 20px',
     fontSize: 13,
-    color: '#888',
+    color: C.onSurfaceVariant,
     cursor: 'pointer',
     fontFamily: 'inherit',
   },
@@ -729,7 +730,7 @@ const s = {
     borderRadius: 8,
     padding: '12px',
     fontSize: 13,
-    color: '#888',
+    color: C.onSurfaceVariant,
     cursor: 'pointer',
     fontFamily: 'inherit',
     width: '100%',
@@ -749,8 +750,8 @@ const s = {
     borderBottom: '1px solid rgba(255,255,255,0.04)',
     fontSize: 13,
   },
-  summaryLabel: { color: '#888' },
-  summaryValue: { color: '#f1efe8', fontWeight: 500, textAlign: 'right' },
+  summaryLabel: { color: C.onSurfaceVariant },
+  summaryValue: { color: C.text, fontWeight: 500, textAlign: 'right' },
   legalSection: { display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 20 },
   checkbox: {
     display: 'flex',
@@ -758,8 +759,8 @@ const s = {
     gap: 10,
     cursor: 'pointer',
   },
-  checkLabel: { fontSize: 13, color: '#999', lineHeight: 1.5 },
-  link: { color: '#5DCAA5', textDecoration: 'none' },
+  checkLabel: { fontSize: 13, color: C.onSurfaceVariant, lineHeight: 1.5 },
+  link: { color: C.primary, textDecoration: 'none' },
   verifyIconWrap: {
     display: 'flex',
     justifyContent: 'center',
@@ -792,7 +793,7 @@ const s = {
     borderRadius: 8,
     padding: '12px 14px',
     fontSize: 12,
-    color: '#5DCAA5',
+    color: C.primary,
     marginBottom: 20,
     lineHeight: 1.5,
     textAlign: 'center',

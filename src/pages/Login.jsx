@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { C, FONT, Icon, GRADIENT } from '../stitch'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -86,16 +87,16 @@ export default function Login() {
 const styles = {
   container: {
     minHeight: '100vh',
-    background: '#0D1117',
+    background: C.surface,
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
     padding: '24px',
-    fontFamily: "'DM Sans', system-ui, sans-serif",
+    fontFamily: FONT.body,
   },
   backLink: {
-    color: '#888',
+    color: C.onSurfaceVariant,
     textDecoration: 'none',
     fontSize: 13,
     marginBottom: 24,
@@ -120,30 +121,30 @@ const styles = {
     width: 32,
     height: 32,
     borderRadius: 8,
-    background: 'linear-gradient(135deg, #1D9E75, #5DCAA5)',
+    background: GRADIENT.primary,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     fontSize: 14,
     fontWeight: 700,
-    color: '#0D1117',
+    color: C.surface,
   },
   logoText: {
     fontWeight: 700,
     fontSize: 15,
-    color: '#e6e4dc',
+    color: C.text,
     letterSpacing: 1,
   },
   title: {
     fontSize: 24,
     fontWeight: 600,
-    color: '#f1efe8',
+    color: C.text,
     textAlign: 'center',
     marginBottom: 6,
   },
   subtitle: {
     fontSize: 14,
-    color: '#888',
+    color: C.onSurfaceVariant,
     textAlign: 'center',
     marginBottom: 28,
   },
@@ -153,7 +154,7 @@ const styles = {
     borderRadius: 8,
     padding: '10px 14px',
     fontSize: 13,
-    color: '#F09595',
+    color: C.error,
     marginBottom: 20,
     textAlign: 'center',
   },
@@ -169,7 +170,7 @@ const styles = {
   },
   label: {
     fontSize: 13,
-    color: '#999',
+    color: C.onSurfaceVariant,
     fontWeight: 500,
   },
   input: {
@@ -178,13 +179,13 @@ const styles = {
     borderRadius: 8,
     padding: '12px 14px',
     fontSize: 14,
-    color: '#f1efe8',
+    color: C.text,
     outline: 'none',
     fontFamily: 'inherit',
     transition: 'border-color 0.2s',
   },
   button: {
-    background: 'linear-gradient(135deg, #1D9E75, #0F6E56)',
+    background: GRADIENT.primary,
     border: 'none',
     borderRadius: 8,
     padding: '14px',
@@ -198,7 +199,7 @@ const styles = {
   },
   footerText: {
     fontSize: 12,
-    color: '#666',
+    color: C.textFaint,
     textAlign: 'center',
     marginTop: 24,
     lineHeight: 1.5,
