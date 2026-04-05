@@ -145,6 +145,13 @@ function FadeIn({ children, delay = 0, className = "" }) {
 
 export default function App() {
   const [hoveredLob, setHoveredLob] = useState(null);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    const handler = (e) => setIsMobile(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
 
   return (
     <div style={{ background: C.surface, color: C.text, minHeight: "100vh", fontFamily: FONT.body, overflowX: "hidden" }}>
@@ -170,22 +177,24 @@ export default function App() {
       <div className="grain" />
 
       {/* NAV */}
-      <nav style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, padding: "16px 32px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(13,17,23,0.8)", backdropFilter: "blur(20px)", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+      <nav style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, padding: isMobile ? "12px 16px" : "16px 32px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(13,17,23,0.8)", backdropFilter: "blur(20px)", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ width: 32, height: 32, borderRadius: 8, background: "linear-gradient(135deg, #1D9E75, #5DCAA5)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: "#0D1117" }}>C</div>
           <span style={{ fontFamily: FONT.body, fontWeight: 700, fontSize: 16, letterSpacing: 1 }}>CHILL N GO</span>
           <span style={{ fontSize: 10, color: "#888", letterSpacing: 2, marginTop: 2 }}>INTL.</span>
         </div>
-        <div style={{ display: "flex", gap: 28, fontSize: 13, color: "#888" }}>
-          <a href="#ecosystem" style={{ color: "inherit", textDecoration: "none", transition: "color 0.2s" }}>Ecosistema</a>
-          <a href="#cng-plus" style={{ color: "inherit", textDecoration: "none" }}>CNG+</a>
-          <a href="#chilliums" style={{ color: "inherit", textDecoration: "none" }}>Chilliums</a>
+        <div style={{ display: "flex", gap: 28, fontSize: 13, color: "#888", alignItems: "center" }}>
+          <div style={{ display: isMobile ? "none" : "flex", gap: 28 }}>
+            <a href="#ecosystem" style={{ color: "inherit", textDecoration: "none", transition: "color 0.2s" }}>Ecosistema</a>
+            <a href="#cng-plus" style={{ color: "inherit", textDecoration: "none" }}>CNG+</a>
+            <a href="#chilliums" style={{ color: "inherit", textDecoration: "none" }}>Chilliums</a>
+          </div>
           <Link to="/login" style={{ color: "#5DCAA5", textDecoration: "none", fontWeight: 500 }}>Entrar</Link>
         </div>
       </nav>
 
       {/* HERO */}
-      <section style={{ position: "relative", minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "120px 24px 80px", overflow: "hidden" }}>
+      <section style={{ position: "relative", minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: isMobile ? "80px 16px 40px" : "120px 24px 80px", overflow: "hidden" }}>
         <div className="hero-glow" />
 
         <FadeIn>
@@ -193,7 +202,7 @@ export default function App() {
         </FadeIn>
 
         <FadeIn delay={0.1}>
-          <h1 style={{ fontFamily: FONT.headline, fontSize: "clamp(36px, 6vw, 64px)", fontWeight: 600, lineHeight: 1.1, maxWidth: 700, marginBottom: 20, color: C.text }}>
+          <h1 style={{ fontFamily: FONT.headline, fontSize: isMobile ? "clamp(28px, 7vw, 64px)" : "clamp(36px, 6vw, 64px)", fontWeight: 600, lineHeight: 1.1, maxWidth: 700, marginBottom: 20, color: C.text }}>
             Un ecosistema.{" "}
             <span style={{ color: "#1D9E75" }}>Seis industrias.</span>{" "}
             Infinitas posibilidades.
