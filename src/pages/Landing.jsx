@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
+import { C, FONT, Icon } from "../stitch";
 
 const LOBS = [
-  { name: "Travel", tagline: "Viajes y experiencias", icon: "✈", color: "#1D9E75", lightColor: "#5DCAA5", bgColor: "rgba(29,158,117,0.08)", desc: "Hoteles, vuelos, tours y paquetes a precios exclusivos con tarifas netas." },
-  { name: "Nutrition", tagline: "Salud y bienestar", icon: "🌿", color: "#639922", lightColor: "#C0DD97", bgColor: "rgba(99,153,34,0.08)", desc: "Planes nutricionales, productos de bienestar y servicios de salud." },
-  { name: "Real Estate", tagline: "Propiedades e inversión", icon: "🏠", color: "#378ADD", lightColor: "#85B7EB", bgColor: "rgba(55,138,221,0.08)", desc: "Inversiones inmobiliarias, relocation y gestión de propiedades." },
-  { name: "Store", tagline: "Productos y comercio", icon: "🛍", color: "#D85A30", lightColor: "#F0997B", bgColor: "rgba(216,90,48,0.08)", desc: "Tienda física y digital con productos exclusivos para miembros." },
-  { name: "Online", tagline: "Servicios digitales", icon: "🌐", color: "#7F77DD", lightColor: "#AFA9EC", bgColor: "rgba(127,119,221,0.08)", desc: "Herramientas digitales, cursos, comunidad y servicios e-commerce." },
-  { name: "CandyStakes", tagline: "Inversión en franquicias", icon: "🍬", color: "#D4537E", lightColor: "#ED93B1", bgColor: "rgba(212,83,126,0.08)", desc: "El primer marketplace de crowdfunding para franquicias. Invierte y genera rendimientos." },
+  { name: "Travel", tagline: "Viajes y experiencias", icon: "flight_takeoff", color: "#1D9E75", lightColor: "#5DCAA5", bgColor: "rgba(29,158,117,0.08)", desc: "Hoteles, vuelos, tours y paquetes a precios exclusivos con tarifas netas." },
+  { name: "Nutrition", tagline: "Salud y bienestar", icon: "restaurant", color: "#639922", lightColor: "#C0DD97", bgColor: "rgba(99,153,34,0.08)", desc: "Planes nutricionales, productos de bienestar y servicios de salud." },
+  { name: "Real Estate", tagline: "Propiedades e inversión", icon: "domain", color: "#378ADD", lightColor: "#85B7EB", bgColor: "rgba(55,138,221,0.08)", desc: "Inversiones inmobiliarias, relocation y gestión de propiedades." },
+  { name: "Store", tagline: "Productos y comercio", icon: "shopping_bag", color: "#D85A30", lightColor: "#F0997B", bgColor: "rgba(216,90,48,0.08)", desc: "Tienda física y digital con productos exclusivos para miembros." },
+  { name: "Online", tagline: "Servicios digitales", icon: "language", color: "#7F77DD", lightColor: "#AFA9EC", bgColor: "rgba(127,119,221,0.08)", desc: "Herramientas digitales, cursos, comunidad y servicios e-commerce." },
+  { name: "CandyStakes", tagline: "Inversión en franquicias", icon: "military_tech", color: "#D4537E", lightColor: "#ED93B1", bgColor: "rgba(212,83,126,0.08)", desc: "El primer marketplace de crowdfunding para franquicias. Invierte y genera rendimientos." },
 ];
 
 const BENEFITS = [
@@ -146,8 +147,9 @@ export default function App() {
   const [hoveredLob, setHoveredLob] = useState(null);
 
   return (
-    <div style={{ background: "#0D1117", color: "#e6e4dc", minHeight: "100vh", fontFamily: "'DM Sans', system-ui, sans-serif", overflowX: "hidden" }}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,700&family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <div style={{ background: C.surface, color: C.text, minHeight: "100vh", fontFamily: FONT.body, overflowX: "hidden" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+      <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet" />
 
       <style>{`
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -171,7 +173,7 @@ export default function App() {
       <nav style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, padding: "16px 32px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(13,17,23,0.8)", backdropFilter: "blur(20px)", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ width: 32, height: 32, borderRadius: 8, background: "linear-gradient(135deg, #1D9E75, #5DCAA5)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: "#0D1117" }}>C</div>
-          <span style={{ fontFamily: "'DM Sans'", fontWeight: 700, fontSize: 16, letterSpacing: 1 }}>CHILL N GO</span>
+          <span style={{ fontFamily: FONT.body, fontWeight: 700, fontSize: 16, letterSpacing: 1 }}>CHILL N GO</span>
           <span style={{ fontSize: 10, color: "#888", letterSpacing: 2, marginTop: 2 }}>INTL.</span>
         </div>
         <div style={{ display: "flex", gap: 28, fontSize: 13, color: "#888" }}>
@@ -191,7 +193,7 @@ export default function App() {
         </FadeIn>
 
         <FadeIn delay={0.1}>
-          <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: "clamp(36px, 6vw, 64px)", fontWeight: 600, lineHeight: 1.1, maxWidth: 700, marginBottom: 20, color: "#f1efe8" }}>
+          <h1 style={{ fontFamily: FONT.headline, fontSize: "clamp(36px, 6vw, 64px)", fontWeight: 600, lineHeight: 1.1, maxWidth: 700, marginBottom: 20, color: C.text }}>
             Un ecosistema.{" "}
             <span style={{ color: "#1D9E75" }}>Seis industrias.</span>{" "}
             Infinitas posibilidades.
@@ -244,7 +246,7 @@ export default function App() {
         <FadeIn>
           <div style={{ textAlign: "center", marginBottom: 60 }}>
             <div className="section-label" style={{ marginBottom: 12 }}>Ecosistema</div>
-            <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: "clamp(28px, 4vw, 42px)", fontWeight: 500, marginBottom: 16 }}>
+            <h2 style={{ fontFamily: FONT.headline, fontSize: "clamp(28px, 4vw, 42px)", fontWeight: 500, marginBottom: 16 }}>
               Seis líneas de negocio, <span style={{ color: "#1D9E75" }}>un solo ecosistema</span>
             </h2>
             <p style={{ color: "#888", fontSize: 15, maxWidth: 500, margin: "0 auto" }}>
@@ -274,7 +276,7 @@ export default function App() {
                   gap: 8,
                 }}
               >
-                <div style={{ fontSize: 28, marginBottom: 4 }}>{lob.icon}</div>
+                <Icon name={lob.icon} size={28} style={{ color: lob.lightColor, marginBottom: 4 }} />
                 <div style={{ fontSize: 16, fontWeight: 600, color: lob.lightColor }}>{lob.name}</div>
                 <div style={{ fontSize: 11, color: lob.color, letterSpacing: 1, textTransform: "uppercase" }}>{lob.tagline}</div>
                 <div style={{ fontSize: 12, color: "#666", lineHeight: 1.5, marginTop: 4 }}>{lob.desc}</div>
@@ -291,7 +293,7 @@ export default function App() {
         <FadeIn>
           <div style={{ textAlign: "center", marginBottom: 60 }}>
             <div className="section-label" style={{ marginBottom: 12 }}>Membresía</div>
-            <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: "clamp(28px, 4vw, 42px)", fontWeight: 500, marginBottom: 8 }}>
+            <h2 style={{ fontFamily: FONT.headline, fontSize: "clamp(28px, 4vw, 42px)", fontWeight: 500, marginBottom: 8 }}>
               CNG+ — <span style={{ color: "#EF9F27" }}>$7 USD/mes</span>
             </h2>
             <p style={{ color: "#888", fontSize: 15, maxWidth: 480, margin: "0 auto" }}>
@@ -332,7 +334,7 @@ export default function App() {
         <FadeIn>
           <div style={{ textAlign: "center", marginBottom: 40 }}>
             <div className="section-label" style={{ marginBottom: 12 }}>Ejemplo real</div>
-            <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: "clamp(24px, 3.5vw, 36px)", fontWeight: 500, marginBottom: 8 }}>
+            <h2 style={{ fontFamily: FONT.headline, fontSize: "clamp(24px, 3.5vw, 36px)", fontWeight: 500, marginBottom: 8 }}>
               Invitas a 10 amigos, cada uno invita a 5
             </h2>
           </div>
@@ -410,7 +412,7 @@ export default function App() {
               <text x="25" y="20" textAnchor="middle" fontSize="10" fontWeight="bold" fill="#633806">C</text>
             </svg>
           </div>
-          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 32, fontWeight: 500, marginBottom: 12 }}>
+          <h2 style={{ fontFamily: FONT.headline, fontSize: 32, fontWeight: 500, marginBottom: 12 }}>
             1 Chillium = <span style={{ color: "#EF9F27" }}>1 USD</span>
           </h2>
           <p style={{ fontSize: 15, color: "#888", maxWidth: 450, margin: "0 auto", lineHeight: 1.7 }}>
@@ -422,7 +424,7 @@ export default function App() {
           <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 40, flexWrap: "wrap" }}>
             {LOBS.map((lob) => (
               <div key={lob.name} style={{ padding: "8px 16px", borderRadius: 50, background: lob.bgColor, border: `1px solid ${lob.color}30`, fontSize: 12, color: lob.lightColor, fontWeight: 500 }}>
-                {lob.icon} {lob.name}
+                <Icon name={lob.icon} size={14} style={{ verticalAlign: 'middle' }} /> {lob.name}
               </div>
             ))}
           </div>
@@ -436,7 +438,7 @@ export default function App() {
         <FadeIn>
           <div style={{ maxWidth: 500, margin: "0 auto" }}>
             <div style={{ fontSize: 13, color: "#666", marginBottom: 16, letterSpacing: 1 }}>ACCESO POR INVITACIÓN</div>
-            <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: "clamp(24px, 3.5vw, 36px)", fontWeight: 500, marginBottom: 16 }}>
+            <h2 style={{ fontFamily: FONT.headline, fontSize: "clamp(24px, 3.5vw, 36px)", fontWeight: 500, marginBottom: 16 }}>
               CNG+ es <span style={{ color: "#1D9E75" }}>exclusivo</span>
             </h2>
             <p style={{ fontSize: 14, color: "#888", lineHeight: 1.7, marginBottom: 32 }}>
