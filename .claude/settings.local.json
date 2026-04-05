@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(npx vite:*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(find '/c/Users/oscar/OneDrive/Desktop/Apps Oscar Jovani/chill-n-go-international/src' -type f -name *.jsx -o -name *.js)"
     ]
   }
 }

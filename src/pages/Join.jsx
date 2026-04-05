@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate, Link } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
+import RegistrationWizard from '../components/RegistrationWizard'
 
 export default function Join() {
   const [searchParams] = useSearchParams()
@@ -9,13 +9,8 @@ export default function Join() {
   const stepParam = searchParams.get('step')
   const emailParam = searchParams.get('email')
   const navigate = useNavigate()
-  const { signUp } = useAuth()
-
   const [step, setStep] = useState(1) // 1=payment, 2=register, 3=verify
   const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [name, setName] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [referrer, setReferrer] = useState(null)
@@ -139,34 +134,6 @@ export default function Join() {
     }
   }
 
-  async function handleRegister(e) {
-    e.preventDefault()
-    setError('')
-
-    if (password !== confirmPassword) {
-      setError('Las contraseñas no coinciden')
-      return
-    }
-    if (password.length < 6) {
-      setError('La contraseña debe tener al menos 6 caracteres')
-      return
-    }
-
-    setLoading(true)
-    try {
-      await signUp(email, password, refCode)
-      setStep(3)
-    } catch (err) {
-      if (err.message.includes('already registered')) {
-        setError('Este correo ya está registrado. Intenta iniciar sesión.')
-      } else {
-        setError(err.message)
-      }
-    } finally {
-      setLoading(false)
-    }
-  }
-
   return (
     <div style={styles.container}>
       <Link to="/" style={styles.backLink}>← Volver al inicio</Link>
@@ -217,10 +184,11 @@ export default function Join() {
               <div style={{fontSize:12, color:'#888', marginTop:6}}>Código: {referrer.ref_code}</div>
             </div>
 
-            <div style={{background:'rgba(239,159,39,0.06)', border:'1px solid rgba(239,159,39,0.15)', borderRadius:12, padding:16, marginBottom:24}}>
-              <div style={{fontSize:13, color:'#FAC775', fontWeight:500, marginBottom:8}}>Importante</div>
-              <div style={{fontSize:12, color:'#999', lineHeight:1.6}}>
-                Al aceptar esta invitación, {referrer.full_name || referrer.email.split('@')[0]} será tu referidor permanente dentro del ecosistema CNG+. Esta relación no se puede cambiar después. Solo se permite una cuenta por persona.
+            <div style={{background:'rgba(224,49,49,0.08)', border:'2px solid rgba(224,49,49,0.35)', borderRadius:12, padding:20, marginBottom:24, textAlign:'center'}}>
+              <div style={{fontSize:15, color:'#E24B4A', fontWeight:600, marginBottom:10, letterSpacing:1, textTransform:'uppercase'}}>Importante — Lee antes de continuar</div>
+              <div style={{width:40, height:2, background:'rgba(224,49,49,0.3)', margin:'0 auto 12px', borderRadius:1}}></div>
+              <div style={{fontSize:14, color:'#F09595', lineHeight:1.7}}>
+                Al aceptar esta invitación, <strong style={{color:'#F7C1C1'}}>{referrer.full_name || referrer.email.split('@')[0]}</strong> será tu referidor permanente dentro del ecosistema CNG+. Esta relación no se puede cambiar después. Solo se permite una cuenta por persona.
               </div>
             </div>
 
@@ -248,9 +216,11 @@ export default function Join() {
               <div style={styles.priceName}>CNG+</div>
               <div style={styles.priceAmount}>
                 <span style={styles.priceCurrency}>$</span>
-                <span style={styles.priceNumber}>7</span>
+                <span style={styles.priceNumber}>10</span>
                 <span style={styles.pricePeriod}>/mes</span>
               </div>
+              <div style={{fontSize: 12, color: '#888', marginTop: 4, textAlign: 'center'}}>Primer mes $10 USD (incluye activación y verificación)</div>
+              <div style={{fontSize: 12, color: '#5DCAA5', textAlign: 'center', marginBottom: 8}}>Después $7 USD/mes</div>
               <div style={styles.priceFeatures}>
                 <div style={styles.priceFeature}>50% cashback en Chilliums</div>
                 <div style={styles.priceFeature}>35% de compras de referidos</div>
@@ -267,10 +237,10 @@ export default function Join() {
               </div>
 
               <button onClick={handlePayment} style={{...styles.button, marginTop:16}} disabled={loading}>
-                {loading ? 'Procesando...' : 'Pagar $7 USD/mes'}
+                {loading ? 'Procesando...' : 'Pagar $10 USD (primer mes)'}
               </button>
 
-              <p style={{fontSize:11, color:'#666', textAlign:'center', marginTop:12}}>Pago seguro con Stripe. Cancela cuando quieras.</p>
+              <p style={{fontSize:11, color:'#666', textAlign:'center', marginTop:12}}>Pago seguro con Stripe. Primer mes $10, después $7/mes. Cancela cuando quieras.</p>
             </div>
           </>
         )}
@@ -278,59 +248,18 @@ export default function Join() {
         {/* STEP 2: Register */}
         {step === 2 && (
           <>
-            <div style={styles.successBadge}>Pago confirmado</div>
-            <h1 style={styles.title}>Crea tu cuenta</h1>
-            <p style={styles.subtitle}>Solo falta registrarte y verificar tu correo</p>
+            <div style={{...styles.refBadge, background:'rgba(29,158,117,0.1)', borderColor:'rgba(29,158,117,0.3)', color:'#5DCAA5'}}>
+              Invitado por: {referrer?.full_name || referrer?.email?.split('@')[0] || refCode}
+            </div>
 
-            {error && <div style={styles.error}>{error}</div>}
-
-            <form onSubmit={handleRegister} style={styles.form}>
-              <div style={styles.field}>
-                <label style={styles.label}>Nombre completo (como aparece en tu identificación oficial)</label>
-                <input type="text" value={name} onChange={(e) => setName(e.target.value)} style={styles.input} placeholder="Nombre(s) y Apellido(s)" required />
-                <span style={{fontSize:11, color:'#666', marginTop:4, display:'block'}}>Este nombre no podrá ser modificado después del registro</span>
-              </div>
-
-              <div style={styles.field}>
-                <label style={styles.label}>Correo electrónico</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  style={styles.input}
-                  placeholder="tu@email.com"
-                  required
-                />
-              </div>
-
-              <div style={styles.field}>
-                <label style={styles.label}>Contraseña</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  style={styles.input}
-                  placeholder="Mínimo 6 caracteres"
-                  required
-                />
-              </div>
-
-              <div style={styles.field}>
-                <label style={styles.label}>Confirmar contraseña</label>
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  style={styles.input}
-                  placeholder="Repite tu contraseña"
-                  required
-                />
-              </div>
-
-              <button type="submit" style={styles.button} disabled={loading}>
-                {loading ? 'Creando cuenta...' : 'Crear cuenta'}
-              </button>
-            </form>
+            <RegistrationWizard
+              email={email}
+              refCode={refCode}
+              referrerName={referrer?.full_name || referrer?.email?.split('@')[0] || refCode}
+              onComplete={(registeredEmail) => {
+                setStep(3)
+              }}
+            />
           </>
         )}
 
