@@ -240,7 +240,7 @@ function DemoPost() {
   )
 }
 
-function PostCard({ post, currentUserId, onLike, onBookmark, onComment, onShare }) {
+function PostCard({ post, currentUserId, onLike, onBookmark, onComment, onShare, onFollow }) {
   const member = post.cng_members
   const displayName = member?.full_name || member?.ref_code || 'Member'
   const initial = displayName[0]?.toUpperCase() || 'M'
@@ -332,9 +332,13 @@ function PostCard({ post, currentUserId, onLike, onBookmark, onComment, onShare 
               <div style={{ width: '100%', height: '100%', background: 'linear-gradient(135deg, #1D9E75, #0F6E56)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 700, color: '#fff', fontFamily: FONT.headline }}>{initial}</div>
             )}
           </div>
-          <div style={{ position: 'absolute', bottom: -8, left: '50%', transform: 'translateX(-50%)', width: 20, height: 20, background: 'linear-gradient(135deg, #1D9E75, #0F6E56)', borderRadius: 99, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #0D1117' }}>
-            <Icon name="add" size={12} style={{ color: '#fff' }} />
-          </div>
+          {post.cng_members?.user_id !== currentUserId && (
+            <div
+              onClick={(e) => { e.stopPropagation(); onFollow(post) }}
+              style={{ position: 'absolute', bottom: -8, left: '50%', transform: 'translateX(-50%)', width: 20, height: 20, background: post._followed ? '#E24B4A' : 'linear-gradient(135deg, #1D9E75, #0F6E56)', borderRadius: 99, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #0D1117', cursor: 'pointer', transition: 'background 0.2s' }}>
+              <Icon name={post._followed ? 'check' : 'add'} size={12} style={{ color: '#fff' }} />
+            </div>
+          )}
         </div>
 
         {/* Like */}
@@ -398,7 +402,7 @@ export default function FeedScreen() {
     try {
       const { data: postsData, error } = await supabase
         .from('cng_posts')
-        .select('*, cng_members!cng_posts_member_id_fkey(full_name, ref_code, avatar_url)')
+        .select('*, cng_members!cng_posts_member_id_fkey(user_id, full_name, ref_code, avatar_url)')
         .eq('is_active', true)
         .order('created_at', { ascending: false })
         .limit(20)
@@ -406,20 +410,26 @@ export default function FeedScreen() {
       if (error) throw error
       if (!postsData || postsData.length === 0) { setPosts([]); setLoading(false); return }
 
-      // Fetch user's likes and bookmarks
+      // Fetch user's likes, bookmarks, and follows
       const postIds = postsData.map(p => p.id)
-      const [likesRes, bookmarksRes] = await Promise.all([
+      const authorIds = [...new Set(postsData.map(p => p.cng_members?.user_id).filter(Boolean))]
+      const [likesRes, bookmarksRes, followsRes] = await Promise.all([
         supabase.from('cng_post_likes').select('post_id').eq('user_id', user.id).in('post_id', postIds),
         supabase.from('cng_post_bookmarks').select('post_id').eq('user_id', user.id).in('post_id', postIds),
+        authorIds.length > 0
+          ? supabase.from('cng_follows').select('following_id').eq('follower_id', user.id).in('following_id', authorIds)
+          : { data: [] },
       ])
 
       const likedSet = new Set((likesRes.data || []).map(l => l.post_id))
       const bookmarkedSet = new Set((bookmarksRes.data || []).map(b => b.post_id))
+      const followedSet = new Set((followsRes.data || []).map(f => f.following_id))
 
       setPosts(postsData.map(p => ({
         ...p,
         _liked: likedSet.has(p.id),
         _bookmarked: bookmarkedSet.has(p.id),
+        _followed: followedSet.has(p.cng_members?.user_id),
       })))
     } catch (e) {
       console.error('Error fetching posts:', e)
@@ -475,6 +485,32 @@ export default function FeedScreen() {
     } catch (e) {
       console.error('Bookmark error:', e)
       setPosts(prev => prev.map(p => p.id === post.id ? { ...p, _bookmarked: wasBookmarked } : p))
+    }
+  }
+
+  const handleFollow = async (post) => {
+    if (!user) return
+    const authorId = post.cng_members?.user_id
+    if (!authorId || authorId === user.id) return
+    const wasFollowed = post._followed
+    // Optimistic update — toggle all posts by same author
+    setPosts(prev => prev.map(p =>
+      p.cng_members?.user_id === authorId ? { ...p, _followed: !wasFollowed } : p
+    ))
+    try {
+      if (wasFollowed) {
+        const { error } = await supabase.from('cng_follows').delete().eq('follower_id', user.id).eq('following_id', authorId)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('cng_follows').insert({ follower_id: user.id, following_id: authorId })
+        if (error) throw error
+      }
+    } catch (e) {
+      console.error('Follow error:', e)
+      // Revert
+      setPosts(prev => prev.map(p =>
+        p.cng_members?.user_id === authorId ? { ...p, _followed: wasFollowed } : p
+      ))
     }
   }
 
@@ -546,6 +582,7 @@ export default function FeedScreen() {
             onBookmark={handleBookmark}
             onComment={handleComment}
             onShare={handleShare}
+            onFollow={handleFollow}
           />
         </div>
       ))}

@@ -176,6 +176,7 @@ function NewMessageModal({ open, onClose, onSelectConversation, user }) {
           {results.map((m) => (
             <div
               key={m.user_id}
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => handleSelect(m)}
               style={{
                 display: 'flex', alignItems: 'center', gap: 14,
