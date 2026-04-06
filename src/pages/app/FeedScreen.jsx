@@ -12,12 +12,28 @@ function CommentsPanel({ post, userId, onClose, onCountUpdate }) {
   const listRef = useRef(null)
 
   const fetchComments = useCallback(async () => {
-    const { data } = await supabase
+    const { data: rawComments } = await supabase
       .from('cng_post_comments')
-      .select('*, cng_members(full_name, ref_code, avatar_url)')
+      .select('*')
       .eq('post_id', post.id)
       .order('created_at', { ascending: true })
-    setComments(data || [])
+
+    if (!rawComments || rawComments.length === 0) {
+      setComments([])
+      setLoading(false)
+      return
+    }
+
+    const userIds = [...new Set(rawComments.map(c => c.user_id))]
+    const { data: members } = await supabase
+      .from('cng_members')
+      .select('user_id, full_name, ref_code, avatar_url')
+      .in('user_id', userIds)
+
+    const memberMap = {}
+    ;(members || []).forEach(m => { memberMap[m.user_id] = m })
+
+    setComments(rawComments.map(c => ({ ...c, cng_members: memberMap[c.user_id] || {} })))
     setLoading(false)
   }, [post.id])
 
@@ -237,7 +253,7 @@ function PostCard({ post, currentUserId, onLike, onBookmark, onComment, onShare 
       {post.media_url ? (
         <div style={{ position: 'absolute', inset: 0 }}>
           {post.media_type === 'video' ? (
-            <video src={post.media_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} autoPlay muted loop playsInline />
+            <video src={post.media_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} autoPlay loop playsInline controls />
           ) : (
             <img src={post.media_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           )}

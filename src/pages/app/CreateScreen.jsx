@@ -109,7 +109,7 @@ export default function CreateScreen({ onDone }) {
         {preview ? (
           <>
             {isVideo ? (
-              <video src={preview} style={{ width: '100%', height: '100%', objectFit: 'cover' }} autoPlay muted loop playsInline />
+              <video src={preview} style={{ width: '100%', height: '100%', objectFit: 'cover' }} autoPlay loop playsInline controls />
             ) : (
               <img src={preview} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             )}
