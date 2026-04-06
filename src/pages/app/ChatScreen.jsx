@@ -8,6 +8,115 @@ function timeFormat(dateStr) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
+/* ── Reactions localStorage helper ────────────────────────────── */
+const REACTION_EMOJIS = ['❤️', '😂', '😮', '😢', '🔥', '👍']
+
+function getReactions(messageId) {
+  try {
+    const all = JSON.parse(localStorage.getItem('cng_reactions') || '{}')
+    return all[messageId] || {}
+  } catch { return {} }
+}
+
+function setReaction(messageId, userId, emoji) {
+  try {
+    const all = JSON.parse(localStorage.getItem('cng_reactions') || '{}')
+    if (!all[messageId]) all[messageId] = {}
+    if (all[messageId][userId] === emoji) {
+      delete all[messageId][userId] // toggle off
+    } else {
+      all[messageId][userId] = emoji
+    }
+    if (Object.keys(all[messageId]).length === 0) delete all[messageId]
+    localStorage.setItem('cng_reactions', JSON.stringify(all))
+  } catch { /* noop */ }
+}
+
+function aggregateReactions(reactions) {
+  const counts = {}
+  Object.values(reactions).forEach(emoji => {
+    counts[emoji] = (counts[emoji] || 0) + 1
+  })
+  return counts
+}
+
+/* ── Sticker grid ─────────────────────────────────────────────── */
+const STICKER_EMOJIS = [
+  '😀', '😂', '🥰', '😎', '🔥', '❤️', '👍', '👏', '🎉', '💯',
+  '🤔', '😱', '💪', '🙏', '✨', '🌟', '😍', '🤩', '💀', '👀',
+  '🏖️', '✈️', '🏠', '🍽️', '💰', '🎶', '🚀', '💎', '🌴', '🎊',
+]
+
+/* ── Popup shell ──────────────────────────────────────────────── */
+const POPUP_STYLE = {
+  position: 'absolute',
+  background: C.surface,
+  border: `1px solid ${C.outlineVariant}`,
+  borderRadius: 16,
+  backdropFilter: 'blur(16px)',
+  WebkitBackdropFilter: 'blur(16px)',
+  boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
+  zIndex: 100,
+}
+
+/* ── Voice duration formatter ─────────────────────────────────── */
+function fmtDuration(s) {
+  const m = Math.floor(s / 60)
+  const sec = Math.floor(s % 60)
+  return `${m}:${sec.toString().padStart(2, '0')}`
+}
+
+/* ── VoicePlayer component ────────────────────────────────────── */
+function VoicePlayer({ url, isMine }) {
+  const audioRef = useRef(null)
+  const [playing, setPlaying] = useState(false)
+  const [duration, setDuration] = useState(0)
+  const [current, setCurrent] = useState(0)
+
+  useEffect(() => {
+    const a = audioRef.current
+    if (!a) return
+    const onMeta = () => setDuration(a.duration || 0)
+    const onTime = () => setCurrent(a.currentTime)
+    const onEnd = () => { setPlaying(false); setCurrent(0) }
+    a.addEventListener('loadedmetadata', onMeta)
+    a.addEventListener('timeupdate', onTime)
+    a.addEventListener('ended', onEnd)
+    return () => {
+      a.removeEventListener('loadedmetadata', onMeta)
+      a.removeEventListener('timeupdate', onTime)
+      a.removeEventListener('ended', onEnd)
+    }
+  }, [])
+
+  const toggle = () => {
+    const a = audioRef.current
+    if (!a) return
+    if (playing) { a.pause(); setPlaying(false) }
+    else { a.play(); setPlaying(true) }
+  }
+
+  const pct = duration ? (current / duration) * 100 : 0
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 180 }}>
+      <audio ref={audioRef} src={url} preload="metadata" />
+      <div onClick={toggle} style={{ width: 32, height: 32, borderRadius: 99, background: isMine ? 'rgba(255,255,255,0.2)' : C.primaryDark, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+        <Icon name={playing ? 'pause' : 'play_arrow'} size={18} style={{ color: '#fff' }} />
+      </div>
+      <div style={{ flex: 1 }}>
+        <div style={{ height: 4, borderRadius: 2, background: isMine ? 'rgba(255,255,255,0.2)' : C.surfaceHighest, overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: `${pct}%`, background: isMine ? '#fff' : C.primary, borderRadius: 2, transition: 'width 0.1s' }} />
+        </div>
+        <p style={{ fontSize: 10, color: isMine ? 'rgba(255,255,255,0.6)' : C.textFaint, marginTop: 3 }}>
+          {playing ? fmtDuration(current) : fmtDuration(duration)}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+/* ════════════════════════════════════════════════════════════════ */
 export default function ChatScreen({ conversationId, onBack }) {
   const { user } = useAuth()
   const [messages, setMessages] = useState([])
@@ -17,14 +126,36 @@ export default function ChatScreen({ conversationId, onBack }) {
   const [sending, setSending] = useState(false)
   const bottomRef = useRef(null)
 
+  // Reactions
+  const [reactionPopup, setReactionPopup] = useState(null)     // messageId
+  const [, forceReactions] = useState(0)                       // trigger re-render
+  const longPressTimer = useRef(null)
+
+  // Sticker picker
+  const [showStickers, setShowStickers] = useState(false)
+
+  // Media upload
+  const fileInputRef = useRef(null)
+  const [uploading, setUploading] = useState(false)
+
+  // Voice recording
+  const [recording, setRecording] = useState(false)
+  const [micSupported, setMicSupported] = useState(true)
+  const mediaRecorderRef = useRef(null)
+  const chunksRef = useRef([])
+
+  useEffect(() => {
+    if (!navigator.mediaDevices?.getUserMedia) setMicSupported(false)
+  }, [])
+
   const scrollToBottom = () => {
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
   }
 
+  /* ── Fetch messages ─────────────────────────────────────────── */
   const fetchMessages = useCallback(async () => {
     if (!conversationId || !user) return
     try {
-      // Get messages
       const { data: msgs, error } = await supabase
         .from('cng_messages')
         .select('*')
@@ -35,7 +166,6 @@ export default function ChatScreen({ conversationId, onBack }) {
       if (error) throw error
       setMessages(msgs || [])
 
-      // Get other user info
       const { data: members } = await supabase
         .from('cng_conversation_members')
         .select('user_id')
@@ -51,7 +181,6 @@ export default function ChatScreen({ conversationId, onBack }) {
         if (member) setOtherUser(member)
       }
 
-      // Mark as read
       await supabase
         .from('cng_conversation_members')
         .update({ unread_count: 0, last_read_at: new Date().toISOString() })
@@ -68,7 +197,7 @@ export default function ChatScreen({ conversationId, onBack }) {
 
   useEffect(() => { fetchMessages() }, [fetchMessages])
 
-  // Realtime subscription
+  /* ── Realtime ───────────────────────────────────────────────── */
   useEffect(() => {
     if (!conversationId) return
     const channel = supabase
@@ -80,12 +209,10 @@ export default function ChatScreen({ conversationId, onBack }) {
         filter: 'conversation_id=eq.' + conversationId,
       }, (payload) => {
         setMessages(prev => {
-          // Guard against duplicate messages (realtime + optimistic)
           if (prev.some(m => m.id === payload.new.id)) return prev
           return [...prev, payload.new]
         })
         scrollToBottom()
-        // Mark as read if it's from the other user
         if (payload.new.sender_id !== user?.id) {
           supabase
             .from('cng_conversation_members')
@@ -100,30 +227,166 @@ export default function ChatScreen({ conversationId, onBack }) {
     return () => { supabase.removeChannel(channel) }
   }, [conversationId, user])
 
-  const handleSend = async () => {
-    if (!text.trim() || !user || sending) return
-    const content = text.trim()
-    setText('')
+  /* ── Close popups on outside click ──────────────────────────── */
+  useEffect(() => {
+    if (!reactionPopup && !showStickers) return
+    const handler = () => { setReactionPopup(null); setShowStickers(false) }
+    const timer = setTimeout(() => document.addEventListener('click', handler), 0)
+    return () => { clearTimeout(timer); document.removeEventListener('click', handler) }
+  }, [reactionPopup, showStickers])
+
+  /* ── Send text ──────────────────────────────────────────────── */
+  const handleSend = async (content, type = 'text') => {
+    const val = typeof content === 'string' ? content : text
+    if (!val.trim() || !user || sending) return
+    const trimmed = val.trim()
+    if (type === 'text') setText('')
     setSending(true)
 
     try {
       const { error } = await supabase.from('cng_messages').insert({
         conversation_id: conversationId,
         sender_id: user.id,
-        content,
-        message_type: 'text',
+        content: trimmed,
+        message_type: type,
       })
       if (error) throw error
     } catch (e) {
       console.error('Send error:', e)
-      setText(content) // restore
+      if (type === 'text') setText(trimmed)
     } finally {
       setSending(false)
     }
   }
 
+  /* ── Send media (image/video) ───────────────────────────────── */
+  const handleFileSelect = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file || !user) return
+    e.target.value = ''
+    setUploading(true)
+
+    try {
+      const ext = file.name.split('.').pop()
+      const path = `messages/${conversationId}/${Date.now()}-${file.name}`
+      const { error: upErr } = await supabase.storage
+        .from('cng-media')
+        .upload(path, file, { contentType: file.type })
+      if (upErr) throw upErr
+
+      const { data: urlData } = supabase.storage
+        .from('cng-media')
+        .getPublicUrl(path)
+
+      const isVideo = file.type.startsWith('video/')
+      const msgType = isVideo ? 'video' : 'image'
+
+      const { error } = await supabase.from('cng_messages').insert({
+        conversation_id: conversationId,
+        sender_id: user.id,
+        content: urlData.publicUrl,
+        message_type: msgType,
+        media_url: urlData.publicUrl,
+      })
+      if (error) throw error
+    } catch (e) {
+      console.error('Upload error:', e)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  /* ── Voice record ───────────────────────────────────────────── */
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mr = new MediaRecorder(stream, { mimeType: 'audio/webm' })
+      chunksRef.current = []
+      mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data) }
+      mr.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop())
+        const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
+        if (blob.size < 1000) return // too short
+        setUploading(true)
+        try {
+          const path = `messages/${conversationId}/voice-${Date.now()}.webm`
+          const { error: upErr } = await supabase.storage
+            .from('cng-media')
+            .upload(path, blob, { contentType: 'audio/webm' })
+          if (upErr) throw upErr
+          const { data: urlData } = supabase.storage
+            .from('cng-media')
+            .getPublicUrl(path)
+          const { error } = await supabase.from('cng_messages').insert({
+            conversation_id: conversationId,
+            sender_id: user.id,
+            content: '🎙️ Voice message',
+            message_type: 'voice',
+            media_url: urlData.publicUrl,
+          })
+          if (error) throw error
+        } catch (e) {
+          console.error('Voice upload error:', e)
+        } finally {
+          setUploading(false)
+        }
+      }
+      mr.start()
+      mediaRecorderRef.current = mr
+      setRecording(true)
+    } catch (e) {
+      console.error('Mic access denied:', e)
+      setMicSupported(false)
+    }
+  }
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop()
+    }
+    setRecording(false)
+  }
+
+  /* ── Reaction handlers ──────────────────────────────────────── */
+  const handleMsgPointerDown = (msgId) => {
+    longPressTimer.current = setTimeout(() => setReactionPopup(msgId), 500)
+  }
+  const handleMsgPointerUp = () => {
+    clearTimeout(longPressTimer.current)
+  }
+  const handleMsgDoubleClick = (msgId) => {
+    setReactionPopup(msgId)
+  }
+  const handleReact = (msgId, emoji) => {
+    setReaction(msgId, user.id, emoji)
+    setReactionPopup(null)
+    forceReactions(x => x + 1)
+  }
+
+  /* ── Sticker send ───────────────────────────────────────────── */
+  const sendSticker = (emoji) => {
+    setShowStickers(false)
+    handleSend(emoji, 'text')
+  }
+
   const displayName = otherUser?.full_name || otherUser?.ref_code || 'Chat'
   const initial = displayName[0]?.toUpperCase() || 'C'
+
+  /* ── Render message content ─────────────────────────────────── */
+  const renderContent = (msg, isMine) => {
+    const url = msg.media_url || msg.content
+
+    if (msg.message_type === 'image') {
+      return <img src={url} alt="" style={{ maxWidth: 250, width: '100%', borderRadius: 12, display: 'block' }} />
+    }
+    if (msg.message_type === 'video') {
+      return <video src={url} controls style={{ maxWidth: 250, width: '100%', borderRadius: 12, display: 'block' }} />
+    }
+    if (msg.message_type === 'voice') {
+      return <VoicePlayer url={url} isMine={isMine} />
+    }
+    return <p style={{ fontSize: 14, fontFamily: FONT.body, lineHeight: 1.5, wordBreak: 'break-word' }}>{msg.content}</p>
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -164,29 +427,168 @@ export default function ChatScreen({ conversationId, onBack }) {
 
         {messages.map((msg) => {
           const isMine = msg.sender_id === user?.id
+          const reactions = getReactions(msg.id)
+          const counts = aggregateReactions(reactions)
+          const hasReactions = Object.keys(counts).length > 0
+
           return (
-            <div key={msg.id} style={{ display: 'flex', justifyContent: isMine ? 'flex-end' : 'flex-start' }}>
-              <div style={{
-                maxWidth: '75%',
-                padding: '12px 16px',
-                borderRadius: 16,
-                borderBottomRightRadius: isMine ? 4 : 16,
-                borderBottomLeftRadius: isMine ? 16 : 4,
-                background: isMine ? GRADIENT.primary : C.surfaceHigh,
-                color: isMine ? '#fff' : C.text,
-              }}>
-                <p style={{ fontSize: 14, fontFamily: FONT.body, lineHeight: 1.5, wordBreak: 'break-word' }}>{msg.content}</p>
-                <p style={{ fontSize: 10, color: isMine ? 'rgba(255,255,255,0.6)' : C.textFaint, marginTop: 4, textAlign: 'right' }}>{timeFormat(msg.created_at)}</p>
+            <div key={msg.id} style={{ display: 'flex', flexDirection: 'column', alignItems: isMine ? 'flex-end' : 'flex-start' }}>
+              <div
+                style={{ position: 'relative', maxWidth: '75%' }}
+                onPointerDown={() => handleMsgPointerDown(msg.id)}
+                onPointerUp={handleMsgPointerUp}
+                onPointerLeave={handleMsgPointerUp}
+                onDoubleClick={() => handleMsgDoubleClick(msg.id)}
+              >
+                <div style={{
+                  padding: msg.message_type === 'image' || msg.message_type === 'video' ? 4 : '12px 16px',
+                  borderRadius: 16,
+                  borderBottomRightRadius: isMine ? 4 : 16,
+                  borderBottomLeftRadius: isMine ? 16 : 4,
+                  background: isMine ? GRADIENT.primary : C.surfaceHigh,
+                  color: isMine ? '#fff' : C.text,
+                }}>
+                  {renderContent(msg, isMine)}
+                  <p style={{ fontSize: 10, color: isMine ? 'rgba(255,255,255,0.6)' : C.textFaint, marginTop: 4, textAlign: 'right', padding: msg.message_type === 'image' || msg.message_type === 'video' ? '0 8px 4px' : 0 }}>{timeFormat(msg.created_at)}</p>
+                </div>
+
+                {/* Reaction popup */}
+                {reactionPopup === msg.id && (
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      ...POPUP_STYLE,
+                      bottom: '100%',
+                      [isMine ? 'right' : 'left']: 0,
+                      marginBottom: 8,
+                      padding: '8px 12px',
+                      display: 'flex',
+                      gap: 8,
+                    }}
+                  >
+                    {REACTION_EMOJIS.map(em => (
+                      <span
+                        key={em}
+                        onClick={() => handleReact(msg.id, em)}
+                        style={{ fontSize: 22, cursor: 'pointer', transition: 'transform 0.15s' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.3)' }}
+                        onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)' }}
+                      >
+                        {em}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
+
+              {/* Reaction pills */}
+              {hasReactions && (
+                <div style={{ display: 'flex', gap: 4, marginTop: 2, paddingLeft: isMine ? 0 : 4, paddingRight: isMine ? 4 : 0 }}>
+                  {Object.entries(counts).map(([emoji, count]) => (
+                    <span
+                      key={emoji}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 3,
+                        fontSize: 12,
+                        background: C.surfaceHigh,
+                        border: `1px solid ${C.outlineVariant}`,
+                        borderRadius: 99,
+                        padding: '2px 8px',
+                        color: C.text,
+                        cursor: 'pointer',
+                      }}
+                      onClick={() => handleReact(msg.id, emoji)}
+                    >
+                      {emoji} {count > 1 && <span style={{ fontSize: 10, color: C.textDim }}>{count}</span>}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           )
         })}
         <div ref={bottomRef} />
       </div>
 
-      {/* Input */}
-      <div style={{ padding: '8px 16px 16px', ...GLASS_NAV, borderTop: '1px solid rgba(241,239,232,0.08)', display: 'flex', alignItems: 'center', gap: 12 }}>
-        <Icon name="add" size={24} style={{ color: C.textDim, cursor: 'pointer', flexShrink: 0 }} />
+      {/* Upload indicator */}
+      {uploading && (
+        <div style={{ padding: '6px 16px', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ width: 16, height: 16, border: '2px solid rgba(104,219,174,0.3)', borderTopColor: C.primary, borderRadius: 99, animation: 'spin 0.8s linear infinite' }} />
+          <span style={{ fontSize: 12, color: C.textDim, fontFamily: FONT.body }}>Uploading...</span>
+        </div>
+      )}
+
+      {/* Recording indicator */}
+      {recording && (
+        <div style={{ padding: '6px 16px', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ width: 8, height: 8, borderRadius: 99, background: C.errorBright, animation: 'pulse 1s infinite' }} />
+          <span style={{ fontSize: 12, color: C.errorBright, fontFamily: FONT.body }}>Recording...</span>
+          <style>{`@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.3 } }`}</style>
+        </div>
+      )}
+
+      {/* Sticker picker popup */}
+      {showStickers && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            ...POPUP_STYLE,
+            position: 'absolute',
+            bottom: 80,
+            left: 16,
+            right: 16,
+            padding: 16,
+            display: 'grid',
+            gridTemplateColumns: 'repeat(6, 1fr)',
+            gap: 8,
+            maxHeight: 220,
+            overflowY: 'auto',
+          }}
+        >
+          {STICKER_EMOJIS.map(em => (
+            <span
+              key={em}
+              onClick={() => sendSticker(em)}
+              style={{ fontSize: 28, textAlign: 'center', cursor: 'pointer', padding: 4, borderRadius: 8, transition: 'background 0.15s' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = C.surfaceHigh }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+            >
+              {em}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*,video/*"
+        style={{ display: 'none' }}
+        onChange={handleFileSelect}
+      />
+
+      {/* Input bar */}
+      <div style={{ padding: '8px 16px 16px', ...GLASS_NAV, borderTop: '1px solid rgba(241,239,232,0.08)', display: 'flex', alignItems: 'center', gap: 8 }}>
+        {/* Attach */}
+        <div
+          onClick={() => fileInputRef.current?.click()}
+          style={{ width: 36, height: 36, borderRadius: 99, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+        >
+          <Icon name="attach_file" size={22} style={{ color: C.textDim }} />
+        </div>
+
+        {/* Stickers */}
+        <div
+          onClick={(e) => { e.stopPropagation(); setShowStickers(v => !v) }}
+          style={{ width: 36, height: 36, borderRadius: 99, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+        >
+          <Icon name="emoji_emotions" size={22} style={{ color: showStickers ? C.primary : C.textDim }} />
+        </div>
+
+        {/* Text input */}
         <div style={{ flex: 1, position: 'relative' }}>
           <input
             placeholder="Type a message..."
@@ -206,23 +608,62 @@ export default function ChatScreen({ conversationId, onBack }) {
             }}
           />
         </div>
-        <div
-          onClick={handleSend}
-          style={{
-            width: 40,
-            height: 40,
-            borderRadius: 99,
-            background: text.trim() ? GRADIENT.primary : C.surfaceHigh,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: text.trim() ? 'pointer' : 'default',
-            flexShrink: 0,
-            transition: 'all 0.2s',
-          }}
-        >
-          <Icon name="send" size={20} style={{ color: text.trim() ? '#fff' : C.textFaint }} />
-        </div>
+
+        {/* Mic / Send */}
+        {text.trim() ? (
+          <div
+            onClick={() => handleSend()}
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 99,
+              background: GRADIENT.primary,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              flexShrink: 0,
+              transition: 'all 0.2s',
+            }}
+          >
+            <Icon name="send" size={20} style={{ color: '#fff' }} />
+          </div>
+        ) : micSupported ? (
+          <div
+            onClick={recording ? stopRecording : startRecording}
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 99,
+              background: recording ? C.errorBright : C.surfaceHigh,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              flexShrink: 0,
+              transition: 'all 0.2s',
+            }}
+          >
+            <Icon name={recording ? 'stop' : 'mic'} size={20} style={{ color: recording ? '#fff' : C.textDim }} />
+          </div>
+        ) : (
+          <div
+            onClick={() => handleSend()}
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 99,
+              background: C.surfaceHigh,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'default',
+              flexShrink: 0,
+            }}
+          >
+            <Icon name="send" size={20} style={{ color: C.textFaint }} />
+          </div>
+        )}
       </div>
     </div>
   )
