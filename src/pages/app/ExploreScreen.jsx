@@ -52,7 +52,10 @@ export default function ExploreScreen({ onNavigate, isDesktop }) {
         .order('likes_count', { ascending: false })
         .limit(5)
 
-      if (!tErr) setTrending(trendingPosts || [])
+      if (!tErr) {
+        console.log('[Explore] trending posts:', trendingPosts?.map(p => ({ id: p.id, media_url: p.media_url, media_type: p.media_type, thumbnail_url: p.thumbnail_url })))
+        setTrending(trendingPosts || [])
+      }
     } catch (e) {
       console.error('Explore error:', e)
     } finally {
@@ -106,7 +109,16 @@ export default function ExploreScreen({ onNavigate, isDesktop }) {
               trending.map((post) => (
                 <div key={post.id} style={{ flexShrink: 0, width: 288, background: C.surfaceLow, borderRadius: 16, overflow: 'hidden' }}>
                   <div style={{ height: 160, position: 'relative', background: C.surfaceHigh }}>
-                    {post.media_url ? (
+                    {post.media_url && post.media_type === 'video' ? (
+                      post.thumbnail_url ? (
+                        <img src={post.thumbnail_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        <div style={{ width: '100%', height: '100%', background: 'linear-gradient(135deg, rgba(29,158,117,0.3), rgba(13,17,23,0.8))', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                          <Icon name="videocam" size={36} style={{ color: C.textFaint }} />
+                          {post.caption && <p style={{ fontSize: 10, color: C.textDim, textAlign: 'center', padding: '0 12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{post.caption}</p>}
+                        </div>
+                      )
+                    ) : post.media_url ? (
                       <img src={post.media_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     ) : (
                       <div style={{ width: '100%', height: '100%', background: 'linear-gradient(135deg, rgba(29,158,117,0.3), rgba(13,17,23,0.8))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

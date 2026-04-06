@@ -26,11 +26,12 @@ export default function ProfileScreen({ onNavigate }) {
         supabase.from('cng_posts').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('is_active', true),
         supabase.from('cng_follows').select('id', { count: 'exact', head: true }).eq('following_id', user.id),
         supabase.from('cng_follows').select('id', { count: 'exact', head: true }).eq('follower_id', user.id),
-        supabase.from('cng_posts').select('id, media_url, thumbnail_url, media_type').eq('user_id', user.id).eq('is_active', true).order('created_at', { ascending: false }).limit(12),
+        supabase.from('cng_posts').select('id, media_url, thumbnail_url, media_type, caption').eq('user_id', user.id).eq('is_active', true).order('created_at', { ascending: false }).limit(12),
       ])
       setPostCount(postsRes.count || 0)
       setFollowersCount(followersRes.count || 0)
       setFollowingCount(followingRes.count || 0)
+      console.log('[Profile] user posts:', userPostsRes.data?.map(p => ({ id: p.id, media_url: p.media_url, media_type: p.media_type, thumbnail_url: p.thumbnail_url })))
       setUserPosts(userPostsRes.data || [])
     } catch (e) {
       console.error('Error fetching profile stats:', e)
@@ -164,10 +165,17 @@ export default function ProfileScreen({ onNavigate }) {
               <div key={p.id} style={{ position: 'relative', paddingBottom: '100%', background: C.surfaceHigh, overflow: 'hidden' }}>
                 {p.media_url ? (
                   p.media_type === 'video' ? (
-                    <>
-                      <img src={p.thumbnail_url || p.media_url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
-                      <div style={{ position: 'absolute', top: 8, right: 8 }}><Icon name="videocam" size={16} style={{ color: '#fff' }} /></div>
-                    </>
+                    p.thumbnail_url ? (
+                      <>
+                        <img src={p.thumbnail_url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                        <div style={{ position: 'absolute', top: 8, right: 8 }}><Icon name="videocam" size={16} style={{ color: '#fff' }} /></div>
+                      </>
+                    ) : (
+                      <div style={{ position: 'absolute', inset: 0, background: '#1a1e26', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                        <Icon name="videocam" size={24} style={{ color: C.textFaint }} />
+                        {p.caption && <p style={{ fontSize: 8, color: C.textDim, textAlign: 'center', padding: '0 6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{p.caption}</p>}
+                      </div>
+                    )
                   ) : (
                     <img src={p.media_url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
                   )
