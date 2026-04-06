@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { C, FONT, Icon, GRADIENT, GLASS_NAV } from '../../stitch'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
@@ -50,12 +50,12 @@ const STICKER_EMOJIS = [
 /* ── Popup shell ──────────────────────────────────────────────── */
 const POPUP_STYLE = {
   position: 'absolute',
-  background: C.surface,
-  border: `1px solid ${C.outlineVariant}`,
+  background: 'rgba(13,17,23,0.95)',
+  border: '1px solid rgba(241,239,232,0.1)',
   borderRadius: 16,
-  backdropFilter: 'blur(16px)',
-  WebkitBackdropFilter: 'blur(16px)',
-  boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
+  backdropFilter: 'blur(20px)',
+  WebkitBackdropFilter: 'blur(20px)',
+  boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
   zIndex: 100,
 }
 
@@ -133,8 +133,22 @@ export default function ChatScreen({ conversationId, onBack }) {
 
   // Reactions
   const [reactionPopup, setReactionPopup] = useState(null)     // messageId
+  const [reactionPopupAnim, setReactionPopupAnim] = useState(false) // animation state
   const [, forceReactions] = useState(0)                       // trigger re-render
   const longPressTimer = useRef(null)
+
+  // Reply
+  const [replyTo, setReplyTo] = useState(null) // full message object
+
+  // Forward modal
+  const [forwardMsg, setForwardMsg] = useState(null)  // message to forward
+  const [fwdSearch, setFwdSearch] = useState('')
+  const [fwdMembers, setFwdMembers] = useState([])
+  const [fwdLoading, setFwdLoading] = useState(false)
+  const [fwdSending, setFwdSending] = useState(false)
+
+  // Message refs for scroll-to-reply
+  const messageRefs = useRef({})
 
   // Sticker picker
   const [showStickers, setShowStickers] = useState(false)
@@ -235,7 +249,7 @@ export default function ChatScreen({ conversationId, onBack }) {
   /* ── Close popups on outside click ──────────────────────────── */
   useEffect(() => {
     if (!reactionPopup && !showStickers) return
-    const handler = () => { setReactionPopup(null); setShowStickers(false) }
+    const handler = () => { closeReactionPopup(); setShowStickers(false) }
     const timer = setTimeout(() => document.addEventListener('click', handler), 0)
     return () => { clearTimeout(timer); document.removeEventListener('click', handler) }
   }, [reactionPopup, showStickers])
@@ -246,15 +260,19 @@ export default function ChatScreen({ conversationId, onBack }) {
     if (!val.trim() || !user || sending) return
     const trimmed = val.trim()
     if (type === 'text') setText('')
+    const replyId = replyTo?.id || null
+    setReplyTo(null)
     setSending(true)
 
     try {
-      const { error } = await supabase.from('cng_messages').insert({
+      const row = {
         conversation_id: conversationId,
         sender_id: user.id,
         content: trimmed,
         message_type: type,
-      })
+      }
+      if (replyId) row.reply_to_id = replyId
+      const { error } = await supabase.from('cng_messages').insert(row)
       if (error) throw error
     } catch (e) {
       console.error('Send error:', e)
@@ -417,21 +435,134 @@ export default function ChatScreen({ conversationId, onBack }) {
     setRecording(false)
   }
 
+  /* ── Reaction popup helpers ──────────────────────────────────── */
+  const openReactionPopup = (msgId) => {
+    setReactionPopup(msgId)
+    requestAnimationFrame(() => setReactionPopupAnim(true))
+  }
+  const closeReactionPopup = () => {
+    setReactionPopupAnim(false)
+    setTimeout(() => setReactionPopup(null), 150)
+  }
+
   /* ── Reaction handlers ──────────────────────────────────────── */
   const handleMsgPointerDown = (msgId) => {
-    longPressTimer.current = setTimeout(() => setReactionPopup(msgId), 500)
+    longPressTimer.current = setTimeout(() => openReactionPopup(msgId), 500)
   }
   const handleMsgPointerUp = () => {
     clearTimeout(longPressTimer.current)
   }
-  const handleMsgDoubleClick = (msgId) => {
-    setReactionPopup(msgId)
-  }
   const handleReact = (msgId, emoji) => {
     setReaction(msgId, user.id, emoji)
-    setReactionPopup(null)
+    closeReactionPopup()
     forceReactions(x => x + 1)
   }
+
+  /* ── Reply handler ─────────────────────────────────────────── */
+  const handleReply = (msg) => {
+    setReplyTo(msg)
+    closeReactionPopup()
+  }
+
+  /* ── Forward handler ───────────────────────────────────────── */
+  const handleForwardOpen = (msg) => {
+    setForwardMsg(msg)
+    setFwdSearch('')
+    setFwdMembers([])
+    closeReactionPopup()
+  }
+
+  const searchForwardMembers = useCallback(async (q) => {
+    setFwdSearch(q)
+    if (!q.trim()) { setFwdMembers([]); return }
+    setFwdLoading(true)
+    try {
+      const { data } = await supabase
+        .from('cng_members')
+        .select('user_id, full_name, ref_code, avatar_url')
+        .neq('user_id', user.id)
+        .or(`full_name.ilike.%${q}%,ref_code.ilike.%${q}%`)
+        .limit(15)
+      setFwdMembers(data || [])
+    } catch { setFwdMembers([]) }
+    finally { setFwdLoading(false) }
+  }, [user])
+
+  const handleForwardTo = async (member) => {
+    if (!forwardMsg || fwdSending) return
+    setFwdSending(true)
+    try {
+      // Find or create conversation with this member
+      const { data: myConvs } = await supabase
+        .from('cng_conversation_members')
+        .select('conversation_id')
+        .eq('user_id', user.id)
+      const myConvIds = (myConvs || []).map(c => c.conversation_id)
+
+      let targetConvId = null
+      if (myConvIds.length > 0) {
+        const { data: theirConvs } = await supabase
+          .from('cng_conversation_members')
+          .select('conversation_id')
+          .eq('user_id', member.user_id)
+          .in('conversation_id', myConvIds)
+        targetConvId = theirConvs?.[0]?.conversation_id || null
+      }
+
+      if (!targetConvId) {
+        const { data: conv, error: convErr } = await supabase
+          .from('cng_conversations')
+          .insert({ type: 'dm' })
+          .select()
+          .single()
+        if (convErr) throw convErr
+        targetConvId = conv.id
+        await supabase.from('cng_conversation_members').insert([
+          { conversation_id: targetConvId, user_id: user.id },
+          { conversation_id: targetConvId, user_id: member.user_id },
+        ])
+      }
+
+      // Insert forwarded message
+      const fwdContent = forwardMsg.message_type === 'text'
+        ? forwardMsg.content
+        : forwardMsg.content
+      const row = {
+        conversation_id: targetConvId,
+        sender_id: user.id,
+        content: fwdContent,
+        message_type: forwardMsg.message_type,
+        metadata: JSON.stringify({ forwarded: true }),
+      }
+      if (forwardMsg.media_url) row.media_url = forwardMsg.media_url
+      const { error } = await supabase.from('cng_messages').insert(row)
+      if (error) throw error
+
+      setForwardMsg(null)
+    } catch (e) {
+      console.error('Forward error:', e)
+    } finally {
+      setFwdSending(false)
+    }
+  }
+
+  /* ── Scroll to replied message ─────────────────────────────── */
+  const scrollToMessage = (msgId) => {
+    const el = messageRefs.current[msgId]
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      el.style.transition = 'background 0.3s'
+      el.style.background = 'rgba(104,219,174,0.15)'
+      setTimeout(() => { el.style.background = 'transparent' }, 1500)
+    }
+  }
+
+  /* ── Messages map for reply lookup ─────────────────────────── */
+  const messagesMap = useMemo(() => {
+    const map = {}
+    messages.forEach(m => { map[m.id] = m })
+    return map
+  }, [messages])
 
   /* ── Sticker send ───────────────────────────────────────────── */
   const sendSticker = (emoji) => {
@@ -500,15 +631,19 @@ export default function ChatScreen({ conversationId, onBack }) {
           const reactions = getReactions(msg.id)
           const counts = aggregateReactions(reactions)
           const hasReactions = Object.keys(counts).length > 0
+          const repliedMsg = msg.reply_to_id ? messagesMap[msg.reply_to_id] : null
+          const isForwarded = (() => {
+            try { return msg.metadata && JSON.parse(msg.metadata)?.forwarded } catch { return false }
+          })()
 
           return (
-            <div key={msg.id} style={{ display: 'flex', flexDirection: 'column', alignItems: isMine ? 'flex-end' : 'flex-start' }}>
+            <div key={msg.id} ref={el => { messageRefs.current[msg.id] = el }} style={{ display: 'flex', flexDirection: 'column', alignItems: isMine ? 'flex-end' : 'flex-start' }}>
               <div
                 style={{ position: 'relative', maxWidth: '75%' }}
                 onPointerDown={() => handleMsgPointerDown(msg.id)}
                 onPointerUp={handleMsgPointerUp}
                 onPointerLeave={handleMsgPointerUp}
-                onDoubleClick={() => handleMsgDoubleClick(msg.id)}
+                onContextMenu={(e) => { e.preventDefault(); openReactionPopup(msg.id) }}
               >
                 <div style={{
                   padding: msg.message_type === 'image' || msg.message_type === 'video' ? 4 : '12px 16px',
@@ -518,11 +653,43 @@ export default function ChatScreen({ conversationId, onBack }) {
                   background: isMine ? GRADIENT.primary : C.surfaceHigh,
                   color: isMine ? '#fff' : C.text,
                 }}>
+                  {/* Forwarded label */}
+                  {isForwarded && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4, opacity: 0.7 }}>
+                      <Icon name="shortcut" size={12} style={{ color: isMine ? 'rgba(255,255,255,0.7)' : C.textDim }} />
+                      <span style={{ fontSize: 11, fontStyle: 'italic', color: isMine ? 'rgba(255,255,255,0.7)' : C.textDim, fontFamily: FONT.body }}>Forwarded</span>
+                    </div>
+                  )}
+                  {/* Reply preview */}
+                  {repliedMsg && (
+                    <div
+                      onClick={(e) => { e.stopPropagation(); scrollToMessage(repliedMsg.id) }}
+                      style={{
+                        display: 'flex',
+                        gap: 8,
+                        marginBottom: 8,
+                        padding: '6px 10px',
+                        borderRadius: 8,
+                        background: isMine ? 'rgba(255,255,255,0.12)' : 'rgba(104,219,174,0.08)',
+                        borderLeft: `3px solid ${C.primary}`,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <div style={{ flex: 1, overflow: 'hidden' }}>
+                        <p style={{ fontSize: 11, fontWeight: 700, color: C.primary, fontFamily: FONT.headline, marginBottom: 2 }}>
+                          {repliedMsg.sender_id === user?.id ? 'You' : (otherUser?.full_name || 'User')}
+                        </p>
+                        <p style={{ fontSize: 12, color: isMine ? 'rgba(255,255,255,0.7)' : C.textDim, fontFamily: FONT.body, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {repliedMsg.message_type === 'image' ? '📷 Photo' : repliedMsg.message_type === 'video' ? '🎬 Video' : repliedMsg.message_type === 'voice' ? '🎙️ Voice' : repliedMsg.content}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                   {renderContent(msg, isMine)}
                   <p style={{ fontSize: 10, color: isMine ? 'rgba(255,255,255,0.6)' : C.textFaint, marginTop: 4, textAlign: 'right', padding: msg.message_type === 'image' || msg.message_type === 'video' ? '0 8px 4px' : 0 }}>{timeFormat(msg.created_at)}</p>
                 </div>
 
-                {/* Reaction popup */}
+                {/* Reaction + actions popup */}
                 {reactionPopup === msg.id && (
                   <div
                     onClick={(e) => e.stopPropagation()}
@@ -531,22 +698,52 @@ export default function ChatScreen({ conversationId, onBack }) {
                       bottom: '100%',
                       [isMine ? 'right' : 'left']: 0,
                       marginBottom: 8,
-                      padding: '8px 12px',
-                      display: 'flex',
-                      gap: 8,
+                      padding: 0,
+                      minWidth: 220,
+                      transform: reactionPopupAnim ? 'scale(1)' : 'scale(0.8)',
+                      opacity: reactionPopupAnim ? 1 : 0,
+                      transition: 'transform 0.15s ease-out, opacity 0.15s ease-out',
+                      transformOrigin: isMine ? 'bottom right' : 'bottom left',
                     }}
                   >
-                    {REACTION_EMOJIS.map(em => (
-                      <span
-                        key={em}
-                        onClick={() => handleReact(msg.id, em)}
-                        style={{ fontSize: 22, cursor: 'pointer', transition: 'transform 0.15s' }}
-                        onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.3)' }}
-                        onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)' }}
+                    {/* Emoji row */}
+                    <div style={{ display: 'flex', gap: 6, padding: '10px 14px 8px', justifyContent: 'center' }}>
+                      {REACTION_EMOJIS.map(em => (
+                        <span
+                          key={em}
+                          onClick={() => handleReact(msg.id, em)}
+                          style={{ fontSize: 24, cursor: 'pointer', transition: 'transform 0.15s', padding: '2px 4px', borderRadius: 8 }}
+                          onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.35)'; e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
+                          onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.background = 'transparent' }}
+                        >
+                          {em}
+                        </span>
+                      ))}
+                    </div>
+                    {/* Separator */}
+                    <div style={{ height: 1, background: 'rgba(241,239,232,0.08)', margin: '0 12px' }} />
+                    {/* Action buttons */}
+                    <div style={{ display: 'flex', gap: 0 }}>
+                      <div
+                        onClick={() => handleReply(msg)}
+                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px 8px', cursor: 'pointer', borderRadius: '0 0 0 16px', transition: 'background 0.15s' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)' }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
                       >
-                        {em}
-                      </span>
-                    ))}
+                        <Icon name="reply" size={16} style={{ color: C.textDim }} />
+                        <span style={{ fontSize: 13, color: C.text, fontFamily: FONT.body }}>Reply</span>
+                      </div>
+                      <div style={{ width: 1, background: 'rgba(241,239,232,0.08)', margin: '6px 0' }} />
+                      <div
+                        onClick={() => handleForwardOpen(msg)}
+                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px 8px', cursor: 'pointer', borderRadius: '0 0 16px 0', transition: 'background 0.15s' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)' }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                      >
+                        <Icon name="shortcut" size={16} style={{ color: C.textDim }} />
+                        <span style={{ fontSize: 13, color: C.text, fontFamily: FONT.body }}>Forward</span>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -639,6 +836,88 @@ export default function ChatScreen({ conversationId, onBack }) {
         style={{ display: 'none' }}
         onChange={handleFileSelect}
       />
+
+      {/* Reply bar */}
+      {replyTo && (
+        <div style={{ padding: '8px 16px', background: 'rgba(13,17,23,0.8)', borderTop: '1px solid rgba(241,239,232,0.08)', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 3, height: 36, borderRadius: 2, background: C.primary, flexShrink: 0 }} />
+          <div style={{ flex: 1, overflow: 'hidden' }}>
+            <p style={{ fontSize: 12, fontWeight: 700, color: C.primary, fontFamily: FONT.headline }}>
+              {replyTo.sender_id === user?.id ? 'You' : (otherUser?.full_name || 'User')}
+            </p>
+            <p style={{ fontSize: 13, color: C.textDim, fontFamily: FONT.body, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {replyTo.message_type === 'image' ? '📷 Photo' : replyTo.message_type === 'video' ? '🎬 Video' : replyTo.message_type === 'voice' ? '🎙️ Voice' : replyTo.content}
+            </p>
+          </div>
+          <div onClick={() => setReplyTo(null)} style={{ cursor: 'pointer', padding: 4 }}>
+            <Icon name="close" size={18} style={{ color: C.textDim }} />
+          </div>
+        </div>
+      )}
+
+      {/* Forward modal */}
+      {forwardMsg && (
+        <div
+          onClick={() => setForwardMsg(null)}
+          style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: '100%', maxWidth: 400, maxHeight: '70vh', background: 'rgba(13,17,23,0.97)', borderRadius: 20, border: '1px solid rgba(241,239,232,0.1)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+          >
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(241,239,232,0.08)', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <Icon name="shortcut" size={20} style={{ color: C.primary }} />
+              <h2 style={{ fontFamily: FONT.headline, fontSize: 16, fontWeight: 700, color: C.text, flex: 1 }}>Forward to...</h2>
+              <div onClick={() => setForwardMsg(null)} style={{ cursor: 'pointer', padding: 4 }}>
+                <Icon name="close" size={20} style={{ color: C.textDim }} />
+              </div>
+            </div>
+            <div style={{ padding: '12px 16px' }}>
+              <input
+                autoFocus
+                placeholder="Search members..."
+                value={fwdSearch}
+                onChange={(e) => searchForwardMembers(e.target.value)}
+                style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: 12, padding: '10px 14px', color: C.text, fontSize: 14, fontFamily: FONT.body, outline: 'none' }}
+              />
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px 12px' }}>
+              {fwdLoading && (
+                <div style={{ display: 'flex', justifyContent: 'center', padding: 20 }}>
+                  <div style={{ width: 20, height: 20, border: '2px solid rgba(104,219,174,0.3)', borderTopColor: C.primary, borderRadius: 99, animation: 'spin 0.8s linear infinite' }} />
+                </div>
+              )}
+              {!fwdLoading && fwdSearch && fwdMembers.length === 0 && (
+                <p style={{ textAlign: 'center', padding: 20, color: C.textDim, fontSize: 13, fontFamily: FONT.body }}>No members found</p>
+              )}
+              {fwdMembers.map(m => (
+                <div
+                  key={m.user_id}
+                  onClick={() => handleForwardTo(m)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 12, cursor: fwdSending ? 'wait' : 'pointer', transition: 'background 0.15s' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                >
+                  <div style={{ width: 40, height: 40, borderRadius: 99, overflow: 'hidden', flexShrink: 0 }}>
+                    {m.avatar_url ? (
+                      <img src={m.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      <div style={{ width: '100%', height: '100%', background: C.surfaceHigh, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 700, color: C.text, fontFamily: FONT.headline }}>
+                        {(m.full_name || m.ref_code || '?')[0].toUpperCase()}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontSize: 14, fontWeight: 600, color: C.text, fontFamily: FONT.headline }}>{m.full_name || m.ref_code}</p>
+                    {m.ref_code && m.full_name && <p style={{ fontSize: 12, color: C.textDim }}>@{m.ref_code}</p>}
+                  </div>
+                  <Icon name="send" size={18} style={{ color: C.primary }} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Input bar */}
       <div style={{ padding: '8px 16px 16px', ...GLASS_NAV, borderTop: '1px solid rgba(241,239,232,0.08)', display: 'flex', alignItems: 'center', gap: 8 }}>
