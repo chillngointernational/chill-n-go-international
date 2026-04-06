@@ -79,7 +79,11 @@ export default function ChatScreen({ conversationId, onBack }) {
         table: 'cng_messages',
         filter: 'conversation_id=eq.' + conversationId,
       }, (payload) => {
-        setMessages(prev => [...prev, payload.new])
+        setMessages(prev => {
+          // Guard against duplicate messages (realtime + optimistic)
+          if (prev.some(m => m.id === payload.new.id)) return prev
+          return [...prev, payload.new]
+        })
         scrollToBottom()
         // Mark as read if it's from the other user
         if (payload.new.sender_id !== user?.id) {
@@ -88,6 +92,7 @@ export default function ChatScreen({ conversationId, onBack }) {
             .update({ unread_count: 0, last_read_at: new Date().toISOString() })
             .eq('conversation_id', conversationId)
             .eq('user_id', user?.id)
+            .then(() => {})
         }
       })
       .subscribe()
