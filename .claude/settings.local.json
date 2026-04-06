@@ -5,7 +5,9 @@
       "Bash(npm run:*)",
       "Bash(find '/c/Users/oscar/OneDrive/Desktop/Apps Oscar Jovani/chill-n-go-international/src' -type f -name *.jsx -o -name *.js)",
       "Bash(npx --no-install eslint src/components/RegistrationWizard.jsx src/pages/Join.jsx --no-eslintrc --parser-options=ecmaVersion:2022,ecmaFeatures:{jsx:true},sourceType:module)",
-      "Bash(node -e \":*)"
+      "Bash(node -e \":*)",
+      "Bash(npx supabase:*)",
+      "Bash(curl:*)"
     ]
   }
 }
