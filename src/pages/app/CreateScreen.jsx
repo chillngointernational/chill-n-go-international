@@ -449,56 +449,67 @@ export default function CreateScreen({ onDone }) {
       {closeBtn}
       {fileInputs}
 
-      {/* Preview area */}
+      {/* Step 4 container */}
       <div style={{
-        position: 'relative', width: '100%',
-        maxWidth: desktop ? 600 : '100%',
-        background: C.bg,
-      }}>
-        {/* Change button */}
-        <button
-          onClick={reset}
-          style={{
-            position: 'absolute', top: 16, right: 16, zIndex: 20,
-            padding: '8px 16px', borderRadius: 99,
-            background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
-            border: '1px solid rgba(255,255,255,0.12)',
-            color: '#fff', fontSize: 12, fontWeight: 600, fontFamily: FONT.body,
-            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
-          }}
-        >
-          <Icon name="swap_horiz" size={16} />
-          Cambiar
-        </button>
-
-        {isVideo ? (
-          <video
-            src={preview}
-            controls
-            playsInline
-            style={{
-              width: '100%', maxHeight: 420, objectFit: 'contain',
-              display: 'block', background: '#000',
-            }}
-          />
-        ) : (
-          <img
-            src={preview}
-            alt=""
-            style={{
-              width: '100%', maxHeight: 420, objectFit: 'contain',
-              display: 'block', background: '#000',
-            }}
-          />
-        )}
-      </div>
-
-      {/* Details form */}
-      <div style={{
-        width: '100%', maxWidth: desktop ? 600 : '100%',
-        padding: '20px 16px 32px',
+        width: '100%', maxWidth: 600,
+        margin: '0 auto', padding: 24,
         display: 'flex', flexDirection: 'column', gap: 20,
       }}>
+
+        {/* Preview area */}
+        <div style={{
+          position: 'relative', width: '100%',
+          borderRadius: 16, overflow: 'hidden',
+          background: '#000',
+        }}>
+          {isVideo ? (
+            <video
+              src={preview}
+              controls
+              playsInline
+              style={{
+                width: '100%',
+                maxHeight: desktop ? 400 : 300,
+                objectFit: 'contain',
+                display: 'block',
+                background: '#000',
+              }}
+            />
+          ) : (
+            <img
+              src={preview}
+              alt=""
+              style={{
+                width: '100%',
+                maxHeight: desktop ? 400 : 300,
+                objectFit: 'contain',
+                display: 'block',
+                background: '#000',
+              }}
+            />
+          )}
+
+          {/* Change button */}
+          <button
+            onClick={reset}
+            style={{
+              position: 'absolute', top: 12, right: 12, zIndex: 20,
+              padding: '8px 16px', borderRadius: 99,
+              background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              color: '#fff', fontSize: 12, fontWeight: 600, fontFamily: FONT.body,
+              cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+            }}
+          >
+            <Icon name="swap_horiz" size={16} />
+            Cambiar
+          </button>
+        </div>
+
+        {/* Details form */}
+        <div style={{
+          display: 'flex', flexDirection: 'column', gap: 20,
+        }}>
         {/* Caption */}
         <textarea
           placeholder="Escribe un caption..."
@@ -636,6 +647,7 @@ export default function CreateScreen({ onDone }) {
             <>POST <Icon name="arrow_forward" size={18} /></>
           )}
         </button>
+        </div>
       </div>
     </div>
   )
