@@ -14,7 +14,7 @@ function CommentsPanel({ post, userId, onClose, onCountUpdate }) {
   const fetchComments = useCallback(async () => {
     const { data } = await supabase
       .from('cng_post_comments')
-      .select('*, cng_members!cng_post_comments_user_id_fkey(full_name, ref_code, avatar_url)')
+      .select('*, cng_members(full_name, ref_code, avatar_url)')
       .eq('post_id', post.id)
       .order('created_at', { ascending: true })
     setComments(data || [])
@@ -28,8 +28,8 @@ function CommentsPanel({ post, userId, onClose, onCountUpdate }) {
   }, [comments.length])
 
   const handleSend = async () => {
-    const body = text.trim()
-    if (!body || sending) return
+    const content = text.trim()
+    if (!content || sending) return
     setSending(true)
     setText('')
 
@@ -38,7 +38,7 @@ function CommentsPanel({ post, userId, onClose, onCountUpdate }) {
       id: 'tmp-' + Date.now(),
       post_id: post.id,
       user_id: userId,
-      body,
+      content,
       created_at: new Date().toISOString(),
       cng_members: { full_name: 'You', ref_code: '', avatar_url: null },
     }
@@ -46,7 +46,7 @@ function CommentsPanel({ post, userId, onClose, onCountUpdate }) {
     onCountUpdate(post.id, 1)
 
     try {
-      const { error } = await supabase.from('cng_post_comments').insert({ post_id: post.id, user_id: userId, body })
+      const { error } = await supabase.from('cng_post_comments').insert({ post_id: post.id, user_id: userId, content })
       if (error) throw error
       await fetchComments()
     } catch (e) {
@@ -116,7 +116,7 @@ function CommentsPanel({ post, userId, onClose, onCountUpdate }) {
                     <span style={{ fontFamily: FONT.headline, fontWeight: 700, fontSize: 13, color: C.text }}>{name}</span>
                     <span style={{ fontSize: 11, color: C.textDim }}>{fmtTime(c.created_at)}</span>
                   </div>
-                  <p style={{ fontSize: 13, color: 'rgba(241,239,232,0.85)', lineHeight: 1.5, marginTop: 2, fontFamily: FONT.body, wordBreak: 'break-word' }}>{c.body}</p>
+                  <p style={{ fontSize: 13, color: 'rgba(241,239,232,0.85)', lineHeight: 1.5, marginTop: 2, fontFamily: FONT.body, wordBreak: 'break-word' }}>{c.content}</p>
                 </div>
               </div>
             )
