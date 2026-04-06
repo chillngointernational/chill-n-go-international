@@ -5,6 +5,7 @@ import ExploreScreen from '../pages/app/ExploreScreen'
 import CreateScreen from '../pages/app/CreateScreen'
 import MessagesScreen from '../pages/app/MessagesScreen'
 import ProfileScreen from '../pages/app/ProfileScreen'
+import ChatScreen from '../pages/app/ChatScreen'
 import TravelScreen from '../pages/app/TravelScreen'
 import CandyStakesScreen from '../pages/app/CandyStakesScreen'
 import RealEstateScreen from '../pages/app/RealEstateScreen'
@@ -23,11 +24,13 @@ const TABS = [
 export default function AppShell() {
     const [screen, setScreen] = useState('feed')
     const [subScreen, setSubScreen] = useState(null)
+    const [chatConversationId, setChatConversationId] = useState(null)
     const scrollRef = useRef(null)
     const isDesktop = useDesktop()
 
     const nav = (s) => {
         setSubScreen(null)
+        setChatConversationId(null)
         setScreen(s)
         if (scrollRef.current) scrollRef.current.scrollTop = 0
     }
@@ -38,11 +41,22 @@ export default function AppShell() {
     }
 
     const goBack = () => {
+        if (chatConversationId) {
+            setChatConversationId(null)
+            return
+        }
         setSubScreen(null)
         if (scrollRef.current) scrollRef.current.scrollTop = 0
     }
 
+    const openChat = (conversationId) => {
+        setChatConversationId(conversationId)
+    }
+
     const renderSub = () => {
+        if (chatConversationId) {
+            return <ChatScreen conversationId={chatConversationId} onBack={goBack} />
+        }
         switch (subScreen) {
             case 'travel': return <TravelScreen onBack={goBack} />
             case 'candystakes': return <CandyStakesScreen onBack={goBack} />
@@ -58,15 +72,16 @@ export default function AppShell() {
         switch (screen) {
             case 'feed': return <FeedScreen />
             case 'explore': return <ExploreScreen onNavigate={navSub} isDesktop={isDesktop} />
-            case 'create': return <CreateScreen />
-            case 'messages': return <MessagesScreen />
+            case 'create': return <CreateScreen onDone={() => nav('feed')} />
+            case 'messages': return <MessagesScreen onOpenChat={openChat} />
             case 'profile': return <ProfileScreen onNavigate={navSub} />
             default: return <FeedScreen />
         }
     }
 
-    const activeTab = subScreen ? null : screen
-    const isFs = screen === 'feed' && !subScreen
+    const activeTab = (subScreen || chatConversationId) ? null : screen
+    const isFs = screen === 'feed' && !subScreen && !chatConversationId
+    const showNav = !subScreen && !chatConversationId
 
     if (isDesktop) {
         return (
@@ -167,13 +182,13 @@ export default function AppShell() {
                         overflowX: 'hidden',
                     }}
                 >
-                    {subScreen ? renderSub() : renderScreen()}
+                    {(subScreen || chatConversationId) ? renderSub() : renderScreen()}
                 </div>
             </div>
         )
     }
 
-    // Mobile layout — unchanged
+    // Mobile layout
     return (
         <div style={{
             width: '100%',
@@ -194,13 +209,13 @@ export default function AppShell() {
                     height: '100%',
                     overflowY: isFs ? 'hidden' : 'auto',
                     overflowX: 'hidden',
-                    paddingBottom: subScreen ? 0 : 80,
+                    paddingBottom: showNav ? 80 : 0,
                 }}
             >
-                {subScreen ? renderSub() : renderScreen()}
+                {(subScreen || chatConversationId) ? renderSub() : renderScreen()}
             </div>
 
-            {!subScreen && (
+            {showNav && (
                 <nav style={{
                     position: 'absolute',
                     bottom: 0,
