@@ -247,13 +247,59 @@ function PostCard({ post, currentUserId, onLike, onBookmark, onComment, onShare 
   const avatarUrl = member?.avatar_url
   const tag = TAG_COLORS[post.category] || TAG_COLORS.general
 
+  const videoRef = useRef(null)
+  const cardRef = useRef(null)
+  const [isPlaying, setIsPlaying] = useState(false)
+
+  // IntersectionObserver: auto play/pause video based on viewport visibility
+  useEffect(() => {
+    if (post.media_type !== 'video' || !cardRef.current) return
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        const video = videoRef.current
+        if (!video) return
+        if (entry.isIntersecting) {
+          video.play().then(() => setIsPlaying(true)).catch(() => {})
+        } else {
+          video.pause()
+          video.currentTime = 0
+          setIsPlaying(false)
+        }
+      },
+      { threshold: 0.7 }
+    )
+
+    observer.observe(cardRef.current)
+    return () => observer.disconnect()
+  }, [post.media_type])
+
+  const handleVideoTap = () => {
+    const video = videoRef.current
+    if (!video) return
+    if (video.paused) {
+      video.play().then(() => setIsPlaying(true)).catch(() => {})
+    } else {
+      video.pause()
+      setIsPlaying(false)
+    }
+  }
+
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%', flexShrink: 0, scrollSnapAlign: 'start' }}>
+    <div ref={cardRef} style={{ position: 'relative', width: '100%', height: '100%', flexShrink: 0, scrollSnapAlign: 'start' }}>
       {/* Background */}
       {post.media_url ? (
         <div style={{ position: 'absolute', inset: 0 }}>
           {post.media_type === 'video' ? (
-            <video src={post.media_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} autoPlay loop playsInline controls />
+            <video
+              ref={videoRef}
+              src={post.media_url}
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              loop
+              playsInline
+              controls
+              onClick={handleVideoTap}
+            />
           ) : (
             <img src={post.media_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           )}
