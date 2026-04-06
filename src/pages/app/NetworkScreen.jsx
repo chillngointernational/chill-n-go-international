@@ -4,21 +4,15 @@ import { supabase } from '../../lib/supabase'
 import { C, FONT, Icon, GRADIENT } from '../../stitch'
 import TopBar from '../../components/TopBar'
 
-export default function NetworkScreen({ onBack }) {
+export default function NetworkScreen({ onBack, isDesktop }) {
     const { user, member } = useAuth()
     const [referrals, setReferrals] = useState([])
     const [ledger, setLedger] = useState([])
     const [loading, setLoading] = useState(true)
     const [copied, setCopied] = useState(false)
     const [activeTab, setActiveTab] = useState('network')
-    const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
-    useEffect(() => {
-        const mq = window.matchMedia('(max-width: 767px)')
-        const handler = (e) => setIsMobile(e.matches)
-        mq.addEventListener('change', handler)
-        return () => mq.removeEventListener('change', handler)
-    }, [])
+    const pad = isDesktop ? '0 32px' : '0 16px'
 
     const refLink = member?.ref_code
         ? `${window.location.origin}/join?ref=${member.ref_code}`
@@ -111,7 +105,7 @@ export default function NetworkScreen({ onBack }) {
         <div style={{ display: 'flex', flexDirection: 'column' }}>
             <TopBar title="Mi Red CNG+" leftIcon="arrow_back" onLeft={onBack} />
 
-            <div style={{ padding: isMobile ? '16px 16px 120px' : '24px 20px 60px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+            <div style={{ padding: isDesktop ? '32px 32px 60px' : '16px 16px 120px', width: '100%', boxSizing: 'border-box' }}>
                 {/* Header */}
                 <div style={{ marginBottom: 24 }}>
                     <p style={{ fontSize: 14, color: C.onSurfaceVariant }}>{member?.full_name || user?.email}</p>
@@ -128,12 +122,12 @@ export default function NetworkScreen({ onBack }) {
                         </svg>
                         <div>
                             <div style={s.bigBalanceLabel}>Balance total</div>
-                            <div style={{ ...s.bigBalanceAmount, ...(isMobile ? { fontSize: 24 } : {}) }}>{member?.chilliums_balance?.toFixed(2) || '0.00'} <span style={s.bigBalanceCurrency}>Chilliums</span></div>
+                            <div style={{ ...s.bigBalanceAmount, ...(!isDesktop ? { fontSize: 24 } : {}) }}>{member?.chilliums_balance?.toFixed(2) || '0.00'} <span style={s.bigBalanceCurrency}>Chilliums</span></div>
                         </div>
                     </div>
 
                     {/* Earnings breakdown */}
-                    <div style={{ ...s.earningsGrid, ...(isMobile ? { gridTemplateColumns: 'repeat(2, 1fr)' } : {}) }}>
+                    <div style={{ ...s.earningsGrid, gridTemplateColumns: isDesktop ? 'repeat(4, 1fr)' : 'repeat(2, 1fr)' }}>
                         <div style={s.earningItem}>
                             <div style={s.earningDot(C.primaryBright)} />
                             <div style={s.earningInfo}>
@@ -175,7 +169,7 @@ export default function NetworkScreen({ onBack }) {
                         </div>
                     </div>
                     {refLink ? (
-                        <div style={{ ...s.refLinkRow, ...(isMobile ? { flexDirection: 'column' } : {}) }}>
+                        <div style={{ ...s.refLinkRow, ...(!isDesktop ? { flexDirection: 'column' } : {}) }}>
                             <div style={s.refLinkBox}>{refLink}</div>
                             <button onClick={copyLink} style={s.copyBtn}>
                                 {copied ? 'Copiado' : 'Copiar'}
@@ -203,7 +197,7 @@ export default function NetworkScreen({ onBack }) {
                 {activeTab === 'network' && (
                     <div>
                         {/* Visual tree */}
-                        <div style={{ ...s.treeContainer, ...(isMobile ? { padding: '12px 0', gap: 4 } : {}) }}>
+                        <div style={{ ...s.treeContainer, ...(!isDesktop ? { padding: '12px 0', gap: 4 } : {}) }}>
                             {/* YOU at top */}
                             <div style={s.treeYou}>
                                 <div style={s.treeYouAvatar}>
@@ -220,7 +214,7 @@ export default function NetworkScreen({ onBack }) {
                                     <div style={s.treeLevelLabel}>
                                         <span style={s.treeLevelBadge(C.tertiaryContainer)}>Nivel 1 — {l1.length} referidos</span>
                                     </div>
-                                    <div style={{ ...s.treeRow, ...(isMobile ? { gap: 8 } : {}) }}>
+                                    <div style={{ ...s.treeRow, ...(!isDesktop ? { gap: 8 } : {}) }}>
                                         {l1.map((ref) => (
                                             <div key={ref.id} style={s.treeNode(C.tertiaryContainer, '#EEEDFE', '#3C3489')}>
                                                 <div style={s.treeNodeAvatar(C.tertiaryContainer)}>
@@ -250,7 +244,7 @@ export default function NetworkScreen({ onBack }) {
                                     <div style={s.treeLevelLabel}>
                                         <span style={s.treeLevelBadge('#D85A30')}>Nivel 2 — {l2.length} referidos</span>
                                     </div>
-                                    <div style={{ ...s.treeRow, ...(isMobile ? { gap: 8 } : {}) }}>
+                                    <div style={{ ...s.treeRow, ...(!isDesktop ? { gap: 8 } : {}) }}>
                                         {l2.map((ref) => (
                                             <div key={ref.id} style={s.treeNode('#D85A30', '#FAECE7', '#712B13')}>
                                                 <div style={s.treeNodeAvatar('#D85A30')}>
@@ -293,7 +287,7 @@ export default function NetworkScreen({ onBack }) {
                         </div>
 
                         {/* Network summary cards */}
-                        <div style={{ ...s.summaryGrid, ...(isMobile ? { gridTemplateColumns: 'repeat(2, 1fr)' } : {}) }}>
+                        <div style={{ ...s.summaryGrid, gridTemplateColumns: isDesktop ? 'repeat(4, 1fr)' : 'repeat(2, 1fr)' }}>
                             <div style={s.summaryCard}>
                                 <div style={s.summaryIcon(C.tertiaryContainer)}>
                                     <Icon name="group" size={20} style={{ color: C.tertiaryContainer }} />
@@ -381,7 +375,7 @@ const s = {
     bigBalanceLabel: { fontSize: 13, color: C.onSurfaceVariant },
     bigBalanceAmount: { fontSize: 32, fontWeight: 700, color: '#FAC775' },
     bigBalanceCurrency: { fontSize: 14, fontWeight: 400, color: '#854F0B' },
-    earningsGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 },
+    earningsGrid: { display: 'grid', gap: 12 },
     earningItem: { display: 'flex', alignItems: 'center', gap: 8 },
     earningDot: (color) => ({ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }),
     earningInfo: { display: 'flex', flexDirection: 'column' },
@@ -553,7 +547,6 @@ const s = {
 
     summaryGrid: {
         display: 'grid',
-        gridTemplateColumns: 'repeat(4, 1fr)',
         gap: 10,
         marginTop: 24,
     },

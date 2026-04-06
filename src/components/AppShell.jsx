@@ -63,7 +63,7 @@ export default function AppShell() {
             case 'realestate': return <RealEstateScreen onBack={goBack} />
             case 'nutrition': return <NutritionScreen onBack={goBack} />
             case 'store': return <StoreScreen onBack={goBack} />
-            case 'network': return <NetworkScreen onBack={goBack} />
+            case 'network': return <NetworkScreen onBack={goBack} isDesktop={isDesktop} />
             default: return null
         }
     }
