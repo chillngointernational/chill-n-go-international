@@ -53,14 +53,18 @@ function NewMessageModal({ open, onClose, onSelectConversation, user }) {
   }, [query, user])
 
   const handleSelect = async (target) => {
-    if (creating) return
+    console.log('[NewMessage] clicking member:', target.full_name, target.user_id)
+    if (creating) { console.log('[NewMessage] blocked — already creating'); return }
     setCreating(true)
     try {
       // Check if a direct conversation already exists between the two users
-      const { data: myConvs } = await supabase
+      console.log('[NewMessage] checking existing conversations...')
+      const { data: myConvs, error: myErr } = await supabase
         .from('cng_conversation_members')
         .select('conversation_id')
         .eq('user_id', user.id)
+
+      if (myErr) console.warn('[NewMessage] error fetching my convs:', myErr)
 
       if (myConvs && myConvs.length > 0) {
         const myConvIds = myConvs.map(c => c.conversation_id)
@@ -79,8 +83,9 @@ function NewMessageModal({ open, onClose, onSelectConversation, user }) {
               .eq('id', tc.conversation_id)
               .eq('type', 'direct')
               .eq('is_active', true)
-              .single()
+              .maybeSingle()
             if (conv) {
+              console.log('[NewMessage] found existing conversation:', conv.id)
               onClose()
               onSelectConversation(conv.id)
               return
@@ -90,23 +95,35 @@ function NewMessageModal({ open, onClose, onSelectConversation, user }) {
       }
 
       // No existing direct conversation — create one
+      console.log('[NewMessage] creating new conversation...')
       const { data: newConv, error: convErr } = await supabase
         .from('cng_conversations')
         .insert({ created_by: user.id, type: 'direct' })
         .select()
         .single()
 
-      if (convErr) throw convErr
+      if (convErr) {
+        console.error('[NewMessage] conversation INSERT error:', convErr)
+        throw convErr
+      }
+      console.log('[NewMessage] conversation created:', newConv.id)
 
-      await supabase.from('cng_conversation_members').insert([
+      const { error: membErr } = await supabase.from('cng_conversation_members').insert([
         { conversation_id: newConv.id, user_id: user.id, role: 'admin' },
         { conversation_id: newConv.id, user_id: target.user_id, role: 'member' },
       ])
 
+      if (membErr) {
+        console.error('[NewMessage] members INSERT error:', membErr)
+        throw membErr
+      }
+      console.log('[NewMessage] members added, opening chat...')
+
       onClose()
       onSelectConversation(newConv.id)
+      console.log('[NewMessage] chat opened for conversation:', newConv.id)
     } catch (e) {
-      console.error('Error creating conversation:', e)
+      console.error('[NewMessage] Error creating conversation:', e)
     } finally {
       setCreating(false)
     }
@@ -176,13 +193,13 @@ function NewMessageModal({ open, onClose, onSelectConversation, user }) {
           {results.map((m) => (
             <div
               key={m.user_id}
-              onMouseDown={(e) => e.preventDefault()}
               onClick={() => handleSelect(m)}
               style={{
                 display: 'flex', alignItems: 'center', gap: 14,
                 padding: '12px 12px', borderRadius: 14, cursor: 'pointer',
                 opacity: creating ? 0.5 : 1,
                 background: 'transparent', transition: 'background 0.15s',
+                WebkitTapHighlightColor: 'transparent',
               }}
               onPointerEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}
               onPointerLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
