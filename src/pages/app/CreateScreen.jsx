@@ -56,10 +56,11 @@ const glassCard = {
 export default function CreateScreen({ onDone }) {
   const { user, member } = useAuth()
   const desktop = useDesktop()
-  const cameraRef = useRef(null)
+  const cameraPhotoRef = useRef(null)
+  const cameraVideoRef = useRef(null)
   const galleryRef = useRef(null)
 
-  // step: 'select' | 'details'
+  // step: 'select' | 'camera' | 'details'
   const [step, setStep] = useState('select')
   const [file, setFile] = useState(null)
   const [preview, setPreview] = useState(null)
@@ -178,9 +179,17 @@ export default function CreateScreen({ onDone }) {
   const fileInputs = (
     <>
       <input
-        ref={cameraRef}
+        ref={cameraPhotoRef}
         type="file"
-        accept="image/*,video/*"
+        accept="image/*"
+        capture="environment"
+        onChange={handleFileSelect}
+        style={{ display: 'none' }}
+      />
+      <input
+        ref={cameraVideoRef}
+        type="file"
+        accept="video/*"
         capture="environment"
         onChange={handleFileSelect}
         style={{ display: 'none' }}
@@ -230,7 +239,7 @@ export default function CreateScreen({ onDone }) {
         }}>
           {/* Camera card */}
           <div
-            onClick={() => cameraRef.current?.click()}
+            onClick={() => setStep('camera')}
             style={{
               ...glassCard,
               flex: 1, padding: '40px 24px',
@@ -308,6 +317,112 @@ export default function CreateScreen({ onDone }) {
             </span>
           </div>
         </div>
+
+        {/* Error message */}
+        {error && (
+          <div style={{
+            marginTop: 24, padding: '12px 20px', borderRadius: 12,
+            background: 'rgba(226,75,74,0.12)', border: '1px solid rgba(226,75,74,0.25)',
+            color: C.error, fontSize: 13, fontFamily: FONT.body,
+            maxWidth: desktop ? 520 : 360, width: '100%', textAlign: 'center',
+          }}>
+            {error}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ━━━━━━━━━━━━━━ STEP 1b: CAMERA SUB-OPTIONS ━━━━━━━━━━━━━━
+  if (step === 'camera') {
+    return (
+      <div style={{
+        position: 'relative', minHeight: '100%',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        background: C.surface, padding: 24,
+      }}>
+        {closeBtn}
+        {fileInputs}
+
+        {/* Icon */}
+        <div style={{
+          width: 72, height: 72, borderRadius: 99,
+          background: 'rgba(29,158,117,0.15)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          marginBottom: 16,
+        }}>
+          <Icon name="photo_camera" size={36} style={{ color: C.primary }} />
+        </div>
+
+        <h2 style={{
+          fontFamily: FONT.headline, fontWeight: 800, fontSize: 20,
+          color: C.text, letterSpacing: 1, textTransform: 'uppercase',
+          marginBottom: 8, textAlign: 'center',
+        }}>
+          Cámara
+        </h2>
+        <p style={{
+          fontFamily: FONT.body, fontSize: 13, color: C.textDim,
+          marginBottom: 32, textAlign: 'center',
+        }}>
+          ¿Qué quieres capturar?
+        </p>
+
+        {/* Pill buttons */}
+        <div style={{
+          display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap',
+        }}>
+          {/* Foto pill */}
+          <button
+            onClick={() => cameraPhotoRef.current?.click()}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '14px 28px', borderRadius: 99,
+              background: 'rgba(29,158,117,0.12)',
+              border: '1px solid rgba(29,158,117,0.3)',
+              color: C.primary, fontSize: 14, fontWeight: 700,
+              fontFamily: FONT.headline, cursor: 'pointer',
+              transition: 'all 0.2s', letterSpacing: 0.5,
+            }}
+          >
+            <Icon name="photo_camera" size={20} />
+            Foto
+          </button>
+
+          {/* Video pill */}
+          <button
+            onClick={() => cameraVideoRef.current?.click()}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '14px 28px', borderRadius: 99,
+              background: 'rgba(140,132,235,0.12)',
+              border: '1px solid rgba(140,132,235,0.3)',
+              color: C.tertiary, fontSize: 14, fontWeight: 700,
+              fontFamily: FONT.headline, cursor: 'pointer',
+              transition: 'all 0.2s', letterSpacing: 0.5,
+            }}
+          >
+            <Icon name="videocam" size={20} />
+            Video
+          </button>
+        </div>
+
+        {/* Back button */}
+        <button
+          onClick={() => setStep('select')}
+          style={{
+            marginTop: 32, display: 'flex', alignItems: 'center', gap: 6,
+            padding: '10px 20px', borderRadius: 99,
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            color: C.textDim, fontSize: 13, fontWeight: 600,
+            fontFamily: FONT.body, cursor: 'pointer',
+            transition: 'all 0.2s',
+          }}
+        >
+          <Icon name="arrow_back" size={16} />
+          Atrás
+        </button>
 
         {/* Error message */}
         {error && (
