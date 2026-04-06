@@ -1,8 +1,7 @@
-import { useState, useRef } from 'react'
-import { C, FONT, Icon, GRADIENT } from '../../stitch'
+import { useState, useRef, useCallback } from 'react'
+import { C, FONT, Icon, GRADIENT, useDesktop } from '../../stitch'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
-import TopBar from '../../components/TopBar'
 
 const TAGS = [
   { label: 'Travel', value: 'travel', color: '#26A37A', text: '#68DBAE' },
@@ -13,9 +12,55 @@ const TAGS = [
   { label: 'Online', value: 'online', color: '#8c84eb', text: '#C5C0FF' },
 ]
 
+const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
+const MAX_VIDEO_DURATION = 180 // 3 minutes
+
+function formatDuration(seconds) {
+  const m = Math.floor(seconds / 60)
+  const s = Math.floor(seconds % 60)
+  return `${m}:${s.toString().padStart(2, '0')}`
+}
+
+function getVideoDuration(file) {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video')
+    video.preload = 'metadata'
+    const url = URL.createObjectURL(file)
+    video.onloadedmetadata = () => {
+      URL.revokeObjectURL(url)
+      resolve(video.duration)
+    }
+    video.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('Could not read video metadata'))
+    }
+    video.src = url
+  })
+}
+
+const glassCard = {
+  background: 'rgba(255,255,255,0.04)',
+  backdropFilter: 'blur(16px)',
+  WebkitBackdropFilter: 'blur(16px)',
+  border: '1px solid rgba(255,255,255,0.08)',
+  borderRadius: 20,
+  cursor: 'pointer',
+  transition: 'all 0.25s ease',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 12,
+}
+
 export default function CreateScreen({ onDone }) {
   const { user, member } = useAuth()
-  const fileRef = useRef(null)
+  const desktop = useDesktop()
+  const cameraRef = useRef(null)
+  const galleryRef = useRef(null)
+
+  // step: 'select' | 'details'
+  const [step, setStep] = useState('select')
   const [file, setFile] = useState(null)
   const [preview, setPreview] = useState(null)
   const [caption, setCaption] = useState('')
@@ -23,47 +68,74 @@ export default function CreateScreen({ onDone }) {
   const [location, setLocation] = useState('')
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState('')
-
-  const handleFileSelect = (e) => {
-    const f = e.target.files?.[0]
-    if (!f) return
-    setFile(f)
-    const url = URL.createObjectURL(f)
-    setPreview(url)
-  }
+  const [error, setError] = useState('')
 
   const isVideo = file?.type?.startsWith('video/')
 
+  const reset = useCallback(() => {
+    if (preview) URL.revokeObjectURL(preview)
+    setFile(null)
+    setPreview(null)
+    setCaption('')
+    setCategory(null)
+    setLocation('')
+    setError('')
+    setStep('select')
+  }, [preview])
+
+  const handleFileSelect = useCallback(async (e) => {
+    const f = e.target.files?.[0]
+    if (!f) return
+    e.target.value = '' // allow re-selecting same file
+    setError('')
+
+    // Size check
+    if (f.size > MAX_FILE_SIZE) {
+      setError(`El archivo supera 50MB (${(f.size / 1024 / 1024).toFixed(1)}MB). Selecciona uno más pequeño.`)
+      return
+    }
+
+    // Video duration check
+    if (f.type.startsWith('video/')) {
+      try {
+        const duration = await getVideoDuration(f)
+        if (duration > MAX_VIDEO_DURATION) {
+          setError(`El video no puede superar 3 minutos. Tu video dura ${formatDuration(duration)}. Por favor selecciona un video más corto.`)
+          return
+        }
+      } catch {
+        // If we can't read metadata, allow it through — server will catch issues
+      }
+    }
+
+    if (preview) URL.revokeObjectURL(preview)
+    const url = URL.createObjectURL(f)
+    setFile(f)
+    setPreview(url)
+    setStep('details')
+  }, [preview])
+
   const handlePost = async () => {
-    if (!user) return
-    if (!file && !caption) return
+    if (!user || !file) return
     setUploading(true)
+    setProgress('Subiendo media...')
 
     try {
-      let mediaUrl = null
-      let mediaType = 'image'
+      const path = `${user.id}/${Date.now()}-${file.name}`
+      const mediaType = file.type.startsWith('video/') ? 'video' : 'image'
 
-      if (file) {
-        setProgress('Uploading media...')
-        const ext = file.name.split('.').pop()
-        const ts = Date.now()
-        const path = `${user.id}/${ts}-${file.name}`
-        mediaType = file.type.startsWith('video/') ? 'video' : 'image'
+      const { error: uploadErr } = await supabase.storage
+        .from('cng-media')
+        .upload(path, file, { contentType: file.type, upsert: false })
+      if (uploadErr) throw uploadErr
 
-        const { error: uploadErr } = await supabase.storage
-          .from('cng-media')
-          .upload(path, file, { contentType: file.type, upsert: false })
-        if (uploadErr) throw uploadErr
+      const { data: urlData } = supabase.storage.from('cng-media').getPublicUrl(path)
 
-        const { data: urlData } = supabase.storage.from('cng-media').getPublicUrl(path)
-        mediaUrl = urlData.publicUrl
-      }
-
-      setProgress('Creating post...')
+      setProgress('Creando post...')
       const { error: postErr } = await supabase.from('cng_posts').insert({
         user_id: user.id,
         member_id: member?.id || null,
-        media_url: mediaUrl,
+        media_url: urlData.publicUrl,
         media_type: mediaType,
         caption: caption || null,
         category: category || 'general',
@@ -71,91 +143,265 @@ export default function CreateScreen({ onDone }) {
       })
       if (postErr) throw postErr
 
-      // Reset
-      setFile(null)
-      setPreview(null)
-      setCaption('')
-      setCategory(null)
-      setLocation('')
-      setProgress('Posted!')
+      setProgress('Publicado!')
       setTimeout(() => {
-        setProgress('')
         setUploading(false)
+        setProgress('')
         if (onDone) onDone()
       }, 800)
     } catch (e) {
       console.error('Post error:', e)
-      setProgress('Error: ' + (e.message || 'Failed to post'))
-      setTimeout(() => { setProgress(''); setUploading(false) }, 2000)
+      setProgress('')
+      setError('Error: ' + (e.message || 'No se pudo publicar'))
+      setUploading(false)
     }
   }
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column' }}>
-      <TopBar title="Chill N Go" leftIcon="close" rightIcon="settings" />
+  // ── Close button (always visible) ──
+  const closeBtn = (
+    <button
+      onClick={() => { reset(); if (onDone) onDone() }}
+      style={{
+        position: 'absolute', top: 16, left: 16, zIndex: 20,
+        width: 40, height: 40, borderRadius: 99,
+        background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+        border: '1px solid rgba(255,255,255,0.1)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        cursor: 'pointer', color: '#fff',
+      }}
+    >
+      <Icon name="close" size={22} />
+    </button>
+  )
 
-      {/* Media picker area */}
-      <div
-        onClick={() => fileRef.current?.click()}
-        style={{ position: 'relative', width: '100%', height: 380, overflow: 'hidden', cursor: 'pointer', background: C.surface }}
-      >
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*,video/*"
-          onChange={handleFileSelect}
-          style={{ display: 'none' }}
-        />
-        {preview ? (
-          <>
-            {isVideo ? (
-              <video src={preview} style={{ width: '100%', height: '100%', objectFit: 'cover' }} autoPlay loop playsInline controls />
-            ) : (
-              <img src={preview} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            )}
-            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, #0D1117, transparent, transparent)', opacity: 0.4 }} />
-            <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 10, width: 36, height: 36, borderRadius: 99, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Icon name="edit" size={18} style={{ color: '#fff' }} />
+  // ── Hidden file inputs ──
+  const fileInputs = (
+    <>
+      <input
+        ref={cameraRef}
+        type="file"
+        accept="image/*,video/*"
+        capture="environment"
+        onChange={handleFileSelect}
+        style={{ display: 'none' }}
+      />
+      <input
+        ref={galleryRef}
+        type="file"
+        accept="image/*,video/*"
+        onChange={handleFileSelect}
+        style={{ display: 'none' }}
+      />
+    </>
+  )
+
+  // ━━━━━━━━━━━━━━ STEP 1: SELECTOR ━━━━━━━━━━━━━━
+  if (step === 'select') {
+    return (
+      <div style={{
+        position: 'relative', minHeight: '100%',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        background: C.surface, padding: 24,
+      }}>
+        {closeBtn}
+        {fileInputs}
+
+        {/* Title */}
+        <h2 style={{
+          fontFamily: FONT.headline, fontWeight: 800, fontSize: 22,
+          color: C.text, letterSpacing: 1, textTransform: 'uppercase',
+          marginBottom: 8, textAlign: 'center',
+        }}>
+          Crear Post
+        </h2>
+        <p style={{
+          fontFamily: FONT.body, fontSize: 13, color: C.textDim,
+          marginBottom: 36, textAlign: 'center',
+        }}>
+          Elige cómo quieres agregar tu contenido
+        </p>
+
+        {/* Cards container */}
+        <div style={{
+          display: 'flex',
+          flexDirection: desktop ? 'row' : 'column',
+          gap: 16, width: '100%',
+          maxWidth: desktop ? 520 : 360,
+        }}>
+          {/* Camera card */}
+          <div
+            onClick={() => cameraRef.current?.click()}
+            style={{
+              ...glassCard,
+              flex: 1, padding: '40px 24px',
+              backgroundImage: 'linear-gradient(135deg, rgba(29,158,117,0.08), rgba(15,110,86,0.03))',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(29,158,117,0.12)'
+              e.currentTarget.style.borderColor = 'rgba(29,158,117,0.3)'
+              e.currentTarget.style.transform = 'translateY(-2px)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(255,255,255,0.04)'
+              e.currentTarget.style.backgroundImage = 'linear-gradient(135deg, rgba(29,158,117,0.08), rgba(15,110,86,0.03))'
+              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'
+              e.currentTarget.style.transform = 'translateY(0)'
+            }}
+          >
+            <div style={{
+              width: 72, height: 72, borderRadius: 99,
+              background: 'rgba(29,158,117,0.15)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Icon name="photo_camera" size={36} style={{ color: C.primary }} />
             </div>
-          </>
+            <span style={{
+              fontFamily: FONT.headline, fontWeight: 700, fontSize: 16,
+              color: C.text, letterSpacing: 0.5,
+            }}>
+              Cámara
+            </span>
+            <span style={{
+              fontFamily: FONT.body, fontSize: 12, color: C.textDim, textAlign: 'center',
+            }}>
+              Tomar foto o grabar video
+            </span>
+          </div>
+
+          {/* Gallery card */}
+          <div
+            onClick={() => galleryRef.current?.click()}
+            style={{
+              ...glassCard,
+              flex: 1, padding: '40px 24px',
+              backgroundImage: 'linear-gradient(135deg, rgba(140,132,235,0.08), rgba(65,55,155,0.03))',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(140,132,235,0.12)'
+              e.currentTarget.style.borderColor = 'rgba(140,132,235,0.3)'
+              e.currentTarget.style.transform = 'translateY(-2px)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(255,255,255,0.04)'
+              e.currentTarget.style.backgroundImage = 'linear-gradient(135deg, rgba(140,132,235,0.08), rgba(65,55,155,0.03))'
+              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'
+              e.currentTarget.style.transform = 'translateY(0)'
+            }}
+          >
+            <div style={{
+              width: 72, height: 72, borderRadius: 99,
+              background: 'rgba(140,132,235,0.15)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Icon name="photo_library" size={36} style={{ color: C.tertiary }} />
+            </div>
+            <span style={{
+              fontFamily: FONT.headline, fontWeight: 700, fontSize: 16,
+              color: C.text, letterSpacing: 0.5,
+            }}>
+              Galería
+            </span>
+            <span style={{
+              fontFamily: FONT.body, fontSize: 12, color: C.textDim, textAlign: 'center',
+            }}>
+              Seleccionar de tu dispositivo
+            </span>
+          </div>
+        </div>
+
+        {/* Error message */}
+        {error && (
+          <div style={{
+            marginTop: 24, padding: '12px 20px', borderRadius: 12,
+            background: 'rgba(226,75,74,0.12)', border: '1px solid rgba(226,75,74,0.25)',
+            color: C.error, fontSize: 13, fontFamily: FONT.body,
+            maxWidth: desktop ? 520 : 360, width: '100%', textAlign: 'center',
+          }}>
+            {error}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ━━━━━━━━━━━━━━ STEP 2: DETAILS ━━━━━━━━━━━━━━
+  return (
+    <div style={{
+      position: 'relative', minHeight: '100%',
+      display: 'flex', flexDirection: 'column', alignItems: 'center',
+      background: C.surface, overflowY: 'auto',
+    }}>
+      {closeBtn}
+      {fileInputs}
+
+      {/* Preview area */}
+      <div style={{
+        position: 'relative', width: '100%',
+        maxWidth: desktop ? 600 : '100%',
+        background: C.bg,
+      }}>
+        {/* Change button */}
+        <button
+          onClick={reset}
+          style={{
+            position: 'absolute', top: 16, right: 16, zIndex: 20,
+            padding: '8px 16px', borderRadius: 99,
+            background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+            border: '1px solid rgba(255,255,255,0.12)',
+            color: '#fff', fontSize: 12, fontWeight: 600, fontFamily: FONT.body,
+            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+          }}
+        >
+          <Icon name="swap_horiz" size={16} />
+          Cambiar
+        </button>
+
+        {isVideo ? (
+          <video
+            src={preview}
+            controls
+            playsInline
+            style={{
+              width: '100%', maxHeight: 420, objectFit: 'contain',
+              display: 'block', background: '#000',
+            }}
+          />
         ) : (
-          <>
-            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, rgba(29,158,117,0.1), rgba(13,17,23,0.8))' }} />
-            <div style={{ position: 'absolute', inset: 0, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gridTemplateRows: '1fr 1fr 1fr', opacity: 0.15, pointerEvents: 'none' }}>
-              {[...Array(6)].map((_, i) => (<div key={i} style={{ borderRight: i % 3 !== 2 ? '1px solid #F1EFE8' : 'none', borderBottom: i < 3 ? '1px solid #F1EFE8' : 'none' }} />))}
-            </div>
-            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}>
-              <div style={{ width: 64, height: 64, borderRadius: 99, border: '2px solid rgba(255,255,255,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.2)', backdropFilter: 'blur(8px)' }}>
-                <Icon name="add_photo_alternate" size={30} style={{ color: '#fff' }} />
-              </div>
-              <p style={{ marginTop: 16, fontSize: 14, fontWeight: 500, color: 'rgba(255,255,255,0.8)', textTransform: 'uppercase', letterSpacing: 1, fontFamily: FONT.body }}>Tap to select photo or video</p>
-            </div>
-          </>
+          <img
+            src={preview}
+            alt=""
+            style={{
+              width: '100%', maxHeight: 420, objectFit: 'contain',
+              display: 'block', background: '#000',
+            }}
+          />
         )}
       </div>
 
-      {/* Media type indicator */}
-      <div style={{ display: 'flex', justifyContent: 'center', gap: 32, padding: '16px 0', background: C.surface }}>
-        <span style={{ fontSize: 14, fontWeight: 600, color: isVideo ? C.primaryBright : C.textFaint, fontFamily: FONT.body }}>Video</span>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-          <span style={{ fontSize: 14, fontWeight: 700, color: !isVideo ? C.primaryBright : C.textFaint, fontFamily: FONT.body }}>Photo</span>
-          {!isVideo && <div style={{ width: 6, height: 6, borderRadius: 99, background: C.primaryBright, marginTop: 8 }} />}
-        </div>
-        <span style={{ fontSize: 14, fontWeight: 600, color: C.textFaint, fontFamily: FONT.body }}>Story</span>
-      </div>
-
-      {/* Caption + tags */}
-      <div style={{ padding: '0 24px 24px', display: 'flex', flexDirection: 'column', gap: 24, background: C.surface }}>
+      {/* Details form */}
+      <div style={{
+        width: '100%', maxWidth: desktop ? 600 : '100%',
+        padding: '20px 16px 32px',
+        display: 'flex', flexDirection: 'column', gap: 20,
+      }}>
+        {/* Caption */}
         <textarea
-          placeholder="Write a chill caption..."
+          placeholder="Escribe un caption..."
           rows={3}
           value={caption}
           onChange={(e) => setCaption(e.target.value)}
-          style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 12, padding: 16, color: C.text, fontSize: 14, fontFamily: FONT.body, resize: 'none', outline: 'none' }}
+          style={{
+            width: '100%', background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(255,255,255,0.06)', borderRadius: 14,
+            padding: 16, color: C.text, fontSize: 14, fontFamily: FONT.body,
+            resize: 'none', outline: 'none', boxSizing: 'border-box',
+          }}
+          onFocus={(e) => e.target.style.borderColor = 'rgba(29,158,117,0.4)'}
+          onBlur={(e) => e.target.style.borderColor = 'rgba(255,255,255,0.06)'}
         />
 
-        {/* Category tags — toggle, 1 at a time */}
-        <div style={{ display: 'flex', gap: 12, overflowX: 'auto' }}>
+        {/* Category tags */}
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {TAGS.map((t) => {
             const active = category === t.value
             return (
@@ -163,19 +409,13 @@ export default function CreateScreen({ onDone }) {
                 key={t.value}
                 onClick={() => setCategory(active ? null : t.value)}
                 style={{
-                  flexShrink: 0,
-                  padding: '8px 16px',
-                  borderRadius: 99,
-                  background: active ? t.color + '40' : t.color + '20',
-                  color: t.text,
-                  fontSize: 10,
-                  fontWeight: 700,
-                  textTransform: 'uppercase',
-                  letterSpacing: 2,
+                  padding: '8px 16px', borderRadius: 99,
+                  background: active ? t.color + '40' : t.color + '18',
+                  color: t.text, fontSize: 10, fontWeight: 700,
+                  textTransform: 'uppercase', letterSpacing: 2,
                   border: active ? '2px solid ' + t.color : '1px solid ' + t.color + '30',
-                  fontFamily: FONT.body,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
+                  fontFamily: FONT.body, cursor: 'pointer', transition: 'all 0.2s',
+                  userSelect: 'none',
                 }}
               >
                 {t.label}
@@ -184,55 +424,98 @@ export default function CreateScreen({ onDone }) {
           })}
         </div>
 
-        {/* Location + actions */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <button onClick={() => {
-            const loc = prompt('Enter location name:')
-            if (loc) setLocation(loc)
-          }} style={{ display: 'flex', alignItems: 'center', gap: 8, color: location ? C.primary : '#5DCAA5', background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT.body }}>
-            <Icon name="location_on" size={20} />
-            <span style={{ fontSize: 12, fontWeight: 600 }}>{location || 'Location'}</span>
+        {/* Action buttons */}
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          {/* Location */}
+          <button
+            onClick={() => {
+              const loc = prompt('Nombre del lugar:')
+              if (loc) setLocation(loc)
+            }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '10px 16px', borderRadius: 12,
+              background: location ? 'rgba(29,158,117,0.12)' : 'rgba(255,255,255,0.04)',
+              border: location ? '1px solid rgba(29,158,117,0.3)' : '1px solid rgba(255,255,255,0.06)',
+              color: location ? C.primary : C.textDim,
+              fontSize: 12, fontWeight: 600, fontFamily: FONT.body, cursor: 'pointer',
+            }}
+          >
+            <Icon name="location_on" size={18} />
+            {location || 'Location'}
           </button>
-          <button style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#5DCAA5', background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT.body }}>
-            <Icon name="sell" size={20} />
-            <span style={{ fontSize: 12, fontWeight: 600 }}>Products</span>
+
+          {/* People — disabled */}
+          <button
+            disabled
+            title="Próximamente"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '10px 16px', borderRadius: 12,
+              background: 'rgba(255,255,255,0.02)',
+              border: '1px solid rgba(255,255,255,0.04)',
+              color: C.textGhost, fontSize: 12, fontWeight: 600,
+              fontFamily: FONT.body, cursor: 'not-allowed', opacity: 0.5,
+            }}
+          >
+            <Icon name="group" size={18} />
+            People
           </button>
-          <button style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#5DCAA5', background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT.body }}>
-            <Icon name="group" size={20} />
-            <span style={{ fontSize: 12, fontWeight: 600 }}>People</span>
+
+          {/* Products — disabled */}
+          <button
+            disabled
+            title="Próximamente"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '10px 16px', borderRadius: 12,
+              background: 'rgba(255,255,255,0.02)',
+              border: '1px solid rgba(255,255,255,0.04)',
+              color: C.textGhost, fontSize: 12, fontWeight: 600,
+              fontFamily: FONT.body, cursor: 'not-allowed', opacity: 0.5,
+            }}
+          >
+            <Icon name="sell" size={18} />
+            Products
           </button>
         </div>
 
-        {/* Post button */}
+        {/* Error */}
+        {error && (
+          <div style={{
+            padding: '12px 20px', borderRadius: 12,
+            background: 'rgba(226,75,74,0.12)', border: '1px solid rgba(226,75,74,0.25)',
+            color: C.error, fontSize: 13, fontFamily: FONT.body, textAlign: 'center',
+          }}>
+            {error}
+          </div>
+        )}
+
+        {/* POST button */}
         <button
           onClick={handlePost}
-          disabled={uploading || (!file && !caption)}
+          disabled={uploading || !file}
           style={{
-            width: '100%',
-            padding: 16,
-            borderRadius: 12,
-            background: uploading || (!file && !caption) ? C.surfaceHigh : GRADIENT.primary,
-            color: uploading || (!file && !caption) ? C.textFaint : '#fff',
-            fontFamily: FONT.headline,
-            fontWeight: 800,
-            fontSize: 14,
-            letterSpacing: 3,
-            textTransform: 'uppercase',
-            border: 'none',
-            cursor: uploading ? 'wait' : 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-            opacity: uploading ? 0.7 : 1,
-            transition: 'all 0.2s',
+            width: '100%', padding: 16, borderRadius: 14,
+            background: uploading || !file ? C.surfaceHigh : GRADIENT.primary,
+            color: uploading || !file ? C.textFaint : '#fff',
+            fontFamily: FONT.headline, fontWeight: 800, fontSize: 15,
+            letterSpacing: 3, textTransform: 'uppercase',
+            border: 'none', cursor: uploading ? 'wait' : 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+            opacity: uploading ? 0.7 : 1, transition: 'all 0.2s',
           }}
         >
           {uploading ? (
             <>
-              <div style={{ width: 18, height: 18, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: 99, animation: 'spin 0.8s linear infinite' }} />
+              <div style={{
+                width: 18, height: 18,
+                border: '2px solid rgba(255,255,255,0.3)',
+                borderTopColor: '#fff', borderRadius: 99,
+                animation: 'cng-spin 0.8s linear infinite',
+              }} />
               {progress}
-              <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+              <style>{`@keyframes cng-spin { to { transform: rotate(360deg) } }`}</style>
             </>
           ) : (
             <>POST <Icon name="arrow_forward" size={18} /></>
