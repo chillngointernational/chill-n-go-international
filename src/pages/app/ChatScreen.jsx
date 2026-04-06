@@ -93,7 +93,12 @@ function VoicePlayer({ url, isMine }) {
     const a = audioRef.current
     if (!a) return
     if (playing) { a.pause(); setPlaying(false) }
-    else { a.play(); setPlaying(true) }
+    else {
+      a.play().then(() => setPlaying(true)).catch(err => {
+        console.error('Voice: playback error', err)
+        setPlaying(false)
+      })
+    }
   }
 
   const pct = duration ? (current / duration) * 100 : 0
@@ -297,26 +302,82 @@ export default function ChatScreen({ conversationId, onBack }) {
   }
 
   /* ── Voice record ───────────────────────────────────────────── */
+  const getSupportedMimeType = () => {
+    const types = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4',
+      'audio/ogg;codecs=opus',
+      'audio/ogg',
+    ]
+    for (const t of types) {
+      if (MediaRecorder.isTypeSupported(t)) {
+        console.log('Voice: using mimeType', t)
+        return t
+      }
+    }
+    console.warn('Voice: no supported mimeType found, using browser default')
+    return undefined // let browser pick default
+  }
+
+  const getExtForMime = (mime) => {
+    if (!mime) return 'webm'
+    if (mime.includes('mp4')) return 'mp4'
+    if (mime.includes('ogg')) return 'ogg'
+    return 'webm'
+  }
+
   const startRecording = async () => {
+    console.log('Voice: starting recording...')
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const mr = new MediaRecorder(stream, { mimeType: 'audio/webm' })
+      console.log('Voice: mic access granted')
+
+      const mimeType = getSupportedMimeType()
+      const options = mimeType ? { mimeType } : undefined
+      const mr = new MediaRecorder(stream, options)
+      const activeMime = mr.mimeType // actual mimeType the recorder is using
+      console.log('Voice: MediaRecorder created, mimeType=', activeMime)
+
       chunksRef.current = []
-      mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data) }
+
+      mr.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          chunksRef.current.push(e.data)
+          console.log('Voice: chunk received, size=', e.data.size)
+        }
+      }
+
       mr.onstop = async () => {
+        console.log('Voice: recording stopped, chunks=', chunksRef.current.length)
         stream.getTracks().forEach(t => t.stop())
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
-        if (blob.size < 1000) return // too short
+
+        const blobType = activeMime || 'audio/webm'
+        const blob = new Blob(chunksRef.current, { type: blobType })
+        console.log('Voice: blob size=', blob.size, 'type=', blobType)
+
+        if (blob.size < 500) {
+          console.warn('Voice: blob too small, discarding')
+          return
+        }
+
         setUploading(true)
         try {
-          const path = `messages/${conversationId}/voice-${Date.now()}.webm`
+          const ext = getExtForMime(blobType)
+          const path = `messages/${conversationId}/voice-${Date.now()}.${ext}`
+          console.log('Voice: uploading to', path)
+
           const { error: upErr } = await supabase.storage
             .from('cng-media')
-            .upload(path, blob, { contentType: 'audio/webm' })
+            .upload(path, blob, { contentType: blobType })
           if (upErr) throw upErr
+          console.log('Voice: upload complete')
+
           const { data: urlData } = supabase.storage
             .from('cng-media')
             .getPublicUrl(path)
+          console.log('Voice: public URL=', urlData.publicUrl)
+
           const { error } = await supabase.from('cng_messages').insert({
             conversation_id: conversationId,
             sender_id: user.id,
@@ -325,25 +386,34 @@ export default function ChatScreen({ conversationId, onBack }) {
             media_url: urlData.publicUrl,
           })
           if (error) throw error
+          console.log('Voice: message sent')
         } catch (e) {
           console.error('Voice upload error:', e)
         } finally {
           setUploading(false)
         }
       }
-      mr.start()
+
+      mr.onerror = (e) => {
+        console.error('Voice: MediaRecorder error', e.error)
+      }
+
+      mr.start(1000) // collect data every 1s to avoid empty chunks
       mediaRecorderRef.current = mr
       setRecording(true)
+      console.log('Voice: recording started')
     } catch (e) {
-      console.error('Mic access denied:', e)
+      console.error('Voice: mic access denied or error:', e)
       setMicSupported(false)
     }
   }
 
   const stopRecording = () => {
+    console.log('Voice: stop requested')
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop()
     }
+    mediaRecorderRef.current = null
     setRecording(false)
   }
 
