@@ -250,7 +250,7 @@ export default function ChatScreen({ conversationId, onBack }) {
   useEffect(() => {
     if (!reactionPopup && !showStickers) return
     const handler = () => { closeReactionPopup(); setShowStickers(false) }
-    const timer = setTimeout(() => document.addEventListener('click', handler), 0)
+    const timer = setTimeout(() => document.addEventListener('click', handler), 300)
     return () => { clearTimeout(timer); document.removeEventListener('click', handler) }
   }, [reactionPopup, showStickers])
 
