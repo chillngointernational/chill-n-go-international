@@ -24,12 +24,9 @@ const CATEGORIES = [
 
 export default function ExploreScreen({ onNavigate, isDesktop }) {
   const [categoryCounts, setCategoryCounts] = useState({})
-  const [trending, setTrending] = useState([])
-  const [loadingTrending, setLoadingTrending] = useState(true)
 
   const fetchData = useCallback(async () => {
     try {
-      // Fetch counts per category
       const counts = {}
       const countPromises = CATEGORIES.map(async (cat) => {
         const { count, error } = await supabase
@@ -41,25 +38,8 @@ export default function ExploreScreen({ onNavigate, isDesktop }) {
       })
       await Promise.all(countPromises)
       setCategoryCounts(counts)
-
-      // Fetch trending posts (most likes in last 48h)
-      const since = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
-      const { data: trendingPosts, error: tErr } = await supabase
-        .from('cng_posts')
-        .select('*, cng_members!cng_posts_member_id_fkey(full_name, ref_code)')
-        .eq('is_active', true)
-        .gte('created_at', since)
-        .order('likes_count', { ascending: false })
-        .limit(5)
-
-      if (!tErr) {
-        console.log('[Explore] trending posts:', trendingPosts?.map(p => ({ id: p.id, media_url: p.media_url, media_type: p.media_type, thumbnail_url: p.thumbnail_url })))
-        setTrending(trendingPosts || [])
-      }
     } catch (e) {
       console.error('Explore error:', e)
-    } finally {
-      setLoadingTrending(false)
     }
   }, [])
 
@@ -93,65 +73,6 @@ export default function ExploreScreen({ onNavigate, isDesktop }) {
           ))}
         </div>
 
-        {/* Trending */}
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <h2 style={{ fontFamily: FONT.headline, fontSize: 12, fontWeight: 800, color: C.text, textTransform: 'uppercase', letterSpacing: 3 }}>Trending Now</h2>
-            <span style={{ color: C.secondaryDark, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>VIEW ALL</span>
-          </div>
-          <div style={{ display: 'flex', gap: 24, overflowX: 'auto', paddingBottom: 16 }}>
-            {loadingTrending ? (
-              <div style={{ display: 'flex', justifyContent: 'center', width: '100%', padding: 40 }}>
-                <div style={{ width: 24, height: 24, border: '2px solid rgba(104,219,174,0.3)', borderTopColor: C.primary, borderRadius: 99, animation: 'spin 0.8s linear infinite' }} />
-                <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-              </div>
-            ) : trending.length > 0 ? (
-              trending.map((post) => (
-                <div key={post.id} style={{ flexShrink: 0, width: 288, background: C.surfaceLow, borderRadius: 16, overflow: 'hidden' }}>
-                  <div style={{ height: 160, position: 'relative', background: C.surfaceHigh }}>
-                    {post.media_url && post.media_type === 'video' ? (
-                      post.thumbnail_url ? (
-                        <img src={post.thumbnail_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      ) : (
-                        <div style={{ width: '100%', height: '100%', background: 'linear-gradient(135deg, rgba(29,158,117,0.3), rgba(13,17,23,0.8))', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                          <Icon name="videocam" size={36} style={{ color: C.textFaint }} />
-                          {post.caption && <p style={{ fontSize: 10, color: C.textDim, textAlign: 'center', padding: '0 12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{post.caption}</p>}
-                        </div>
-                      )
-                    ) : post.media_url ? (
-                      <img src={post.media_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    ) : (
-                      <div style={{ width: '100%', height: '100%', background: 'linear-gradient(135deg, rgba(29,158,117,0.3), rgba(13,17,23,0.8))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Icon name="article" size={40} style={{ color: C.textFaint }} />
-                      </div>
-                    )}
-                    <div style={{ position: 'absolute', top: 12, right: 12, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', padding: '4px 12px', borderRadius: 99, display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <Icon name="favorite" fill size={12} style={{ color: '#E24B4A' }} />
-                      <span style={{ fontSize: 10, fontWeight: 700, color: C.text }}>{post.likes_count}</span>
-                    </div>
-                  </div>
-                  <div style={{ padding: 20 }}>
-                    <p style={{ color: C.secondary, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 3 }}>{post.category}</p>
-                    <h4 style={{ fontFamily: FONT.headline, fontWeight: 700, color: C.onSurface, fontSize: 16, marginTop: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{post.caption || 'Untitled post'}</h4>
-                    <p style={{ fontSize: 11, color: C.textDim, marginTop: 4 }}>by {post.cng_members?.full_name || post.cng_members?.ref_code || 'Member'}</p>
-                  </div>
-                </div>
-              ))
-            ) : (
-              // Fallback demo
-              <div style={{ flexShrink: 0, width: 288, background: C.surfaceLow, borderRadius: 16, overflow: 'hidden' }}>
-                <div style={{ height: 160, position: 'relative' }}>
-                  <img src={IMG.gala} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  <div style={{ position: 'absolute', top: 12, right: 12, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', padding: '4px 12px', borderRadius: 99, fontSize: 10, fontWeight: 700, color: C.secondary }}>PREMIUM</div>
-                </div>
-                <div style={{ padding: 20 }}>
-                  <p style={{ color: C.secondary, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 3 }}>Experiences</p>
-                  <h4 style={{ fontFamily: FONT.headline, fontWeight: 700, color: C.onSurface, fontSize: 16, marginTop: 8 }}>Obsidian Night: Private Concierge Gala</h4>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
       </div>
     </div>
   )

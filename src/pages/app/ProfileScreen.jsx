@@ -165,17 +165,10 @@ export default function ProfileScreen({ onNavigate }) {
               <div key={p.id} style={{ position: 'relative', paddingBottom: '100%', background: C.surfaceHigh, overflow: 'hidden' }}>
                 {p.media_url ? (
                   p.media_type === 'video' ? (
-                    p.thumbnail_url ? (
-                      <>
-                        <img src={p.thumbnail_url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
-                        <div style={{ position: 'absolute', top: 8, right: 8 }}><Icon name="videocam" size={16} style={{ color: '#fff' }} /></div>
-                      </>
-                    ) : (
-                      <div style={{ position: 'absolute', inset: 0, background: '#1a1e26', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                        <Icon name="videocam" size={24} style={{ color: C.textFaint }} />
-                        {p.caption && <p style={{ fontSize: 8, color: C.textDim, textAlign: 'center', padding: '0 6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{p.caption}</p>}
-                      </div>
-                    )
+                    <>
+                      <video src={p.media_url} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} muted playsInline preload="metadata" />
+                      <div style={{ position: 'absolute', top: 8, right: 8 }}><Icon name="videocam" size={16} style={{ color: '#fff', filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.6))' }} /></div>
+                    </>
                   ) : (
                     <img src={p.media_url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
                   )
