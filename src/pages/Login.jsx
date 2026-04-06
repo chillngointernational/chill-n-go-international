@@ -6,6 +6,7 @@ import { C, FONT, Icon, GRADIENT } from '../stitch'
 export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const { signIn } = useAuth()
@@ -61,14 +62,23 @@ export default function Login() {
 
           <div style={styles.field}>
             <label style={styles.label}>Contraseña</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              style={styles.input}
-              placeholder="••••••••"
-              required
-            />
+            <div style={styles.passwordWrapper}>
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                style={{ ...styles.input, width: '100%', paddingRight: 42 }}
+                placeholder="••••••••"
+                required
+              />
+              <Icon
+                name={showPassword ? 'visibility' : 'visibility_off'}
+                size={20}
+                color={C.onSurfaceVariant}
+                onClick={() => setShowPassword(!showPassword)}
+                style={styles.eyeIcon}
+              />
+            </div>
           </div>
 
           <button type="submit" style={styles.button} disabled={loading}>
@@ -167,6 +177,16 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: 6,
+  },
+  passwordWrapper: {
+    position: 'relative',
+  },
+  eyeIcon: {
+    position: 'absolute',
+    right: 12,
+    top: '50%',
+    transform: 'translateY(-50%)',
+    cursor: 'pointer',
   },
   label: {
     fontSize: 13,
