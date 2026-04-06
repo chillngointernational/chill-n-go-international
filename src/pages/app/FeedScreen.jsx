@@ -3,6 +3,166 @@ import { C, FONT, Icon, useDesktop } from '../../stitch'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 
+/* ── Comments Bottom Sheet ─────────────────────────────────── */
+function CommentsPanel({ post, userId, onClose, onCountUpdate }) {
+  const [comments, setComments] = useState([])
+  const [text, setText] = useState('')
+  const [sending, setSending] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const listRef = useRef(null)
+
+  const fetchComments = useCallback(async () => {
+    const { data } = await supabase
+      .from('cng_post_comments')
+      .select('*, cng_members!cng_post_comments_user_id_fkey(full_name, ref_code, avatar_url)')
+      .eq('post_id', post.id)
+      .order('created_at', { ascending: true })
+    setComments(data || [])
+    setLoading(false)
+  }, [post.id])
+
+  useEffect(() => { fetchComments() }, [fetchComments])
+
+  useEffect(() => {
+    if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight
+  }, [comments.length])
+
+  const handleSend = async () => {
+    const body = text.trim()
+    if (!body || sending) return
+    setSending(true)
+    setText('')
+
+    // optimistic
+    const optimistic = {
+      id: 'tmp-' + Date.now(),
+      post_id: post.id,
+      user_id: userId,
+      body,
+      created_at: new Date().toISOString(),
+      cng_members: { full_name: 'You', ref_code: '', avatar_url: null },
+    }
+    setComments(prev => [...prev, optimistic])
+    onCountUpdate(post.id, 1)
+
+    try {
+      const { error } = await supabase.from('cng_post_comments').insert({ post_id: post.id, user_id: userId, body })
+      if (error) throw error
+      await fetchComments()
+    } catch (e) {
+      console.error('Comment error:', e)
+      setComments(prev => prev.filter(c => c.id !== optimistic.id))
+      onCountUpdate(post.id, -1)
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const fmtTime = (iso) => {
+    const d = new Date(iso)
+    const now = new Date()
+    const diff = (now - d) / 1000
+    if (diff < 60) return 'now'
+    if (diff < 3600) return Math.floor(diff / 60) + 'm'
+    if (diff < 86400) return Math.floor(diff / 3600) + 'h'
+    return Math.floor(diff / 86400) + 'd'
+  }
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 998, animation: 'cmtFadeIn 0.25s ease' }} />
+
+      {/* Panel */}
+      <div style={{
+        position: 'fixed', bottom: 0, left: 0, right: 0, maxHeight: '60vh',
+        background: C.surface, borderTop: '1px solid rgba(241,239,232,0.1)',
+        borderRadius: '20px 20px 0 0', zIndex: 999,
+        display: 'flex', flexDirection: 'column',
+        backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',
+        animation: 'cmtSlideUp 0.3s cubic-bezier(0.32,0.72,0,1)',
+      }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px 12px', borderBottom: '1px solid rgba(241,239,232,0.08)' }}>
+          <span style={{ fontFamily: FONT.headline, fontWeight: 700, fontSize: 16, color: C.text }}>
+            Comments <span style={{ color: C.textDim, fontWeight: 500, fontSize: 13 }}>({comments.length})</span>
+          </span>
+          <div onClick={onClose} style={{ cursor: 'pointer', width: 32, height: 32, borderRadius: 99, background: 'rgba(241,239,232,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon name="close" size={18} style={{ color: C.textDim }} />
+          </div>
+        </div>
+
+        {/* List */}
+        <div ref={listRef} style={{ flex: 1, overflowY: 'auto', padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {loading ? (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}>
+              <div style={{ width: 24, height: 24, border: '2px solid rgba(104,219,174,0.3)', borderTopColor: C.primary, borderRadius: 99, animation: 'spin 0.8s linear infinite' }} />
+            </div>
+          ) : comments.length === 0 ? (
+            <p style={{ textAlign: 'center', color: C.textDim, fontSize: 13, padding: 24, fontFamily: FONT.body }}>No comments yet. Be the first!</p>
+          ) : comments.map(c => {
+            const m = c.cng_members || {}
+            const name = m.full_name || m.ref_code || 'Member'
+            const ini = name[0]?.toUpperCase() || 'M'
+            return (
+              <div key={c.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                {m.avatar_url ? (
+                  <img src={m.avatar_url} alt="" style={{ width: 32, height: 32, borderRadius: 99, objectFit: 'cover', flexShrink: 0 }} />
+                ) : (
+                  <div style={{ width: 32, height: 32, borderRadius: 99, background: 'linear-gradient(135deg, #1D9E75, #0F6E56)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: '#fff', flexShrink: 0, fontFamily: FONT.headline }}>{ini}</div>
+                )}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                    <span style={{ fontFamily: FONT.headline, fontWeight: 700, fontSize: 13, color: C.text }}>{name}</span>
+                    <span style={{ fontSize: 11, color: C.textDim }}>{fmtTime(c.created_at)}</span>
+                  </div>
+                  <p style={{ fontSize: 13, color: 'rgba(241,239,232,0.85)', lineHeight: 1.5, marginTop: 2, fontFamily: FONT.body, wordBreak: 'break-word' }}>{c.body}</p>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Input */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 20px', borderTop: '1px solid rgba(241,239,232,0.08)', background: 'rgba(8,12,20,0.4)' }}>
+          <input
+            value={text}
+            onChange={e => setText(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSend()}
+            placeholder="Add a comment…"
+            style={{ flex: 1, background: 'rgba(241,239,232,0.06)', border: '1px solid rgba(241,239,232,0.1)', borderRadius: 99, padding: '10px 16px', fontSize: 13, color: C.text, fontFamily: FONT.body, outline: 'none' }}
+          />
+          <div onClick={handleSend} style={{ cursor: sending ? 'default' : 'pointer', opacity: text.trim() ? 1 : 0.4, width: 36, height: 36, borderRadius: 99, background: 'linear-gradient(135deg, #1D9E75, #0F6E56)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'opacity 0.2s' }}>
+            <Icon name="send" size={18} style={{ color: '#fff' }} />
+          </div>
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes cmtSlideUp { from { transform: translateY(100%) } to { transform: translateY(0) } }
+        @keyframes cmtFadeIn { from { opacity: 0 } to { opacity: 1 } }
+      `}</style>
+    </>
+  )
+}
+
+/* ── Share Toast ────────────────────────────────────────────── */
+function ShareToast({ message }) {
+  return (
+    <div style={{
+      position: 'fixed', bottom: 100, left: '50%', transform: 'translateX(-50%)',
+      background: 'rgba(29,158,117,0.95)', color: '#fff', padding: '10px 24px',
+      borderRadius: 99, fontSize: 13, fontWeight: 600, fontFamily: FONT.headline,
+      zIndex: 1000, backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+      animation: 'toastIn 0.3s ease',
+      boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+    }}>
+      {message}
+      <style>{`@keyframes toastIn { from { opacity:0; transform:translateX(-50%) translateY(12px) } to { opacity:1; transform:translateX(-50%) translateY(0) } }`}</style>
+    </div>
+  )
+}
+
 const IMG_YOGA = 'https://lh3.googleusercontent.com/aida-public/AB6AXuDIwGiRLs1tV1qgRsbL6OYBs_kvJUv0VVqa5yTuoQ_v52McIKorKVofaShc4btgbF_AiVV6z2nYPSH7qSTx-jLVWqHkJpM4-S_J1sfQ_H8FP8PIUaIs12RkD4FKkhQ_SI4sDWcCVAtNhN_IC5BjNC2KpKr-SS-v18LAYi3V6zh5fxIfc2wlLuv1539cNqW1HdaXqWqyUUdOSwgArigZc2D5jGFetHaFTCXuIhuQxlxU5kEL3_aOoPelrLIEPKSOFZsAK_mVopcBwX4'
 const IMG_AVATAR = 'https://lh3.googleusercontent.com/aida-public/AB6AXuD91KnKEH49H_3MwsjPJ7wGyM5WL5kdcevL5BoetqZIcZ1XvMyniQ83f-kAgyrLudN9Tn6ck1r9A5hhkPU80-8ZJMwQgE1oo4yAfPvbm-nogU-XkewwDF9qlIJwzEmCaygv4JiCJXrgZ-QEJpsoRuI7t38m20cZACoOoiduKLJ2yPBCdBVsL8HYj1Jo6xkSOV46_cYyZ_YvBIUTwvRzNhNKCXin4NUnMNLRz1TvG9jZ7gEOuFp2WVhS2IDFN4l1VqZnQgPGYvpVLWg'
 
@@ -64,7 +224,7 @@ function DemoPost() {
   )
 }
 
-function PostCard({ post, currentUserId, onLike, onBookmark }) {
+function PostCard({ post, currentUserId, onLike, onBookmark, onComment, onShare }) {
   const member = post.cng_members
   const displayName = member?.full_name || member?.ref_code || 'Member'
   const initial = displayName[0]?.toUpperCase() || 'M'
@@ -122,7 +282,7 @@ function PostCard({ post, currentUserId, onLike, onBookmark }) {
         </div>
 
         {/* Comments */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <div onClick={() => onComment(post)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer' }}>
           <Icon name="chat_bubble" fill size={28} style={{ color: C.text }} />
           <span style={{ fontSize: 11, fontWeight: 700, color: C.text, marginTop: 4 }}>{formatCount(post.comments_count)}</span>
         </div>
@@ -132,7 +292,10 @@ function PostCard({ post, currentUserId, onLike, onBookmark }) {
           <Icon name="bookmark" fill={post._bookmarked} size={28} style={{ color: post._bookmarked ? C.primary : C.text, transition: 'color 0.2s' }} />
         </div>
 
-        <Icon name="share" size={28} style={{ color: C.text }} />
+        {/* Share */}
+        <div onClick={() => onShare(post)} style={{ cursor: 'pointer' }}>
+          <Icon name="share" size={28} style={{ color: C.text }} />
+        </div>
       </div>
 
       {/* Bottom info */}
@@ -165,6 +328,8 @@ export default function FeedScreen() {
   const [posts, setPosts] = useState([])
   const [loading, setLoading] = useState(true)
   const scrollRef = useRef(null)
+  const [commentPost, setCommentPost] = useState(null)
+  const [toast, setToast] = useState(null)
 
   const fetchPosts = useCallback(async () => {
     if (!user) { setLoading(false); return }
@@ -251,6 +416,33 @@ export default function FeedScreen() {
     }
   }
 
+  const handleComment = (post) => setCommentPost(post)
+
+  const handleCommentCountUpdate = (postId, delta) => {
+    setPosts(prev => prev.map(p => p.id === postId ? { ...p, comments_count: Math.max((p.comments_count || 0) + delta, 0) } : p))
+  }
+
+  const handleShare = async (post) => {
+    const url = `https://chillngointernational.com/post/${post.id}`
+    const shareData = { title: 'Chill-N-Go', text: post.caption || 'Check this out!', url }
+
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData)
+      } else {
+        await navigator.clipboard.writeText(url)
+        setToast('Link copiado')
+        setTimeout(() => setToast(null), 2000)
+      }
+      // increment shares_count
+      supabase.from('cng_posts').update({ shares_count: (post.shares_count || 0) + 1 }).eq('id', post.id).then()
+      setPosts(prev => prev.map(p => p.id === post.id ? { ...p, shares_count: (p.shares_count || 0) + 1 } : p))
+    } catch (e) {
+      // user cancelled share dialog — ignore
+      if (e.name !== 'AbortError') console.error('Share error:', e)
+    }
+  }
+
   if (loading) {
     return (
       <div style={{ position: 'relative', width: '100%', height: '100%', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', ...(isDesktop ? { maxWidth: 600, margin: '0 auto' } : {}) }}>
@@ -290,9 +482,22 @@ export default function FeedScreen() {
             currentUserId={user?.id}
             onLike={handleLike}
             onBookmark={handleBookmark}
+            onComment={handleComment}
+            onShare={handleShare}
           />
         </div>
       ))}
+
+      {commentPost && (
+        <CommentsPanel
+          post={commentPost}
+          userId={user?.id}
+          onClose={() => setCommentPost(null)}
+          onCountUpdate={handleCommentCountUpdate}
+        />
+      )}
+
+      {toast && <ShareToast message={toast} />}
     </div>
   )
 }
