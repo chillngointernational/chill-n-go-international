@@ -237,6 +237,8 @@ export default function AppShell() {
                         t.special ? (
                             <div
                                 key={t.id}
+                                role="button"
+                                tabIndex={-1}
                                 onClick={() => nav(t.id)}
                                 style={{
                                     display: 'flex',
@@ -244,6 +246,8 @@ export default function AppShell() {
                                     alignItems: 'center',
                                     marginTop: -32,
                                     cursor: 'pointer',
+                                    WebkitTapHighlightColor: 'transparent',
+                                    userSelect: 'none',
                                 }}
                             >
                                 <div style={{
@@ -273,6 +277,8 @@ export default function AppShell() {
                         ) : (
                             <div
                                 key={t.id}
+                                role="button"
+                                tabIndex={-1}
                                 onClick={() => nav(t.id)}
                                 style={{
                                     display: 'flex',
@@ -283,6 +289,8 @@ export default function AppShell() {
                                     transform: activeTab === t.id ? 'scale(1.1)' : 'scale(1)',
                                     transition: 'all 0.2s',
                                     fontWeight: activeTab === t.id ? 700 : 400,
+                                    WebkitTapHighlightColor: 'transparent',
+                                    userSelect: 'none',
                                 }}
                             >
                                 <Icon name={t.icon} fill={activeTab === t.id} size={24} />
