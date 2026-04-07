@@ -110,8 +110,8 @@ export default function ProfileScreen({ onNavigate }) {
         </div>
 
         {/* Stats row */}
-        <div style={{ display: 'flex', gap: 32, marginTop: 32 }}>
-          <div><span style={{ color: C.onSurface, fontFamily: FONT.headline, fontSize: 20, fontWeight: 900 }}>{postCount}</span><p style={{ fontSize: 10, color: C.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: 3, fontWeight: 700 }}>Posts</p></div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 32 }}>
+          <div><span style={{ color: C.onSurface, fontFamily: FONT.headline, fontSize: 20, fontWeight: 900 }}>{postCount}</span><p style={{ fontSize: 10, color: C.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: 2, fontWeight: 700 }}>Posts</p></div>
           <div><span style={{ color: C.onSurface, fontFamily: FONT.headline, fontSize: 20, fontWeight: 900 }}>{followersCount}</span><p style={{ fontSize: 10, color: C.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: 3, fontWeight: 700 }}>Followers</p></div>
           <div><span style={{ color: C.onSurface, fontFamily: FONT.headline, fontSize: 20, fontWeight: 900 }}>{followingCount}</span><p style={{ fontSize: 10, color: C.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: 3, fontWeight: 700 }}>Following</p></div>
           <div><span style={{ color: C.primary, fontFamily: FONT.headline, fontSize: 20, fontWeight: 900 }}>{member?.chilliums_balance?.toFixed(0) || '0'}</span><p style={{ fontSize: 10, color: C.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: 3, fontWeight: 700 }}>Chilliums</p></div>
