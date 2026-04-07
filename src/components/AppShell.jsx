@@ -1,4 +1,5 @@
-import { useState, useRef } from 'react'
+import { useRef } from 'react'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { C, FONT, Icon, GRADIENT, GLASS_NAV, useDesktop } from '../stitch'
 import FeedScreen from '../pages/app/FeedScreen'
 import ExploreScreen from '../pages/app/ExploreScreen'
@@ -21,67 +22,63 @@ const TABS = [
     { id: 'profile', icon: 'person', label: 'Profile' },
 ]
 
+const MAIN_SCREENS = ['feed', 'explore', 'create', 'messages', 'profile']
+const SUB_SCREENS = ['travel', 'candystakes', 'realestate', 'nutrition', 'store', 'network']
+
 export default function AppShell() {
-    const [screen, setScreen] = useState('feed')
-    const [subScreen, setSubScreen] = useState(null)
-    const [chatConversationId, setChatConversationId] = useState(null)
+    const location = useLocation()
+    const navigate = useNavigate()
     const scrollRef = useRef(null)
     const isDesktop = useDesktop()
 
-    const nav = (s) => {
-        setSubScreen(null)
-        setChatConversationId(null)
-        setScreen(s)
+    // Parse current screen from URL
+    const pathParts = location.pathname.replace('/app/', '').replace('/app', '').split('/')
+    const currentScreen = pathParts[0] || 'feed'
+    const chatConversationId = currentScreen === 'chat' ? pathParts[1] : null
+
+    const isSubScreen = SUB_SCREENS.includes(currentScreen)
+    const isChat = !!chatConversationId
+    const activeTab = (!isSubScreen && !isChat) ? currentScreen : null
+    const isFs = currentScreen === 'feed' && !isSubScreen && !isChat
+    const showNav = !isSubScreen && !isChat
+
+    const nav = (screen) => {
+        navigate('/app/' + screen)
         if (scrollRef.current) scrollRef.current.scrollTop = 0
     }
 
-    const navSub = (s) => {
-        setSubScreen(s)
+    const navSub = (screen) => {
+        navigate('/app/' + screen)
         if (scrollRef.current) scrollRef.current.scrollTop = 0
     }
 
     const goBack = () => {
-        if (chatConversationId) {
-            setChatConversationId(null)
-            return
-        }
-        setSubScreen(null)
-        if (scrollRef.current) scrollRef.current.scrollTop = 0
+        navigate(-1)
     }
 
     const openChat = (conversationId) => {
-        setChatConversationId(conversationId)
+        navigate('/app/chat/' + conversationId)
     }
 
-    const renderSub = () => {
-        if (chatConversationId) {
+    const renderContent = () => {
+        if (isChat) {
             return <ChatScreen conversationId={chatConversationId} onBack={goBack} />
         }
-        switch (subScreen) {
+        switch (currentScreen) {
+            case 'feed': return <FeedScreen />
+            case 'explore': return <ExploreScreen onNavigate={navSub} isDesktop={isDesktop} />
+            case 'create': return <CreateScreen onDone={() => nav('feed')} />
+            case 'messages': return <MessagesScreen onOpenChat={openChat} />
+            case 'profile': return <ProfileScreen onNavigate={navSub} />
             case 'travel': return <TravelScreen onBack={goBack} />
             case 'candystakes': return <CandyStakesScreen onBack={goBack} />
             case 'realestate': return <RealEstateScreen onBack={goBack} />
             case 'nutrition': return <NutritionScreen onBack={goBack} />
             case 'store': return <StoreScreen onBack={goBack} />
             case 'network': return <NetworkScreen onBack={goBack} isDesktop={isDesktop} />
-            default: return null
-        }
-    }
-
-    const renderScreen = () => {
-        switch (screen) {
-            case 'feed': return <FeedScreen />
-            case 'explore': return <ExploreScreen onNavigate={navSub} isDesktop={isDesktop} />
-            case 'create': return <CreateScreen onDone={() => nav('feed')} />
-            case 'messages': return <MessagesScreen onOpenChat={openChat} />
-            case 'profile': return <ProfileScreen onNavigate={navSub} />
             default: return <FeedScreen />
         }
     }
-
-    const activeTab = (subScreen || chatConversationId) ? null : screen
-    const isFs = screen === 'feed' && !subScreen && !chatConversationId
-    const showNav = !subScreen && !chatConversationId
 
     if (isDesktop) {
         return (
@@ -182,7 +179,7 @@ export default function AppShell() {
                         overflowX: 'hidden',
                     }}
                 >
-                    {(subScreen || chatConversationId) ? renderSub() : renderScreen()}
+                    {renderContent()}
                 </div>
             </div>
         )
@@ -209,18 +206,20 @@ export default function AppShell() {
                     height: '100%',
                     overflowY: isFs ? 'hidden' : 'auto',
                     overflowX: 'hidden',
-                    paddingBottom: showNav ? 80 : 0,
+                    paddingBottom: showNav ? 96 : 0,
                 }}
             >
-                {(subScreen || chatConversationId) ? renderSub() : renderScreen()}
+                {renderContent()}
             </div>
 
             {showNav && (
                 <nav style={{
-                    position: 'absolute',
+                    position: 'fixed',
                     bottom: 0,
-                    left: 0,
-                    right: 0,
+                    left: '50%',
+                    transform: 'translateX(-50%) translateZ(0)',
+                    width: '100%',
+                    maxWidth: 390,
                     height: 80,
                     ...GLASS_NAV,
                     borderTop: '1px solid rgba(241,239,232,0.1)',
@@ -231,6 +230,8 @@ export default function AppShell() {
                     zIndex: 100,
                     borderRadius: '24px 24px 0 0',
                     boxShadow: '0 -10px 30px rgba(0,0,0,0.5)',
+                    willChange: 'transform',
+                    WebkitBackfaceVisibility: 'hidden',
                 }}>
                     {TABS.map((t) =>
                         t.special ? (
