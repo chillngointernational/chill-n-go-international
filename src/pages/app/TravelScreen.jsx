@@ -5,44 +5,44 @@ import BackButton from '../../components/BackButton'
 
 /* ── Unsplash images ── */
 const IMG = {
-  cancun:       'https://images.unsplash.com/photo-1510097467424-192d713fd8b2?w=600&h=800&fit=crop',
-  losCabos:     'https://images.unsplash.com/photo-1585281360855-25de6c91f29a?w=600&h=800&fit=crop',
-  puertoVall:   'https://images.unsplash.com/photo-1512813195386-6cf811ad3542?w=600&h=800&fit=crop',
-  tulum:        'https://images.unsplash.com/photo-1682553064558-d23e4aa1a9b7?w=600&h=800&fit=crop',
-  cdmx:         'https://images.unsplash.com/photo-1585464231875-d9ef1f5ad396?w=600&h=800&fit=crop',
-  rivieraMaya:  'https://images.unsplash.com/photo-1552074284-5e88ef1aef18?w=600&h=800&fit=crop',
-  miami:        'https://images.unsplash.com/photo-1533106497176-45ae19e68ba2?w=600&h=800&fit=crop',
-  newYork:      'https://images.unsplash.com/photo-1496442226666-8d4d0e62e6e9?w=600&h=800&fit=crop',
-  lasVegas:     'https://images.unsplash.com/photo-1605833556294-ea5c7a74f57d?w=600&h=800&fit=crop',
-  losAngeles:   'https://images.unsplash.com/photo-1534190760961-74e8c1c5c3da?w=600&h=800&fit=crop',
-  orlando:      'https://images.unsplash.com/photo-1597466599360-3b9775841aec?w=600&h=800&fit=crop',
-  hawaii:       'https://images.unsplash.com/photo-1507876466758-bc54f384809c?w=600&h=800&fit=crop',
+  cancun: 'https://images.unsplash.com/photo-1552074284-5e88ef1aef18?w=600&h=400&fit=crop',
+  losCabos: 'https://images.unsplash.com/photo-1519046904884-53103b34b206?w=600&h=400&fit=crop',
+  puertoVall: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=600&h=400&fit=crop',
+  tulum: 'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=600&h=400&fit=crop',
+  cdmx: 'https://images.unsplash.com/photo-1518659526054-190340b32735?w=600&h=400&fit=crop',
+  rivieraMaya: 'https://images.unsplash.com/photo-1501426026826-31c667bdf23d?w=600&h=400&fit=crop',
+  miami: 'https://images.unsplash.com/photo-1533106497176-45ae19e68ba2?w=600&h=400&fit=crop',
+  newYork: 'https://images.unsplash.com/photo-1496442226666-8d4d0e62e6e9?w=600&h=400&fit=crop',
+  lasVegas: 'https://images.unsplash.com/photo-1581351721010-8cf859cb14a4?w=600&h=400&fit=crop',
+  losAngeles: 'https://images.unsplash.com/photo-1515896769750-31548aa180ed?w=600&h=400&fit=crop',
+  orlando: 'https://images.unsplash.com/photo-1575089976121-8ed7b2a54265?w=600&h=400&fit=crop',
+  hawaii: 'https://images.unsplash.com/photo-1507876466758-bc54f384809c?w=600&h=400&fit=crop',
 }
 
 /* ── Destination data ── */
 const MEXICO = [
-  { id: 'cancun',      name: 'Cancún',        loc: 'Quintana Roo, MX',   rating: 4.8, price: 299, img: IMG.cancun,      tags: ['playa','all-inclusive'] },
-  { id: 'losCabos',    name: 'Los Cabos',      loc: 'Baja California, MX',rating: 4.7, price: 349, img: IMG.losCabos,    tags: ['playa','all-inclusive'] },
-  { id: 'puertoVall',  name: 'Puerto Vallarta',loc: 'Jalisco, MX',        rating: 4.6, price: 199, img: IMG.puertoVall,  tags: ['aventura'] },
-  { id: 'tulum',       name: 'Tulum',          loc: 'Quintana Roo, MX',   rating: 4.9, price: 279, img: IMG.tulum,       tags: ['playa','aventura'] },
-  { id: 'cdmx',        name: 'CDMX',           loc: 'Ciudad de México',   rating: 4.5, price: 149, img: IMG.cdmx,        tags: ['ciudad'] },
-  { id: 'rivieraMaya', name: 'Riviera Maya',   loc: 'Quintana Roo, MX',   rating: 4.8, price: 329, img: IMG.rivieraMaya, tags: ['playa','all-inclusive'] },
+  { id: 'cancun', name: 'Cancún', loc: 'Quintana Roo, MX', rating: 4.8, price: 299, img: IMG.cancun, tags: ['playa', 'all-inclusive'] },
+  { id: 'losCabos', name: 'Los Cabos', loc: 'Baja California, MX', rating: 4.7, price: 349, img: IMG.losCabos, tags: ['playa', 'all-inclusive'] },
+  { id: 'puertoVall', name: 'Puerto Vallarta', loc: 'Jalisco, MX', rating: 4.6, price: 199, img: IMG.puertoVall, tags: ['aventura'] },
+  { id: 'tulum', name: 'Tulum', loc: 'Quintana Roo, MX', rating: 4.9, price: 279, img: IMG.tulum, tags: ['playa', 'aventura'] },
+  { id: 'cdmx', name: 'CDMX', loc: 'Ciudad de México', rating: 4.5, price: 149, img: IMG.cdmx, tags: ['ciudad'] },
+  { id: 'rivieraMaya', name: 'Riviera Maya', loc: 'Quintana Roo, MX', rating: 4.8, price: 329, img: IMG.rivieraMaya, tags: ['playa', 'all-inclusive'] },
 ]
 const USA = [
-  { id: 'miami',       name: 'Miami',          loc: 'Florida, US',        rating: 4.7, price: 399, img: IMG.miami,       tags: ['playa'] },
-  { id: 'newYork',     name: 'New York',        loc: 'New York, US',       rating: 4.6, price: 449, img: IMG.newYork,     tags: ['ciudad'] },
-  { id: 'lasVegas',    name: 'Las Vegas',       loc: 'Nevada, US',         rating: 4.5, price: 249, img: IMG.lasVegas,    tags: ['ciudad'] },
-  { id: 'losAngeles',  name: 'Los Angeles',     loc: 'California, US',     rating: 4.4, price: 379, img: IMG.losAngeles,  tags: ['ciudad'] },
-  { id: 'orlando',     name: 'Orlando',         loc: 'Florida, US',        rating: 4.6, price: 289, img: IMG.orlando,     tags: ['all-inclusive'] },
-  { id: 'hawaii',      name: 'Hawái',           loc: 'Hawái, US',          rating: 4.9, price: 599, img: IMG.hawaii,      tags: ['playa','aventura'] },
+  { id: 'miami', name: 'Miami', loc: 'Florida, US', rating: 4.7, price: 399, img: IMG.miami, tags: ['playa'] },
+  { id: 'newYork', name: 'New York', loc: 'New York, US', rating: 4.6, price: 449, img: IMG.newYork, tags: ['ciudad'] },
+  { id: 'lasVegas', name: 'Las Vegas', loc: 'Nevada, US', rating: 4.5, price: 249, img: IMG.lasVegas, tags: ['ciudad'] },
+  { id: 'losAngeles', name: 'Los Angeles', loc: 'California, US', rating: 4.4, price: 379, img: IMG.losAngeles, tags: ['ciudad'] },
+  { id: 'orlando', name: 'Orlando', loc: 'Florida, US', rating: 4.6, price: 289, img: IMG.orlando, tags: ['all-inclusive'] },
+  { id: 'hawaii', name: 'Hawái', loc: 'Hawái, US', rating: 4.9, price: 599, img: IMG.hawaii, tags: ['playa', 'aventura'] },
 ]
 
 const FILTERS = [
-  { label: 'Todos',         value: 'todos' },
-  { label: 'Playa',         value: 'playa' },
-  { label: 'Ciudad',        value: 'ciudad' },
+  { label: 'Todos', value: 'todos' },
+  { label: 'Playa', value: 'playa' },
+  { label: 'Ciudad', value: 'ciudad' },
   { label: 'All-Inclusive', value: 'all-inclusive' },
-  { label: 'Aventura',     value: 'aventura' },
+  { label: 'Aventura', value: 'aventura' },
 ]
 
 /* ── Helpers ── */
@@ -124,7 +124,7 @@ function Pill({ label, active, onClick }) {
 
 function HeroCard({ dest }) {
   return (
-    <div style={{ position: 'relative', width: '100%', aspectRatio: '16/10', borderRadius: 22, overflow: 'hidden', margin: '0 16px', maxWidth: 'calc(100% - 32px)' }}>
+    <div style={{ position: 'relative', width: 'calc(100% - 32px)', height: 200, borderRadius: 16, overflow: 'hidden', margin: '0 16px' }}>
       <img src={dest.img} alt={dest.name} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
       <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.25) 50%, transparent 100%)' }} />
 
@@ -179,7 +179,7 @@ function HeroCard({ dest }) {
 
 function DestCard({ dest }) {
   return (
-    <div style={{ position: 'relative', borderRadius: 16, overflow: 'hidden', aspectRatio: '3/4' }}>
+    <div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', height: 180 }}>
       <img src={dest.img} alt={dest.name} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
       <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.15) 55%, transparent 100%)' }} />
 
@@ -213,7 +213,7 @@ export default function TravelScreen({ onBack }) {
     return list.filter(d => d.name.toLowerCase().includes(q) || d.loc.toLowerCase().includes(q))
   }
 
-  const mx  = applySearch(filterList(MEXICO, filter))
+  const mx = applySearch(filterList(MEXICO, filter))
   const usa = applySearch(filterList(USA, filter))
 
   const heroData = MEXICO[0] // Cancún
