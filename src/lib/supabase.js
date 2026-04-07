@@ -8,8 +8,5 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
-        storage: window.localStorage,
-        storageKey: 'cng-auth',
-        flowType: 'pkce',
     },
 })
