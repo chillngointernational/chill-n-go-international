@@ -13,79 +13,51 @@ const FILTERS = ['🏠 Todos', '💰 Venta', '📅 Renta corta', '📋 Renta lar
 const PROPERTIES = [
   {
     id: 1,
-    emoji: '🌊',
+    img: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80',
     name: 'Skyline Ocean View South Beach',
-    type: 'Renta corta',
-    typeColor: TEAL,
-    location: 'Miami, FL',
-    flag: '🇺🇸',
+    type: 'Renta corta', typeColor: TEAL,
+    location: 'Miami, FL', flag: '🇺🇸',
     beds: 2, baths: 2,
-    price: '$280',
-    period: '/ noche',
-    priceColor: TEAL,
-    rating: '4.9',
-    reviews: 48,
+    price: '$280', period: '/ noche', priceColor: TEAL,
+    rating: '4.9', reviews: 48,
     tags: ['🛏 2 Rec.', '🚿 2 Baños', '🌊 Vista al mar', '🏊 Alberca'],
-    exclusive: true,
-    cngPlus: true,
-    featured: true,
+    exclusive: true, cngPlus: true, featured: true,
     filter: 'Renta corta',
   },
   {
     id: 2,
-    emoji: '🏙',
+    img: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=400&q=80',
     name: 'Brickell Modern Loft',
-    type: 'Renta larga',
-    typeColor: TEAL,
-    location: 'Miami · Brickell',
-    flag: '🇺🇸',
-    beds: 2,
-    price: '$3,200',
-    period: '/mes',
-    priceColor: TEAL,
+    type: 'Renta larga', typeColor: TEAL,
+    location: 'Miami · Brickell', flag: '🇺🇸',
+    beds: 2, price: '$3,200', period: '/mes', priceColor: TEAL,
     filter: 'Renta larga',
   },
   {
     id: 3,
-    emoji: '🏡',
+    img: 'https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=400&q=80',
     name: 'Casa Lomas de Chapultepec',
-    type: 'Venta',
-    typeColor: '#e7c092',
-    location: 'CDMX · Lomas',
-    flag: '🇲🇽',
-    beds: 4,
-    price: '$4.2M',
-    period: 'USD',
-    priceColor: '#e7c092',
+    type: 'Venta', typeColor: '#e7c092',
+    location: 'CDMX · Lomas', flag: '🇲🇽',
+    beds: 4, price: '$4.2M', period: 'USD', priceColor: '#e7c092',
     filter: 'Venta',
   },
   {
     id: 4,
-    emoji: '🏖',
+    img: 'https://images.unsplash.com/photo-1499793983690-e29da59ef1c2?w=400&q=80',
     name: 'Villa Punta Mita',
-    type: 'Renta corta',
-    typeColor: TEAL,
-    location: 'Nayarit · Punta Mita',
-    flag: '🇲🇽',
-    beds: 5,
-    price: '$850',
-    period: '/ noche',
-    priceColor: TEAL,
-    exclusive: true,
-    filter: 'Renta corta',
+    type: 'Renta corta', typeColor: TEAL,
+    location: 'Nayarit · Punta Mita', flag: '🇲🇽',
+    beds: 5, price: '$850', period: '/ noche', priceColor: TEAL,
+    exclusive: true, filter: 'Renta corta',
   },
   {
     id: 5,
-    emoji: '🏢',
+    img: 'https://images.unsplash.com/photo-1486325212027-8081e485255e?w=400&q=80',
     name: 'Penthouse Wynwood',
-    type: 'Venta',
-    typeColor: '#e7c092',
-    location: 'Miami · Wynwood',
-    flag: '🇺🇸',
-    beds: 3,
-    price: '$1.8M',
-    period: 'USD',
-    priceColor: '#e7c092',
+    type: 'Venta', typeColor: '#e7c092',
+    location: 'Miami · Wynwood', flag: '🇺🇸',
+    beds: 3, price: '$1.8M', period: 'USD', priceColor: '#e7c092',
     filter: 'Venta',
   },
 ]
@@ -140,10 +112,12 @@ export default function RealEstateScreen({ onBack }) {
 
       <div style={{ padding: '0 16px 120px', display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-        {/* Spark RE Assistant */}
+        {/* Spark */}
         <div style={{ background: 'linear-gradient(135deg, #080f0d, #0d1a14)', border: `1px solid ${TEAL_BORDER}`, borderRadius: 20, padding: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
-            <div style={{ width: 42, height: 42, borderRadius: 13, background: 'linear-gradient(135deg,#0f2a1e,#1a3a28)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>🏛</div>
+            <div style={{ width: 42, height: 42, borderRadius: 13, background: 'linear-gradient(135deg,#0f2a1e,#1a3a28)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Icon name="domain" size={20} style={{ color: TEAL }} />
+            </div>
             <div style={{ flex: 1 }}>
               <p style={{ fontSize: 10, color: TEAL, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', margin: '0 0 2px' }}>Asesor de Propiedades</p>
               <p style={{ fontSize: 14, color: '#c8e8d8', fontWeight: 700, margin: 0, fontFamily: FONT.headline }}>Spark · CNG Real Estate</p>
@@ -154,7 +128,6 @@ export default function RealEstateScreen({ onBack }) {
             </div>
           </div>
 
-          {/* Chat */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
             {messages.map((m, i) => (
               <div key={i} style={{
@@ -163,14 +136,12 @@ export default function RealEstateScreen({ onBack }) {
                 borderRadius: m.role === 'ai' ? '0 14px 14px 14px' : '14px 14px 0 14px',
                 padding: '10px 14px', fontSize: 13,
                 color: m.role === 'ai' ? '#a8d8c8' : '#c8e8d8',
-                lineHeight: 1.55,
-                maxWidth: '86%',
+                lineHeight: 1.55, maxWidth: '86%',
                 alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
               }}>{m.text}</div>
             ))}
           </div>
 
-          {/* Input */}
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <input
               value={input}
@@ -179,10 +150,7 @@ export default function RealEstateScreen({ onBack }) {
               placeholder="¿Comprar, rentar o invertir?"
               style={{ flex: 1, background: 'rgba(255,255,255,0.04)', border: `1px solid ${TEAL_BORDER}`, borderRadius: 12, padding: '11px 14px', fontSize: 13, color: '#c8e8d8', fontFamily: FONT.body, outline: 'none' }}
             />
-            <button
-              onClick={handleSend}
-              style={{ width: 42, height: 42, background: TEAL, border: 'none', borderRadius: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-            >
+            <button onClick={handleSend} style={{ width: 42, height: 42, background: TEAL, border: 'none', borderRadius: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <Icon name="send" size={18} style={{ color: '#0a2010' }} />
             </button>
           </div>
@@ -191,18 +159,14 @@ export default function RealEstateScreen({ onBack }) {
         {/* Filter pills */}
         <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'none' }}>
           {FILTERS.map(f => (
-            <button
-              key={f}
-              onClick={() => setActiveFilter(f)}
-              style={{
-                padding: '7px 16px', borderRadius: 99, fontSize: 11, fontWeight: 700,
-                whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: FONT.body,
-                border: activeFilter === f ? 'none' : `1px solid rgba(255,255,255,0.07)`,
-                outline: activeFilter === f ? `1px solid ${TEAL_BORDER}` : 'none',
-                background: activeFilter === f ? '#0f1a1a' : 'rgba(255,255,255,0.03)',
-                color: activeFilter === f ? TEAL : '#445',
-              }}
-            >{f}</button>
+            <button key={f} onClick={() => setActiveFilter(f)} style={{
+              padding: '7px 16px', borderRadius: 99, fontSize: 11, fontWeight: 700,
+              whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: FONT.body,
+              border: activeFilter === f ? 'none' : `1px solid rgba(255,255,255,0.07)`,
+              outline: activeFilter === f ? `1px solid ${TEAL_BORDER}` : 'none',
+              background: activeFilter === f ? '#0f1a1a' : 'rgba(255,255,255,0.03)',
+              color: activeFilter === f ? TEAL : '#445',
+            }}>{f}</button>
           ))}
         </div>
 
@@ -218,11 +182,12 @@ export default function RealEstateScreen({ onBack }) {
         {/* Property cards */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-          {/* Featured card */}
+          {/* Featured — hero image */}
           {featured && (
             <div style={{ background: '#0d1a14', border: `1px solid rgba(104,219,174,0.25)`, borderRadius: 20, overflow: 'hidden' }}>
-              <div style={{ position: 'relative' }}>
-                <div style={{ height: 160, background: 'linear-gradient(135deg,#0a1f18,#0f2a20)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 64 }}>{featured.emoji}</div>
+              <div style={{ position: 'relative', height: 190 }}>
+                <img src={featured.img} alt={featured.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, #0d1a14 0%, rgba(13,26,20,0.4) 60%, transparent 100%)' }} />
                 <div style={{ position: 'absolute', top: 10, left: 10, background: TEAL, padding: '4px 12px', borderRadius: 99, fontSize: 10, color: '#0a2010', fontWeight: 800 }}>✦ CNG EXCLUSIVE</div>
                 <div style={{ position: 'absolute', top: 10, right: 10, background: 'rgba(0,0,0,0.55)', padding: '5px 10px', borderRadius: 99 }}>
                   <span style={{ fontSize: 10, color: '#fff', fontWeight: 700 }}>📅 {featured.type}</span>
@@ -258,11 +223,12 @@ export default function RealEstateScreen({ onBack }) {
             </div>
           )}
 
-          {/* Compact cards */}
+          {/* Compact cards — imagen lateral */}
           {rest.map(p => (
             <div key={p.id} style={{ background: SURFACE, border: '1px solid rgba(255,255,255,0.06)', borderRadius: 18, overflow: 'hidden', display: 'flex' }}>
-              <div style={{ width: 110, background: 'linear-gradient(135deg,#0a1510,#0f1e18)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 40, flexShrink: 0, position: 'relative' }}>
-                {p.emoji}
+              <div style={{ width: 110, flexShrink: 0, position: 'relative', overflow: 'hidden' }}>
+                <img src={p.img} alt={p.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to right, transparent, rgba(13,17,23,0.3))' }} />
                 {p.exclusive && (
                   <div style={{ position: 'absolute', bottom: 6, left: 0, right: 0, textAlign: 'center' }}>
                     <span style={{ fontSize: 9, background: TEAL, color: '#0a2010', padding: '2px 6px', borderRadius: 99, fontWeight: 800 }}>✦ EXCL.</span>
