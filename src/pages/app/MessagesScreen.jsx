@@ -53,18 +53,13 @@ function NewMessageModal({ open, onClose, onSelectConversation, user }) {
   }, [query, user])
 
   const handleSelect = async (target) => {
-    console.log('[NewMessage] clicking member:', target.full_name, target.user_id)
-    if (creating) { console.log('[NewMessage] blocked — already creating'); return }
+    if (creating) return
     setCreating(true)
     try {
-      // Check if a direct conversation already exists between the two users
-      console.log('[NewMessage] checking existing conversations...')
       const { data: myConvs, error: myErr } = await supabase
         .from('cng_conversation_members')
         .select('conversation_id')
         .eq('user_id', user.id)
-
-      if (myErr) console.warn('[NewMessage] error fetching my convs:', myErr)
 
       if (myConvs && myConvs.length > 0) {
         const myConvIds = myConvs.map(c => c.conversation_id)
@@ -75,7 +70,6 @@ function NewMessageModal({ open, onClose, onSelectConversation, user }) {
           .in('conversation_id', myConvIds)
 
         if (theirConvs && theirConvs.length > 0) {
-          // Verify it's a direct conversation (not a group)
           for (const tc of theirConvs) {
             const { data: conv } = await supabase
               .from('cng_conversations')
@@ -85,7 +79,6 @@ function NewMessageModal({ open, onClose, onSelectConversation, user }) {
               .eq('is_active', true)
               .maybeSingle()
             if (conv) {
-              console.log('[NewMessage] found existing conversation:', conv.id)
               onClose()
               onSelectConversation(conv.id)
               return
@@ -94,34 +87,21 @@ function NewMessageModal({ open, onClose, onSelectConversation, user }) {
         }
       }
 
-      // No existing direct conversation — create one
-      console.log('[NewMessage] creating new conversation...')
       const { data: newConv, error: convErr } = await supabase
         .from('cng_conversations')
         .insert({ created_by: user.id, type: 'direct' })
         .select()
         .single()
-
-      if (convErr) {
-        console.error('[NewMessage] conversation INSERT error:', convErr)
-        throw convErr
-      }
-      console.log('[NewMessage] conversation created:', newConv.id)
+      if (convErr) throw convErr
 
       const { error: membErr } = await supabase.from('cng_conversation_members').insert([
         { conversation_id: newConv.id, user_id: user.id, role: 'admin' },
         { conversation_id: newConv.id, user_id: target.user_id, role: 'member' },
       ])
-
-      if (membErr) {
-        console.error('[NewMessage] members INSERT error:', membErr)
-        throw membErr
-      }
-      console.log('[NewMessage] members added, opening chat...')
+      if (membErr) throw membErr
 
       onClose()
       onSelectConversation(newConv.id)
-      console.log('[NewMessage] chat opened for conversation:', newConv.id)
     } catch (e) {
       console.error('[NewMessage] Error creating conversation:', e)
     } finally {
@@ -148,7 +128,6 @@ function NewMessageModal({ open, onClose, onSelectConversation, user }) {
           display: 'flex', flexDirection: 'column', overflow: 'hidden',
         }}
       >
-        {/* Header */}
         <div style={{ padding: '20px 20px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <h2 style={{ fontFamily: FONT.headline, fontSize: 18, fontWeight: 700, color: C.text }}>New Message</h2>
           <div onClick={onClose} style={{ cursor: 'pointer', padding: 4 }}>
@@ -156,7 +135,6 @@ function NewMessageModal({ open, onClose, onSelectConversation, user }) {
           </div>
         </div>
 
-        {/* Search input */}
         <div style={{ padding: '16px 20px', position: 'relative' }}>
           <Icon name="search" size={20} style={{ position: 'absolute', left: 36, top: '50%', transform: 'translateY(-50%)', color: C.textFaint }} />
           <input
@@ -173,7 +151,6 @@ function NewMessageModal({ open, onClose, onSelectConversation, user }) {
           />
         </div>
 
-        {/* Results */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '0 12px 16px' }}>
           {searching && (
             <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}>
@@ -204,9 +181,7 @@ function NewMessageModal({ open, onClose, onSelectConversation, user }) {
               onPointerEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}
               onPointerLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
             >
-              <div style={{
-                width: 44, height: 44, borderRadius: 99, overflow: 'hidden', flexShrink: 0,
-              }}>
+              <div style={{ width: 44, height: 44, borderRadius: 99, overflow: 'hidden', flexShrink: 0 }}>
                 {m.avatar_url ? (
                   <img src={m.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : (
@@ -309,12 +284,82 @@ export default function MessagesScreen({ onOpenChat }) {
 
   useEffect(() => { fetchConversations() }, [fetchConversations])
 
-  // Refresh conversations when coming back from chat
+  /* ── Realtime: listen for new messages to update list ────────── */
+  useEffect(() => {
+    if (!user) return
+
+    let channel = null
+
+    const setup = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.access_token) {
+        supabase.realtime.setAuth(session.access_token)
+      }
+
+      channel = supabase
+        .channel('messages-list-updates')
+        .on('postgres_changes', {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'cng_messages',
+        }, (payload) => {
+          const newMsg = payload.new
+          // Skip own messages for unread badge
+          const isOwn = newMsg.sender_id === user.id
+
+          setConversations(prev => {
+            const idx = prev.findIndex(c => c.id === newMsg.conversation_id)
+            if (idx === -1) {
+              // New conversation we don't have yet — refetch
+              fetchConversations()
+              return prev
+            }
+
+            const updated = [...prev]
+            const conv = { ...updated[idx] }
+
+            // Update preview and time
+            if (newMsg.message_type === 'image') conv.msg = '📷 Photo'
+            else if (newMsg.message_type === 'video') conv.msg = '🎬 Video'
+            else if (newMsg.message_type === 'voice') conv.msg = '🎙️ Voice message'
+            else conv.msg = newMsg.content?.substring(0, 100) || ''
+
+            conv.time = 'now'
+
+            // Increment unread only for messages from others
+            if (!isOwn) {
+              conv.unread = (conv.unread || 0) + 1
+            }
+
+            updated[idx] = conv
+
+            // Move to top
+            updated.splice(idx, 1)
+            updated.unshift(conv)
+
+            return updated
+          })
+        })
+        .subscribe()
+    }
+
+    setup()
+
+    return () => {
+      if (channel) supabase.removeChannel(channel)
+    }
+  }, [user, fetchConversations])
+
+  // Refresh when closing new message modal
   useEffect(() => {
     if (!showNewMsg) fetchConversations()
   }, [showNewMsg, fetchConversations])
 
   const handleSelectConversation = (convId) => {
+    // Reset unread locally when opening a chat
+    setConversations(prev => prev.map(c =>
+      c.id === convId ? { ...c, unread: 0 } : c
+    ))
     if (onOpenChat) onOpenChat(convId)
   }
 
@@ -345,7 +390,7 @@ export default function MessagesScreen({ onOpenChat }) {
           />
         </div>
 
-        {/* Active Now — only if there are conversations */}
+        {/* Active Now */}
         {!loading && conversations.length > 0 && (
           <div style={{ marginBottom: 24 }}>
             <h2 style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: C.secondaryDark, fontWeight: 700, marginBottom: 16 }}>Active Now</h2>
@@ -398,12 +443,22 @@ export default function MessagesScreen({ onOpenChat }) {
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 2 }}>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: C.onSurface }}>{c.name}</span>
+                  <span style={{ fontSize: 14, fontWeight: c.unread ? 800 : 700, color: C.onSurface }}>{c.name}</span>
                   <span style={{ fontSize: 10, color: c.unread ? C.primaryBright : C.textFaint, fontWeight: c.unread ? 700 : 400 }}>{c.time}</span>
                 </div>
-                <p style={{ fontSize: 12, color: c.unread ? 'rgba(223,226,235,0.9)' : C.textFaint, fontWeight: c.unread ? 500 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>{c.msg}</p>
+                <p style={{ fontSize: 12, color: c.unread ? 'rgba(223,226,235,0.9)' : C.textFaint, fontWeight: c.unread ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>{c.msg}</p>
               </div>
-              {c.unread > 0 && (<div style={{ width: 20, height: 20, background: C.primaryBright, borderRadius: 99, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#fff', flexShrink: 0 }}>{c.unread}</div>)}
+              {c.unread > 0 && (
+                <div style={{
+                  minWidth: 22, height: 22, padding: '0 6px',
+                  background: GRADIENT.primary, borderRadius: 99,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 11, fontWeight: 700, color: '#fff', flexShrink: 0,
+                  boxShadow: '0 2px 8px rgba(29,158,117,0.4)',
+                }}>
+                  {c.unread}
+                </div>
+              )}
             </div>
           ))}
 
