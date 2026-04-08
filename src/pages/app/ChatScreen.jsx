@@ -121,6 +121,23 @@ function VoicePlayer({ url, isMine }) {
   )
 }
 
+/* ── Delivery Status icon ─────────────────────────────────────── */
+const DeliveryStatus = ({ status }) => {
+  if (status === 'sending') return (
+    <span className="material-symbols-outlined" style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', verticalAlign: 'middle', lineHeight: 1 }}>schedule</span>
+  )
+  if (status === 'sent') return (
+    <span className="material-symbols-outlined" style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', verticalAlign: 'middle', lineHeight: 1 }}>done</span>
+  )
+  if (status === 'delivered') return (
+    <span className="material-symbols-outlined" style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', verticalAlign: 'middle', lineHeight: 1 }}>done_all</span>
+  )
+  if (status === 'read') return (
+    <span className="material-symbols-outlined" style={{ fontSize: 12, color: '#68dbae', verticalAlign: 'middle', lineHeight: 1 }}>done_all</span>
+  )
+  return null
+}
+
 /* ════════════════════════════════════════════════════════════════ */
 export default function ChatScreen({ conversationId, onBack }) {
   const { user } = useAuth()
@@ -185,6 +202,14 @@ export default function ChatScreen({ conversationId, onBack }) {
       if (error) throw error
       setMessages(msgs || [])
 
+      // Mark incoming messages as read
+      await supabase
+        .from('cng_messages')
+        .update({ delivery_status: 'read', read_at: new Date().toISOString() })
+        .eq('conversation_id', conversationId)
+        .neq('sender_id', user.id)
+        .in('delivery_status', ['sent', 'delivered'])
+
       const { data: members } = await supabase
         .from('cng_conversation_members')
         .select('user_id')
@@ -238,12 +263,31 @@ export default function ChatScreen({ conversationId, onBack }) {
             .update({ unread_count: 0, last_read_at: new Date().toISOString() })
             .eq('conversation_id', conversationId)
             .eq('user_id', user?.id)
-            .then(() => {})
+            .then(() => { })
         }
       })
       .subscribe()
 
-    return () => { supabase.removeChannel(channel) }
+    const statusChannel = supabase
+      .channel('msg-status-' + conversationId)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'cng_messages',
+        filter: 'conversation_id=eq.' + conversationId,
+      }, (payload) => {
+        setMessages(prev => prev.map(m =>
+          m.id === payload.new.id
+            ? { ...m, delivery_status: payload.new.delivery_status, read_at: payload.new.read_at }
+            : m
+        ))
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+      supabase.removeChannel(statusChannel)
+    }
   }, [conversationId, user])
 
   /* ── Close popups on outside click ──────────────────────────── */
@@ -264,18 +308,38 @@ export default function ChatScreen({ conversationId, onBack }) {
     setReplyTo(null)
     setSending(true)
 
+    // Optimistic message
+    const tempId = 'temp-' + Date.now()
+    const optimistic = {
+      id: tempId,
+      conversation_id: conversationId,
+      sender_id: user.id,
+      content: trimmed,
+      message_type: type,
+      reply_to_id: replyId,
+      created_at: new Date().toISOString(),
+      delivery_status: 'sending',
+    }
+    setMessages(prev => [...prev, optimistic])
+    scrollToBottom()
+
     try {
       const row = {
         conversation_id: conversationId,
         sender_id: user.id,
         content: trimmed,
         message_type: type,
+        delivery_status: 'sent',
       }
       if (replyId) row.reply_to_id = replyId
-      const { error } = await supabase.from('cng_messages').insert(row)
+      const { data, error } = await supabase.from('cng_messages').insert(row).select().single()
       if (error) throw error
+      // Replace optimistic with real message
+      setMessages(prev => prev.map(m => m.id === tempId ? data : m))
     } catch (e) {
       console.error('Send error:', e)
+      // Remove optimistic on error
+      setMessages(prev => prev.filter(m => m.id !== tempId))
       if (type === 'text') setText(trimmed)
     } finally {
       setSending(false)
@@ -686,7 +750,14 @@ export default function ChatScreen({ conversationId, onBack }) {
                     </div>
                   )}
                   {renderContent(msg, isMine)}
-                  <p style={{ fontSize: 10, color: isMine ? 'rgba(255,255,255,0.6)' : C.textFaint, marginTop: 4, textAlign: 'right', padding: msg.message_type === 'image' || msg.message_type === 'video' ? '0 8px 4px' : 0 }}>{timeFormat(msg.created_at)}</p>
+                  {isMine ? (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3, marginTop: 4, padding: msg.message_type === 'image' || msg.message_type === 'video' ? '0 8px 4px' : 0 }}>
+                      <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)' }}>{timeFormat(msg.created_at)}</span>
+                      <DeliveryStatus status={msg.delivery_status || 'sent'} />
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: 10, color: C.textFaint, marginTop: 4, textAlign: 'left', padding: msg.message_type === 'image' || msg.message_type === 'video' ? '0 8px 4px' : 0 }}>{timeFormat(msg.created_at)}</p>
+                  )}
                 </div>
 
                 {/* Reaction + actions popup */}
