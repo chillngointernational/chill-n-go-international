@@ -16,7 +16,7 @@ const IMG = {
 const CATEGORIES = [
   { name: 'Travel', icon: 'flight_takeoff', color: '#1D9E75', img: IMG.beach, sub: 'travel', value: 'travel' },
   { name: 'Nutrition', icon: 'restaurant', color: '#e7c092', img: IMG.food, sub: 'nutrition', value: 'nutrition' },
-  { name: 'Store', icon: 'shopping_bag', color: '#FF7F50', img: IMG.accessories, sub: 'store', value: 'store' },
+  { name: 'Store', icon: 'shopping_bag', color: '#FF7F50', img: IMG.accessories, sub: 'store-local', value: 'store' },
   { name: 'Online Store', icon: 'devices', color: '#c5c0ff', img: IMG.gadgets, sub: 'store', value: 'online' },
   { name: 'Real Estate', icon: 'domain', color: '#68dbae', img: IMG.mansion, sub: 'realestate', value: 'realestate' },
   { name: 'CandyStakes', icon: 'military_tech', color: '#8c84eb', img: IMG.bakery, sub: 'candystakes', value: 'candystakes' },

@@ -12,6 +12,7 @@ import CandyStakesScreen from '../pages/app/CandyStakesScreen'
 import RealEstateScreen from '../pages/app/RealEstateScreen'
 import NutritionScreen from '../pages/app/NutritionScreen'
 import StoreScreen from '../pages/app/StoreScreen'
+import StoreLocalScreen from '../pages/app/StoreLocalScreen'
 import NetworkScreen from '../pages/app/NetworkScreen'
 
 const TABS = [
@@ -23,8 +24,7 @@ const TABS = [
 ]
 
 const MAIN_SCREENS = ['feed', 'explore', 'create', 'messages', 'profile']
-const SUB_SCREENS = ['travel', 'candystakes', 'realestate', 'nutrition', 'store', 'network']
-
+const SUB_SCREENS = ['travel', 'candystakes', 'realestate', 'nutrition', 'store', 'store-local', 'network']
 export default function AppShell() {
     const location = useLocation()
     const navigate = useNavigate()
@@ -75,6 +75,7 @@ export default function AppShell() {
             case 'realestate': return <RealEstateScreen onBack={goBack} />
             case 'nutrition': return <NutritionScreen onBack={goBack} />
             case 'store': return <StoreScreen onBack={goBack} />
+            case 'store-local': return <StoreLocalScreen onBack={goBack} />
             case 'network': return <NetworkScreen onBack={goBack} isDesktop={isDesktop} />
             default: return <FeedScreen />
         }

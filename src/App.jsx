@@ -27,6 +27,7 @@ export default function App() {
             <Route path="candystakes" element={null} />
             <Route path="realestate" element={null} />
             <Route path="nutrition" element={null} />
+            <Route path="store-local" element={null} />
             <Route path="store" element={null} />
             <Route path="network" element={null} />
             <Route path="chat/:conversationId" element={null} />
