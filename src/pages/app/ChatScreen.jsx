@@ -278,7 +278,9 @@ export default function ChatScreen({ conversationId, onBack }) {
             .from('cng_messages')
             .update({ delivery_status: 'read', read_at: new Date().toISOString() })
             .eq('id', payload.new.id)
-            .then(() => { })
+            .then(({ error }) => {
+              if (error) console.error('mark-read error:', error)
+            })
           supabase
             .from('cng_conversation_members')
             .update({ unread_count: 0, last_read_at: new Date().toISOString() })
@@ -355,8 +357,11 @@ export default function ChatScreen({ conversationId, onBack }) {
       if (replyId) row.reply_to_id = replyId
       const { data, error } = await supabase.from('cng_messages').insert(row).select().single()
       if (error) throw error
-      // Replace optimistic with real message
-      setMessages(prev => prev.map(m => m.id === tempId ? data : m))
+      UPDATE cng_messages
+SET delivery_status = 'read',
+        read_at = NOW()
+WHERE delivery_status = 'sent'
+AND sender_id = 'a615ab10-4e93-4066-aa8d-259872b944f7';
     } catch (e) {
       console.error('Send error:', e)
       // Remove optimistic on error
