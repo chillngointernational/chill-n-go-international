@@ -361,12 +361,13 @@ export default function ChatScreen({ conversationId, onBack }) {
     return () => { clearTimeout(timer); document.removeEventListener('click', handler) }
   }, [reactionPopup, showStickers])
 
-  /* ── Manejador de "Escribiendo" ────────────────────────────── */
+  /* ── Manejador de "Escribiendo" MEJORADO ────────────────────────────── */
   const handleTextChange = (e) => {
     const val = e.target.value
     setText(val)
 
-    if (channelRef.current && user) {
+    // Validamos que el canal exista, que haya usuario, Y que el canal esté "SUBSCRIBED"
+    if (channelRef.current && user && channelRef.current.state === 'joined') {
       console.log('📤 [ENVÍO] Teclado presionado, enviando typing:', val.length > 0);
 
       channelRef.current.send({
@@ -379,15 +380,19 @@ export default function ChatScreen({ conversationId, onBack }) {
 
       if (val.length > 0) {
         typingTimeoutRef.current = setTimeout(() => {
-          channelRef.current.send({
-            type: 'broadcast',
-            event: 'typing',
-            payload: { user_id: user.id, is_typing: false }
-          })
+          // Volvemos a checar el estado antes de mandar el "false"
+          if (channelRef.current && channelRef.current.state === 'joined') {
+            channelRef.current.send({
+              type: 'broadcast',
+              event: 'typing',
+              payload: { user_id: user.id, is_typing: false }
+            })
+          }
         }, 2000)
       }
     } else {
-      console.warn('⚠️ [AVISO] No se pudo enviar el typing porque no hay canal activo.');
+      // Si el canal aún dice 'joining' o 'closed', ignoramos el tipeo silenciosamente
+      console.log('⏳ [ESPERA] Canal Realtime conectando, ignorando typing por ahora...');
     }
   }
 
