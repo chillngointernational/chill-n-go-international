@@ -3,23 +3,79 @@ import { C, FONT, Icon } from '../../stitch'
 import { supabase } from '../../lib/supabase'
 import TopBar from '../../components/TopBar'
 
-const IMG = {
-  beach: 'https://lh3.googleusercontent.com/aida-public/AB6AXuD8-1aMHRCfKTcwjQKPT-T-m1NLImFWm57GT9pH871jx_D5ifIdQgyYVirqyhU9ZV1kJhkP6MtfkP2w2_O_fbx8tg7BFLV1FKrriRvA_k4ZzkLaWzrE7dNay55T9UzN8nrZUq7VZfKDZuxjn8zPwoRsEW0I5DG89CB6qRVYfeOBPI8JOFxIFe_i47pcsn8CCxvpkbQ8m90E0JgGuAdTa_G8Bq3T6fMILeQRMRA4-rCMr7fyObB4GEwGMBneQhDRnU2QUSDmaNa4ZmE',
-  food: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDUDSeSECuSv0Tm6EQ-Rys12_vT1y6GPGCIBT2XMmF1OBS9IFEVxmYrqX2aWPQPlbrR00Zsk9344KzOanTl1xIdfI6t5zuZLgRUzOxOiKaQ7fZRFWVk_U0OpFDb4jTX-BQRyWo0mIf-z1UlyZVu7beZ14IE58iVOcfod3gkbXEDMQYxZoY32gpxj6zQgf56HbaLVPLkRlAYTIBjqmkzAupjv1GzBTsiA_mJNat2GJBAniblPwX25YzFSvyWFIjgZ0ybmx-qpUPcRDk',
-  accessories: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAv3QpK2Mni6gtGv5wZ6oXnhAq6QNvcg7DCGo2njAL8wEDS3UbPx9ogh9kK7WFiNKko8m86jqI1obipcx3zIleINfJ6KacLGvMT8mXI-rhqOze3nzHdBRBhp-9MNhkqlegw92noYb6ezPy7FkQ8cDEHM8_s4xB65S1IExcKJk0y2ENoYa1HBZI-vXj3wB2zH4IImuVee2RffMf_ZmxnW6inJTe_wYM5Oie64Kcs6dIg2Ie4xlk2n-ckngKvpYksp6nQd6cOUoLFRFM',
-  gadgets: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCN0-zwYLlAOHYq3MMQVxoU36yblok4Np58Ihno6c9Y5V2DNCNmVP9z-Rw557uiwRNK1h8XZzi6cZPJsM8IV3GN2O9EVB4ixKIQsst_Omwry0jB2x3yD1Gy5LtXMNjN-b1-lroUk-KZA0Z3NbXvv92Huf8buNYsEiblGifJamEdy-goGoZePf3B0ZZgEr37jBFfR0oYDkl0SyzqY44RpBpn0Ff4ij0M6_pkFMl7KWirYCHzjiXzjF7FRtGiZZIiW6211WtJILiP7X8',
-  mansion: 'https://lh3.googleusercontent.com/aida-public/AB6AXuACIRt7dDFvbYpzFqCAByOePEcbEaIT0VYpWpc68CweGLaqmkNZehwuLDc3TVhr8mlo_3-RFLhXVFc6tL5dySGsufyuXLHtaAiLtmvWSNgEAEGuGAIHM6i_7xXPI2lP6vu_scE7eysQTnZmbIVXTxYdKbARkCKAFnyG0Lj4uhI0YTXDpEbRGdutJSOQhgAe4z-gmzp8YcPQnWtuQiX82IvvZ7EBgwdVlAKU975Iw7PoMQW7lHzgbUzhSlChxeSwFETIWwYijgE2iC0',
-  bakery: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBI-5kpaIjt1KwCvgH7iWSnncL4Y-4sPboWdXYhORSmfDFl27ihdjvQ6PfKm6JNy21WIz2h4md496aw3lQlFc-6vLlwcEvrUrPdqepAKw5bp0m3jQxxkwJSf1sUxmFJLMOxJvckwiW3nuy8fogtM4FGWK3xU-rEhcx2HJgRkmCZ_YhGcPzDr9mR_ktvH667-W0qMGyfMmEkQJWnw7xbO7f06eId1X-BTbk0hlENWywaM8Chh7ftRGEFIVbcJmmUQGvoShU4-6FcJDc',
-  gala: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAUu8uFV5cQyuCmcnsH8Sxs4zmH0qTLF-3y3E3UDifDbpgJ0eW63pUQEhXfQcpOrG0oFISWxilk7CltiX0-f68z7c055WPtasJd_12TnZXUg2JmQJo2vo1Zi9ER0PEDbB7pREwGz3gXQhgvTh02MVs_3GQt2wPnEcEemePc82uk7zVtub4PqOKISQ7us4_keZ1vk8IjOD70rncQygtJtu7so5uNoztqTQ2SLXRvapIT3T8YAP48az6GaNSjD93LvwOS3GPX3LSo5ZM',
-}
-
 const CATEGORIES = [
-  { name: 'Travel', icon: 'flight_takeoff', color: '#1D9E75', img: IMG.beach, sub: 'travel', value: 'travel' },
-  { name: 'Nutrition', icon: 'restaurant', color: '#e7c092', img: IMG.food, sub: 'nutrition', value: 'nutrition' },
-  { name: 'Store', icon: 'shopping_bag', color: '#FF7F50', img: IMG.accessories, sub: 'store-local', value: 'store' },
-  { name: 'Online Store', icon: 'devices', color: '#c5c0ff', img: IMG.gadgets, sub: 'store', value: 'online' },
-  { name: 'Real Estate', icon: 'domain', color: '#68dbae', img: IMG.mansion, sub: 'realestate', value: 'realestate' },
-  { name: 'CandyStakes', icon: 'military_tech', color: '#8c84eb', img: IMG.bakery, sub: 'candystakes', value: 'candystakes' },
+  {
+    name: 'Travel',
+    sub: 'travel',
+    value: 'travel',
+    color: '#1D9E75',
+    border: 'rgba(29,158,117,0.25)',
+    badge: null,
+    subtitle: 'Activo',
+    img: 'https://images.unsplash.com/photo-1506929562872-bb421503ef21?w=400&q=80&auto=format&fit=crop',
+  },
+  {
+    name: 'Nutrition',
+    sub: 'nutrition',
+    value: 'nutrition',
+    color: '#68db82',
+    border: 'rgba(104,219,130,0.25)',
+    badge: null,
+    subtitle: 'Market activo',
+    img: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=400&q=80&auto=format&fit=crop',
+  },
+  {
+    name: 'Store',
+    sub: 'store-local',
+    value: 'store',
+    color: '#e7c092',
+    border: 'rgba(231,192,146,0.25)',
+    badge: '📍 LOCAL',
+    badgeColor: 'rgba(231,192,146,0.15)',
+    badgeBorder: 'rgba(231,192,146,0.3)',
+    badgeText: '#e7c092',
+    subtitle: 'Comercios afiliados',
+    img: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=400&q=80&auto=format&fit=crop',
+  },
+  {
+    name: 'Online Store',
+    sub: 'store',
+    value: 'online',
+    color: '#b8a4ff',
+    border: 'rgba(184,164,255,0.25)',
+    badge: '✦ SPARK IA',
+    badgeColor: 'rgba(184,164,255,0.15)',
+    badgeBorder: 'rgba(184,164,255,0.3)',
+    badgeText: '#b8a4ff',
+    subtitle: 'Compras con IA',
+    img: 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?w=400&q=80&auto=format&fit=crop',
+  },
+  {
+    name: 'Real Estate',
+    sub: 'realestate',
+    value: 'realestate',
+    color: '#68dbae',
+    border: 'rgba(104,219,174,0.25)',
+    badge: '🇲🇽 🇺🇸',
+    badgeColor: 'transparent',
+    badgeBorder: 'transparent',
+    badgeText: '#fff',
+    subtitle: 'MX & US',
+    img: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=400&q=80&auto=format&fit=crop',
+  },
+  {
+    name: 'CandyStakes',
+    sub: 'candystakes',
+    value: 'candystakes',
+    color: '#c5c0ff',
+    border: 'rgba(197,192,255,0.25)',
+    badge: 'ROI 18–24%',
+    badgeColor: 'rgba(197,192,255,0.15)',
+    badgeBorder: 'rgba(197,192,255,0.3)',
+    badgeText: '#c5c0ff',
+    subtitle: '4 campañas activas',
+    img: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400&q=80&auto=format&fit=crop',
+  },
 ]
 
 export default function ExploreScreen({ onNavigate, isDesktop }) {
@@ -46,28 +102,64 @@ export default function ExploreScreen({ onNavigate, isDesktop }) {
   useEffect(() => { fetchData() }, [fetchData])
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', background: '#080C14', minHeight: '100vh' }}>
       <TopBar title="Chill N Go" leftIcon="menu" rightIcon="notifications" />
-      <div style={{ padding: '0 24px 24px', display: 'flex', flexDirection: 'column', gap: 32 }}>
+
+      <div style={{ padding: '0 16px 100px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+        {/* Search */}
         <div style={{ position: 'relative' }}>
-          <Icon name="search" size={20} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: C.textFaint }} />
-          <input placeholder="Explore your next vibe..." style={{ width: '100%', height: 56, background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: 12, paddingLeft: 48, paddingRight: 16, color: C.onSurface, fontSize: 14, fontFamily: FONT.body, outline: 'none' }} />
+          <Icon name="search" size={18} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: '#445' }} />
+          <input
+            placeholder="Explora tu próximo vibe..."
+            style={{ width: '100%', height: 48, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, paddingLeft: 44, paddingRight: 16, color: C.onSurface, fontSize: 14, fontFamily: FONT.body, outline: 'none', boxSizing: 'border-box' }}
+          />
         </div>
 
-        {/* Category grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: isDesktop ? '1fr 1fr 1fr' : '1fr 1fr', gap: 16 }}>
-          {CATEGORIES.map((c) => (
-            <div key={c.name} onClick={() => onNavigate(c.sub)} style={{ position: 'relative', height: 192, borderRadius: 12, overflow: 'hidden', cursor: 'pointer' }}>
-              <img src={c.img} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
-              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.2) 50%, transparent 100%)' }} />
-              <div style={{ position: 'absolute', bottom: 16, left: 16, right: 16 }}>
-                <Icon name={c.icon} fill size={24} style={{ color: c.color, marginBottom: 4 }} />
-                <h3 style={{ fontFamily: FONT.headline, fontWeight: 700, color: C.text }}>{c.name}</h3>
-                {categoryCounts[c.value] !== undefined && (
-                  <span style={{ fontSize: 10, color: C.textDim, fontWeight: 600, fontFamily: FONT.body }}>
-                    {categoryCounts[c.value]} post{categoryCounts[c.value] !== 1 ? 's' : ''}
+        {/* Label */}
+        <p style={{ fontSize: 11, color: '#445', fontWeight: 700, letterSpacing: 3, textTransform: 'uppercase', margin: 0 }}>Verticales</p>
+
+        {/* Grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: isDesktop ? '1fr 1fr 1fr' : '1fr 1fr', gap: 12 }}>
+          {CATEGORIES.map(c => (
+            <div
+              key={c.name}
+              onClick={() => onNavigate(c.sub)}
+              style={{ position: 'relative', height: 180, borderRadius: 20, overflow: 'hidden', cursor: 'pointer', border: `1px solid ${c.border}` }}
+            >
+              {/* Image */}
+              <img src={c.img} alt={c.name} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+
+              {/* Gradient overlay */}
+              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.15) 55%, transparent 100%)' }} />
+
+              {/* Color tint overlay */}
+              <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(135deg, ${c.color}18, transparent 60%)` }} />
+
+              {/* Top left icon */}
+              <div style={{ position: 'absolute', top: 12, left: 12, width: 32, height: 32, background: `${c.color}30`, border: `1px solid ${c.color}60`, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ width: 8, height: 8, borderRadius: 99, background: c.color }} />
+              </div>
+
+              {/* Top right badge */}
+              {c.badge && (
+                <div style={{ position: 'absolute', top: 12, right: 12, background: c.badgeColor, border: `1px solid ${c.badgeBorder}`, padding: '3px 8px', borderRadius: 99 }}>
+                  <span style={{ fontSize: 9, color: c.badgeText, fontWeight: 700 }}>{c.badge}</span>
+                </div>
+              )}
+
+              {/* Bottom info */}
+              <div style={{ position: 'absolute', bottom: 14, left: 14, right: 14 }}>
+                <p style={{ fontSize: 16, fontWeight: 800, color: '#fff', margin: '0 0 5px', fontFamily: FONT.headline }}>{c.name}</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{ width: 6, height: 6, borderRadius: 99, background: c.color, flexShrink: 0 }} />
+                  <span style={{ fontSize: 10, color: c.color, fontWeight: 600 }}>
+                    {categoryCounts[c.value] !== undefined && categoryCounts[c.value] > 0
+                      ? `${categoryCounts[c.value]} post${categoryCounts[c.value] !== 1 ? 's' : ''}`
+                      : c.subtitle
+                    }
                   </span>
-                )}
+                </div>
               </div>
             </div>
           ))}
