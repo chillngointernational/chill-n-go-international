@@ -357,11 +357,8 @@ export default function ChatScreen({ conversationId, onBack }) {
       if (replyId) row.reply_to_id = replyId
       const { data, error } = await supabase.from('cng_messages').insert(row).select().single()
       if (error) throw error
-      UPDATE cng_messages
-SET delivery_status = 'read',
-        read_at = NOW()
-WHERE delivery_status = 'sent'
-AND sender_id = 'a615ab10-4e93-4066-aa8d-259872b944f7';
+      // Replace optimistic message with the real one
+      setMessages(prev => prev.map(m => m.id === tempId ? data : m))
     } catch (e) {
       console.error('Send error:', e)
       // Remove optimistic on error
