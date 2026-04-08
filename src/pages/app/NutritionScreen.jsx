@@ -27,7 +27,7 @@ const PRODUCTS = [
   },
   {
     id: 2,
-    img: 'https://images.unsplash.com/photo-1550572017-37b7b469a9b9?w=400&q=80',
+    img: 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=400&q=80',
     name: 'Magnesio L-T',
     tags: 'Sueño · Músculo',
     price: 18,
@@ -49,7 +49,7 @@ const PRODUCTS = [
   },
   {
     id: 4,
-    img: 'https://images.unsplash.com/photo-1611073615830-9b55b1d9c14b?w=400&q=80',
+    img: 'https://images.unsplash.com/photo-1576086213369-97a306d36557?w=400&q=80',
     name: "Lion's Mane",
     tags: 'Foco · Memoria',
     price: 32,
