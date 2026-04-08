@@ -1,24 +1,86 @@
 ﻿import { useState } from 'react'
-import { C, FONT, Icon, GRADIENT } from '../../stitch'
+import { C, FONT, Icon } from '../../stitch'
 import TopBar from '../../components/TopBar'
 import BackButton from '../../components/BackButton'
-
-const CATEGORIES = ['🌿 Todos', '💊 Vitaminas', '💪 Proteína', '🧠 Cognitivos', '😴 Sueño', '🦠 Gut']
-
-const PRODUCTS = [
-  { id: 1, emoji: '🐟', name: 'Omega-3 Ultra', tags: 'Corazón · Cerebro · Inflamación', price: 24, original: 38, color: '#68db82', featured: true, category: 'Vitaminas' },
-  { id: 2, emoji: '🌙', name: 'Magnesio L-T', tags: 'Sueño · Músculo', price: 18, color: '#c5c0ff', category: 'Sueño' },
-  { id: 3, emoji: '☀️', name: 'Vitamina D3+K2', tags: 'Huesos · Inmune', price: 21, color: '#e7c092', category: 'Vitaminas' },
-  { id: 4, emoji: '🧠', name: "Lion's Mane", tags: 'Foco · Memoria', price: 32, color: '#c5c0ff', category: 'Cognitivos' },
-  { id: 5, emoji: '🦠', name: 'Probiótico 50B', tags: 'Gut · Digestión', price: 27, color: '#68db82', category: 'Gut' },
-  { id: 6, emoji: '💪', name: 'Whey Isolate', tags: 'Músculo · Recuperación', price: 45, color: '#e7c092', category: 'Proteína' },
-]
 
 const GREEN = '#68db82'
 const GREEN_DIM = 'rgba(104,219,130,0.12)'
 const GREEN_BORDER = 'rgba(104,219,130,0.22)'
 const SURFACE = '#0d1117'
 const SURFACE_GREEN = '#0d1f18'
+
+const CATEGORIES = ['🌿 Todos', '💊 Vitaminas', '💪 Proteína', '🧠 Cognitivos', '😴 Sueño', '🦠 Gut']
+
+const PRODUCTS = [
+  {
+    id: 1,
+    img: 'https://images.unsplash.com/photo-1559757175-0eb30cd8c063?w=800&q=80',
+    name: 'Omega-3 Ultra',
+    tags: 'Corazón · Cerebro · Inflamación',
+    price: 24, original: 38,
+    color: GREEN,
+    featured: true,
+    category: 'Vitaminas',
+    badges: ['EPA 1200mg', 'DHA 800mg'],
+    catLabel: '🐟 Omega',
+    catColor: GREEN,
+  },
+  {
+    id: 2,
+    img: 'https://images.unsplash.com/photo-1550572017-37b7b469a9b9?w=400&q=80',
+    name: 'Magnesio L-T',
+    tags: 'Sueño · Músculo',
+    price: 18,
+    color: '#c5c0ff',
+    category: 'Sueño',
+    catLabel: '😴 Sueño',
+    catColor: '#c5c0ff',
+  },
+  {
+    id: 3,
+    img: 'https://images.unsplash.com/photo-1512069772995-ec65ed45afd6?w=400&q=80',
+    name: 'Vitamina D3+K2',
+    tags: 'Huesos · Inmune',
+    price: 21,
+    color: '#e7c092',
+    category: 'Vitaminas',
+    catLabel: '☀️ Vitaminas',
+    catColor: '#e7c092',
+  },
+  {
+    id: 4,
+    img: 'https://images.unsplash.com/photo-1611073615830-9b55b1d9c14b?w=400&q=80',
+    name: "Lion's Mane",
+    tags: 'Foco · Memoria',
+    price: 32,
+    color: '#c5c0ff',
+    category: 'Cognitivos',
+    catLabel: '🧠 Cognitivos',
+    catColor: '#c5c0ff',
+  },
+  {
+    id: 5,
+    img: 'https://images.unsplash.com/photo-1607619056574-7b8d3ee536b2?w=400&q=80',
+    name: 'Probiótico 50B',
+    tags: 'Gut · Digestión',
+    price: 27,
+    color: GREEN,
+    category: 'Gut',
+    catLabel: '🦠 Gut',
+    catColor: GREEN,
+  },
+  {
+    id: 6,
+    img: 'https://images.unsplash.com/photo-1593095948071-474c5cc2989d?w=400&q=80',
+    name: 'Whey Isolate',
+    tags: 'Músculo · Recuperación',
+    price: 45,
+    color: '#e7c092',
+    category: 'Proteína',
+    catLabel: '💪 Proteína',
+    catColor: '#e7c092',
+  },
+]
 
 export default function NutritionScreen({ onBack }) {
   const [companionOpen, setCompanionOpen] = useState(false)
@@ -56,7 +118,9 @@ export default function NutritionScreen({ onBack }) {
         >
           <div style={{ position: 'absolute', top: -30, right: -20, width: 100, height: 100, background: 'rgba(104,219,130,0.06)', borderRadius: '50%' }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 44, height: 44, borderRadius: 14, background: 'linear-gradient(135deg, #1a4a2e, #2d6e42)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>🌿</div>
+            <div style={{ width: 44, height: 44, borderRadius: 14, background: 'linear-gradient(135deg, #1a4a2e, #2d6e42)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Icon name="eco" size={22} style={{ color: GREEN }} />
+            </div>
             <div style={{ flex: 1 }}>
               <p style={{ fontSize: 10, color: GREEN, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', margin: '0 0 3px' }}>Tu Compañero</p>
               <p style={{ fontSize: 14, color: '#c8e8d0', fontWeight: 600, margin: 0, fontFamily: FONT.headline }}>Compañero Nutricional</p>
@@ -96,9 +160,9 @@ export default function NutritionScreen({ onBack }) {
         </div>
 
         {/* Market Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-          <h2 style={{ fontFamily: FONT.headline, fontSize: 18, fontWeight: 800, color: C.onSurface, margin: 0, letterSpacing: '-0.3px' }}>Market</h2>
-          <Icon name="shopping_cart" size={22} style={{ color: '#5a7a6a' }} />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2 style={{ fontFamily: FONT.headline, fontSize: 18, fontWeight: 800, color: C.onSurface, margin: 0 }}>Market</h2>
+          <span style={{ fontSize: 11, color: '#3a6a5a', fontWeight: 600 }}>{filtered.length} productos</span>
         </div>
 
         {/* Category Pills */}
@@ -108,7 +172,8 @@ export default function NutritionScreen({ onBack }) {
               key={cat}
               onClick={() => setActiveCategory(cat)}
               style={{
-                padding: '7px 14px', borderRadius: 99, fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: FONT.body, border: 'none',
+                padding: '7px 14px', borderRadius: 99, fontSize: 11, fontWeight: 700,
+                whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: FONT.body, border: 'none',
                 background: activeCategory === cat ? '#1a4a2e' : 'rgba(255,255,255,0.04)',
                 color: activeCategory === cat ? GREEN : '#5a7a6a',
                 outline: activeCategory === cat ? `1px solid ${GREEN_BORDER}` : '1px solid rgba(255,255,255,0.07)',
@@ -119,20 +184,31 @@ export default function NutritionScreen({ onBack }) {
 
         {/* Featured Product */}
         {featured && (
-          <div style={{ background: SURFACE_GREEN, border: `1px solid ${GREEN_BORDER}`, borderRadius: 18, padding: 16, display: 'flex', gap: 14, alignItems: 'center', position: 'relative', overflow: 'hidden' }}>
-            <div style={{ position: 'absolute', top: 0, right: 0, background: GREEN, padding: '4px 14px', borderRadius: '0 18px 0 10px', fontSize: 10, color: '#0a2010', fontWeight: 800, letterSpacing: 1 }}>RECOMENDADO</div>
-            <div style={{ width: 72, height: 72, background: 'linear-gradient(135deg, #1a3a28, #2a5a3a)', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, flexShrink: 0 }}>{featured.emoji}</div>
-            <div style={{ flex: 1 }}>
-              <p style={{ fontSize: 15, fontWeight: 800, color: '#e8f5ee', margin: '0 0 3px', fontFamily: FONT.headline }}>{featured.name}</p>
-              <p style={{ fontSize: 11, color: '#5a8a6a', margin: '0 0 10px' }}>{featured.tags}</p>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div>
-                  <span style={{ fontSize: 16, fontWeight: 800, color: GREEN, fontFamily: FONT.headline }}>${featured.price}</span>
-                  {featured.original && <span style={{ fontSize: 11, color: '#5a7a6a', marginLeft: 6, textDecoration: 'line-through' }}>${featured.original}</span>}
+          <div style={{ borderRadius: 20, overflow: 'hidden', border: `1px solid ${GREEN_BORDER}` }}>
+            <div style={{ position: 'relative', height: 180 }}>
+              <img src={featured.img} alt={featured.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, #080C14 0%, rgba(8,12,20,0.5) 50%, rgba(8,12,20,0.1) 100%)' }} />
+              <div style={{ position: 'absolute', top: 12, left: 12, background: GREEN, padding: '4px 12px', borderRadius: 99, fontSize: 10, color: '#0a2010', fontWeight: 800, letterSpacing: 1 }}>RECOMENDADO</div>
+              <div style={{ position: 'absolute', top: 12, right: 12, background: 'rgba(0,0,0,0.5)', padding: '4px 10px', borderRadius: 99 }}>
+                <span style={{ fontSize: 11, color: GREEN, fontWeight: 700 }}>${featured.price} <span style={{ textDecoration: 'line-through', color: '#3a6a5a', fontSize: 10 }}>${featured.original}</span></span>
+              </div>
+            </div>
+            <div style={{ background: SURFACE_GREEN, padding: '14px 16px 16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div style={{ flex: 1, marginRight: 12 }}>
+                  <p style={{ fontSize: 16, fontWeight: 800, color: '#e8f5ee', margin: '0 0 3px', fontFamily: FONT.headline }}>{featured.name}</p>
+                  <p style={{ fontSize: 11, color: '#3a6a5a', margin: '0 0 10px' }}>{featured.tags}</p>
+                  {featured.badges && (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {featured.badges.map(b => (
+                        <span key={b} style={{ fontSize: 10, background: GREEN_DIM, color: GREEN, padding: '3px 10px', borderRadius: 99, border: `1px solid ${GREEN_BORDER}` }}>{b}</span>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <button
                   onClick={() => toggleStack(featured.id)}
-                  style={{ padding: '7px 16px', background: stack.includes(featured.id) ? 'rgba(104,219,130,0.2)' : GREEN, border: stack.includes(featured.id) ? `1px solid ${GREEN}` : 'none', borderRadius: 10, fontSize: 12, color: stack.includes(featured.id) ? GREEN : '#0a2010', fontWeight: 800, cursor: 'pointer', fontFamily: FONT.body }}
+                  style={{ padding: '10px 18px', background: stack.includes(featured.id) ? GREEN_DIM : GREEN, border: stack.includes(featured.id) ? `1px solid ${GREEN}` : 'none', borderRadius: 12, fontSize: 12, color: stack.includes(featured.id) ? GREEN : '#0a2010', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: FONT.body }}
                 >{stack.includes(featured.id) ? '✓ En Stack' : '+ Stack'}</button>
               </div>
             </div>
@@ -140,18 +216,24 @@ export default function NutritionScreen({ onBack }) {
         )}
 
         {/* Products Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           {rest.map(p => (
-            <div key={p.id} style={{ background: SURFACE, border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, padding: 14 }}>
-              <div style={{ width: 52, height: 52, background: 'rgba(255,255,255,0.04)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, marginBottom: 10 }}>{p.emoji}</div>
-              <p style={{ fontSize: 13, fontWeight: 700, color: '#e8f5ee', margin: '0 0 2px', fontFamily: FONT.headline }}>{p.name}</p>
-              <p style={{ fontSize: 10, color: '#4a6a5a', margin: '0 0 10px' }}>{p.tags}</p>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 15, fontWeight: 800, color: p.color, fontFamily: FONT.headline }}>${p.price}</span>
-                <button
-                  onClick={() => toggleStack(p.id)}
-                  style={{ width: 30, height: 30, background: stack.includes(p.id) ? GREEN_DIM : GREEN_DIM, border: `1px solid ${stack.includes(p.id) ? GREEN : GREEN_BORDER}`, borderRadius: 8, fontSize: 14, color: GREEN, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontFamily: FONT.body }}
-                >{stack.includes(p.id) ? '✓' : '+'}</button>
+            <div key={p.id} style={{ background: SURFACE, border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, overflow: 'hidden' }}>
+              <div style={{ height: 120, position: 'relative', overflow: 'hidden' }}>
+                <img src={p.img} alt={p.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, #0d1117 0%, transparent 60%)' }} />
+                <div style={{ position: 'absolute', bottom: 8, left: 10, fontSize: 10, color: p.catColor, fontWeight: 700, background: 'rgba(0,0,0,0.45)', padding: '2px 8px', borderRadius: 99 }}>{p.catLabel}</div>
+              </div>
+              <div style={{ padding: '10px 12px 12px' }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: '#e8f5ee', margin: '0 0 2px', fontFamily: FONT.headline }}>{p.name}</p>
+                <p style={{ fontSize: 10, color: '#445', margin: '0 0 8px' }}>{p.tags}</p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 15, fontWeight: 800, color: p.color, fontFamily: FONT.headline }}>${p.price}</span>
+                  <button
+                    onClick={() => toggleStack(p.id)}
+                    style={{ width: 32, height: 32, background: GREEN_DIM, border: `1px solid ${stack.includes(p.id) ? GREEN : GREEN_BORDER}`, borderRadius: 9, fontSize: stack.includes(p.id) ? 14 : 18, color: GREEN, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontFamily: FONT.body }}
+                  >{stack.includes(p.id) ? '✓' : '+'}</button>
+                </div>
               </div>
             </div>
           ))}
