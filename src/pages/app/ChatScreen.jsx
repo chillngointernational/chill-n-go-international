@@ -61,6 +61,7 @@ const POPUP_STYLE = {
 
 /* ── Voice duration formatter ─────────────────────────────────── */
 function fmtDuration(s) {
+  if (!s || !isFinite(s) || isNaN(s)) return '0:00'
   const m = Math.floor(s / 60)
   const sec = Math.floor(s % 60)
   return `${m}:${sec.toString().padStart(2, '0')}`
@@ -202,6 +203,20 @@ export default function ChatScreen({ conversationId, onBack }) {
       if (error) throw error
       setMessages(msgs || [])
 
+      // Mark incoming messages as read (messages sent by the other user)
+      const unreadIncoming = (msgs || []).filter(
+        m => m.sender_id !== user.id && m.delivery_status !== 'read'
+      )
+      if (unreadIncoming.length > 0) {
+        await supabase
+          .from('cng_messages')
+          .update({ delivery_status: 'read', read_at: new Date().toISOString() })
+          .eq('conversation_id', conversationId)
+          .neq('sender_id', user.id)
+          .in('delivery_status', ['sent', 'delivered'])
+        // Update local state immediately so sender sees ✓✓ teal via realtime
+      }
+
       // Mark incoming messages as read
       await supabase
         .from('cng_messages')
@@ -258,6 +273,12 @@ export default function ChatScreen({ conversationId, onBack }) {
         })
         scrollToBottom()
         if (payload.new.sender_id !== user?.id) {
+          // Mark as read immediately since chat is open
+          supabase
+            .from('cng_messages')
+            .update({ delivery_status: 'read', read_at: new Date().toISOString() })
+            .eq('id', payload.new.id)
+            .then(() => { })
           supabase
             .from('cng_conversation_members')
             .update({ unread_count: 0, last_read_at: new Date().toISOString() })
