@@ -152,6 +152,12 @@ export default function ChatScreen({ conversationId, onBack }) {
   // Track pending optimistic IDs so realtime can dedup
   const pendingOptimisticRef = useRef(new Map()) // tempId -> true, then tempId -> realId after insert
 
+  // --- Nuevos estados para "Escribiendo..." ---
+  const [isTyping, setIsTyping] = useState(false)
+  const typingTimeoutRef = useRef(null)
+  const hideTypingTimeoutRef = useRef(null)
+  const channelRef = useRef(null)
+
   // Reactions
   const [reactionPopup, setReactionPopup] = useState(null)
   const [reactionPopupAnim, setReactionPopupAnim] = useState(false)
@@ -278,6 +284,21 @@ export default function ChatScreen({ conversationId, onBack }) {
 
       channel = supabase
         .channel('messages-' + conversationId)
+        // Escuchar los eventos "typing" por Broadcast
+        .on('broadcast', { event: 'typing' }, (payload) => {
+          if (payload.payload.user_id !== user.id) {
+            setIsTyping(payload.payload.is_typing)
+
+            // Timeout de seguridad: Ocultar tras 3 segundos de inactividad
+            clearTimeout(hideTypingTimeoutRef.current)
+            if (payload.payload.is_typing) {
+              hideTypingTimeoutRef.current = setTimeout(() => {
+                setIsTyping(false)
+              }, 3000)
+              scrollToBottom()
+            }
+          }
+        })
         .on('postgres_changes', {
           event: 'INSERT',
           schema: 'public',
@@ -340,6 +361,9 @@ export default function ChatScreen({ conversationId, onBack }) {
           ))
         })
         .subscribe()
+
+      // Guardar el canal para poder emitir eventos desde el input
+      channelRef.current = channel
     }
 
     setup()
@@ -357,6 +381,35 @@ export default function ChatScreen({ conversationId, onBack }) {
     return () => { clearTimeout(timer); document.removeEventListener('click', handler) }
   }, [reactionPopup, showStickers])
 
+  /* ── Manejador de "Escribiendo" ────────────────────────────── */
+  const handleTextChange = (e) => {
+    const val = e.target.value
+    setText(val)
+
+    if (channelRef.current && user) {
+      // Emitir que estamos escribiendo
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'typing',
+        payload: { user_id: user.id, is_typing: val.length > 0 }
+      })
+
+      // Limpiar timeout anterior
+      clearTimeout(typingTimeoutRef.current)
+
+      // Si dejamos de teclear por 2 segundos, emitir que ya no escribimos
+      if (val.length > 0) {
+        typingTimeoutRef.current = setTimeout(() => {
+          channelRef.current.send({
+            type: 'broadcast',
+            event: 'typing',
+            payload: { user_id: user.id, is_typing: false }
+          })
+        }, 2000)
+      }
+    }
+  }
+
   /* ── Send text ──────────────────────────────────────────────── */
   const handleSend = async (content, type = 'text') => {
     const val = typeof content === 'string' ? content : text
@@ -366,6 +419,16 @@ export default function ChatScreen({ conversationId, onBack }) {
     const replyId = replyTo?.id || null
     setReplyTo(null)
     setSending(true)
+
+    // Apagar indicador de escribiendo al enviar
+    if (channelRef.current) {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'typing',
+        payload: { user_id: user.id, is_typing: false }
+      })
+      clearTimeout(typingTimeoutRef.current)
+    }
 
     // Optimistic message
     const tempId = 'temp-' + Date.now()
@@ -889,6 +952,22 @@ export default function ChatScreen({ conversationId, onBack }) {
             </div>
           )
         })}
+
+        {/* Indicador de escribiendo */}
+        {isTyping && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', alignSelf: 'flex-start' }}>
+            <p style={{ fontSize: 12, color: C.textDim, fontFamily: FONT.body, fontStyle: 'italic' }}>
+              {otherUser?.full_name?.split(' ')[0] || 'Alguien'} está escribiendo
+            </p>
+            <div style={{ display: 'flex', gap: 3 }}>
+              <span style={{ width: 4, height: 4, background: C.textDim, borderRadius: 99, animation: 'bounce 1.4s infinite ease-in-out both' }} />
+              <span style={{ width: 4, height: 4, background: C.textDim, borderRadius: 99, animation: 'bounce 1.4s infinite ease-in-out both', animationDelay: '0.2s' }} />
+              <span style={{ width: 4, height: 4, background: C.textDim, borderRadius: 99, animation: 'bounce 1.4s infinite ease-in-out both', animationDelay: '0.4s' }} />
+            </div>
+            <style>{`@keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }`}</style>
+          </div>
+        )}
+
         <div ref={bottomRef} />
       </div>
 
@@ -1055,7 +1134,7 @@ export default function ChatScreen({ conversationId, onBack }) {
           <input
             placeholder="Type a message..."
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={handleTextChange}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
             style={{
               width: '100%',
