@@ -149,17 +149,20 @@ export default function ChatScreen({ conversationId, onBack }) {
   const [sending, setSending] = useState(false)
   const bottomRef = useRef(null)
 
+  // Track pending optimistic IDs so realtime can dedup
+  const pendingOptimisticRef = useRef(new Map()) // tempId -> true, then tempId -> realId after insert
+
   // Reactions
-  const [reactionPopup, setReactionPopup] = useState(null)     // messageId
-  const [reactionPopupAnim, setReactionPopupAnim] = useState(false) // animation state
-  const [, forceReactions] = useState(0)                       // trigger re-render
+  const [reactionPopup, setReactionPopup] = useState(null)
+  const [reactionPopupAnim, setReactionPopupAnim] = useState(false)
+  const [, forceReactions] = useState(0)
   const longPressTimer = useRef(null)
 
   // Reply
-  const [replyTo, setReplyTo] = useState(null) // full message object
+  const [replyTo, setReplyTo] = useState(null)
 
   // Forward modal
-  const [forwardMsg, setForwardMsg] = useState(null)  // message to forward
+  const [forwardMsg, setForwardMsg] = useState(null)
   const [fwdSearch, setFwdSearch] = useState('')
   const [fwdMembers, setFwdMembers] = useState([])
   const [fwdLoading, setFwdLoading] = useState(false)
@@ -203,28 +206,26 @@ export default function ChatScreen({ conversationId, onBack }) {
       if (error) throw error
       setMessages(msgs || [])
 
-      // Mark incoming messages as read (messages sent by the other user)
+      // Mark incoming messages as read (single call, only if needed)
       const unreadIncoming = (msgs || []).filter(
         m => m.sender_id !== user.id && m.delivery_status !== 'read'
       )
       if (unreadIncoming.length > 0) {
+        const unreadIds = unreadIncoming.map(m => m.id)
         await supabase
           .from('cng_messages')
           .update({ delivery_status: 'read', read_at: new Date().toISOString() })
-          .eq('conversation_id', conversationId)
-          .neq('sender_id', user.id)
-          .in('delivery_status', ['sent', 'delivered'])
-        // Update local state immediately so sender sees ✓✓ teal via realtime
+          .in('id', unreadIds)
+
+        // Update local state immediately so UI shows read status
+        setMessages(prev => prev.map(m =>
+          unreadIds.includes(m.id)
+            ? { ...m, delivery_status: 'read', read_at: new Date().toISOString() }
+            : m
+        ))
       }
 
-      // Mark incoming messages as read
-      await supabase
-        .from('cng_messages')
-        .update({ delivery_status: 'read', read_at: new Date().toISOString() })
-        .eq('conversation_id', conversationId)
-        .neq('sender_id', user.id)
-        .in('delivery_status', ['sent', 'delivered'])
-
+      // Fetch other user info
       const { data: members } = await supabase
         .from('cng_conversation_members')
         .select('user_id')
@@ -240,6 +241,7 @@ export default function ChatScreen({ conversationId, onBack }) {
         if (member) setOtherUser(member)
       }
 
+      // Reset unread counter for current user
       await supabase
         .from('cng_conversation_members')
         .update({ unread_count: 0, last_read_at: new Date().toISOString() })
@@ -258,7 +260,8 @@ export default function ChatScreen({ conversationId, onBack }) {
 
   /* ── Realtime ───────────────────────────────────────────────── */
   useEffect(() => {
-    if (!conversationId) return
+    if (!conversationId || !user) return
+
     const channel = supabase
       .channel('messages-' + conversationId)
       .on('postgres_changes', {
@@ -267,41 +270,68 @@ export default function ChatScreen({ conversationId, onBack }) {
         table: 'cng_messages',
         filter: 'conversation_id=eq.' + conversationId,
       }, (payload) => {
+        const newMsg = payload.new
+
+        // Check if this is our own message that we already have as optimistic
+        const isOwnRealtimeEcho = newMsg.sender_id === user.id
+
         setMessages(prev => {
-          if (prev.some(m => m.id === payload.new.id)) return prev
-          return [...prev, payload.new]
+          // If we already have this exact ID, skip
+          if (prev.some(m => m.id === newMsg.id)) return prev
+
+          if (isOwnRealtimeEcho) {
+            // Check if there's an optimistic message we should replace
+            // Find any temp- message with same content + sender + close timestamp
+            const optimisticIdx = prev.findIndex(m =>
+              typeof m.id === 'string' &&
+              m.id.startsWith('temp-') &&
+              m.sender_id === newMsg.sender_id &&
+              m.content === newMsg.content
+            )
+            if (optimisticIdx !== -1) {
+              // Replace optimistic with real
+              const updated = [...prev]
+              updated[optimisticIdx] = newMsg
+              return updated
+            }
+            // If handleSend already replaced it, skip to avoid duplicate
+            return prev
+          }
+
+          // Message from the other user — add it
+          return [...prev, newMsg]
         })
+
         scrollToBottom()
-        if (payload.new.sender_id !== user?.id) {
-          // Mark as read immediately since chat is open
+
+        // If it's from the other user, mark as read since chat is open
+        if (!isOwnRealtimeEcho) {
           supabase
             .from('cng_messages')
             .update({ delivery_status: 'read', read_at: new Date().toISOString() })
-            .eq('id', payload.new.id)
+            .eq('id', newMsg.id)
             .then(({ error }) => {
               if (error) console.error('mark-read error:', error)
             })
+
           supabase
             .from('cng_conversation_members')
             .update({ unread_count: 0, last_read_at: new Date().toISOString() })
             .eq('conversation_id', conversationId)
-            .eq('user_id', user?.id)
+            .eq('user_id', user.id)
             .then(() => { })
         }
       })
-      .subscribe()
-
-    const statusChannel = supabase
-      .channel('msg-status-' + conversationId)
       .on('postgres_changes', {
         event: 'UPDATE',
         schema: 'public',
         table: 'cng_messages',
         filter: 'conversation_id=eq.' + conversationId,
       }, (payload) => {
+        // Update delivery_status for ANY update (covers sent→delivered→read)
         setMessages(prev => prev.map(m =>
           m.id === payload.new.id
-            ? { ...m, delivery_status: payload.new.delivery_status, read_at: payload.new.read_at }
+            ? { ...m, ...payload.new }
             : m
         ))
       })
@@ -309,7 +339,6 @@ export default function ChatScreen({ conversationId, onBack }) {
 
     return () => {
       supabase.removeChannel(channel)
-      supabase.removeChannel(statusChannel)
     }
   }, [conversationId, user])
 
@@ -357,11 +386,20 @@ export default function ChatScreen({ conversationId, onBack }) {
       if (replyId) row.reply_to_id = replyId
       const { data, error } = await supabase.from('cng_messages').insert(row).select().single()
       if (error) throw error
-      // Replace optimistic message with the real one
-      setMessages(prev => prev.map(m => m.id === tempId ? data : m))
+
+      // Replace optimistic with real message from DB
+      setMessages(prev => {
+        // Check if realtime already replaced the optimistic
+        const hasReal = prev.some(m => m.id === data.id)
+        if (hasReal) {
+          // Realtime beat us — just remove the optimistic if still there
+          return prev.filter(m => m.id !== tempId)
+        }
+        // Normal case — swap optimistic for real
+        return prev.map(m => m.id === tempId ? data : m)
+      })
     } catch (e) {
       console.error('Send error:', e)
-      // Remove optimistic on error
       setMessages(prev => prev.filter(m => m.id !== tempId))
       if (type === 'text') setText(trimmed)
     } finally {
@@ -377,7 +415,6 @@ export default function ChatScreen({ conversationId, onBack }) {
     setUploading(true)
 
     try {
-      const ext = file.name.split('.').pop()
       const path = `messages/${conversationId}/${Date.now()}-${file.name}`
       const { error: upErr } = await supabase.storage
         .from('cng-media')
@@ -397,6 +434,7 @@ export default function ChatScreen({ conversationId, onBack }) {
         content: urlData.publicUrl,
         message_type: msgType,
         media_url: urlData.publicUrl,
+        delivery_status: 'sent',
       })
       if (error) throw error
     } catch (e) {
@@ -416,13 +454,9 @@ export default function ChatScreen({ conversationId, onBack }) {
       'audio/ogg',
     ]
     for (const t of types) {
-      if (MediaRecorder.isTypeSupported(t)) {
-        console.log('Voice: using mimeType', t)
-        return t
-      }
+      if (MediaRecorder.isTypeSupported(t)) return t
     }
-    console.warn('Voice: no supported mimeType found, using browser default')
-    return undefined // let browser pick default
+    return undefined
   }
 
   const getExtForMime = (mime) => {
@@ -433,55 +467,39 @@ export default function ChatScreen({ conversationId, onBack }) {
   }
 
   const startRecording = async () => {
-    console.log('Voice: starting recording...')
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      console.log('Voice: mic access granted')
-
       const mimeType = getSupportedMimeType()
       const options = mimeType ? { mimeType } : undefined
       const mr = new MediaRecorder(stream, options)
-      const activeMime = mr.mimeType // actual mimeType the recorder is using
-      console.log('Voice: MediaRecorder created, mimeType=', activeMime)
+      const activeMime = mr.mimeType
 
       chunksRef.current = []
 
       mr.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          chunksRef.current.push(e.data)
-          console.log('Voice: chunk received, size=', e.data.size)
-        }
+        if (e.data.size > 0) chunksRef.current.push(e.data)
       }
 
       mr.onstop = async () => {
-        console.log('Voice: recording stopped, chunks=', chunksRef.current.length)
         stream.getTracks().forEach(t => t.stop())
-
         const blobType = activeMime || 'audio/webm'
         const blob = new Blob(chunksRef.current, { type: blobType })
-        console.log('Voice: blob size=', blob.size, 'type=', blobType)
 
-        if (blob.size < 500) {
-          console.warn('Voice: blob too small, discarding')
-          return
-        }
+        if (blob.size < 500) return
 
         setUploading(true)
         try {
           const ext = getExtForMime(blobType)
           const path = `messages/${conversationId}/voice-${Date.now()}.${ext}`
-          console.log('Voice: uploading to', path)
 
           const { error: upErr } = await supabase.storage
             .from('cng-media')
             .upload(path, blob, { contentType: blobType })
           if (upErr) throw upErr
-          console.log('Voice: upload complete')
 
           const { data: urlData } = supabase.storage
             .from('cng-media')
             .getPublicUrl(path)
-          console.log('Voice: public URL=', urlData.publicUrl)
 
           const { error } = await supabase.from('cng_messages').insert({
             conversation_id: conversationId,
@@ -489,9 +507,9 @@ export default function ChatScreen({ conversationId, onBack }) {
             content: '🎙️ Voice message',
             message_type: 'voice',
             media_url: urlData.publicUrl,
+            delivery_status: 'sent',
           })
           if (error) throw error
-          console.log('Voice: message sent')
         } catch (e) {
           console.error('Voice upload error:', e)
         } finally {
@@ -503,10 +521,9 @@ export default function ChatScreen({ conversationId, onBack }) {
         console.error('Voice: MediaRecorder error', e.error)
       }
 
-      mr.start(1000) // collect data every 1s to avoid empty chunks
+      mr.start(1000)
       mediaRecorderRef.current = mr
       setRecording(true)
-      console.log('Voice: recording started')
     } catch (e) {
       console.error('Voice: mic access denied or error:', e)
       setMicSupported(false)
@@ -514,7 +531,6 @@ export default function ChatScreen({ conversationId, onBack }) {
   }
 
   const stopRecording = () => {
-    console.log('Voice: stop requested')
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop()
     }
@@ -579,7 +595,6 @@ export default function ChatScreen({ conversationId, onBack }) {
     if (!forwardMsg || fwdSending) return
     setFwdSending(true)
     try {
-      // Find or create conversation with this member
       const { data: myConvs } = await supabase
         .from('cng_conversation_members')
         .select('conversation_id')
@@ -610,16 +625,13 @@ export default function ChatScreen({ conversationId, onBack }) {
         ])
       }
 
-      // Insert forwarded message
-      const fwdContent = forwardMsg.message_type === 'text'
-        ? forwardMsg.content
-        : forwardMsg.content
       const row = {
         conversation_id: targetConvId,
         sender_id: user.id,
-        content: fwdContent,
+        content: forwardMsg.content,
         message_type: forwardMsg.message_type,
         metadata: JSON.stringify({ forwarded: true }),
+        delivery_status: 'sent',
       }
       if (forwardMsg.media_url) row.media_url = forwardMsg.media_url
       const { error } = await supabase.from('cng_messages').insert(row)
