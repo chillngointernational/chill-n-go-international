@@ -134,7 +134,7 @@ const DeliveryStatus = ({ status }) => {
     <span className="material-symbols-outlined" style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', verticalAlign: 'middle', lineHeight: 1 }}>done_all</span>
   )
   if (status === 'read') return (
-    <span className="material-symbols-outlined" style={{ fontSize: 12, color: '#68dbae', verticalAlign: 'middle', lineHeight: 1 }}>done_all</span>
+    <span className="material-symbols-outlined" style={{ fontSize: 12, color: '#53BDEB', verticalAlign: 'middle', lineHeight: 1 }}>done_all</span>
   )
   return null
 }
