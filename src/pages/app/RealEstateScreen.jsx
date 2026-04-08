@@ -1,48 +1,291 @@
-﻿import { C, FONT, Icon } from '../../stitch'
+﻿import { useState } from 'react'
+import { C, FONT, Icon } from '../../stitch'
 import TopBar from '../../components/TopBar'
 import BackButton from '../../components/BackButton'
-const IMG_GLASS = 'https://lh3.googleusercontent.com/aida-public/AB6AXuBmEdYPFfTJMTHP19jrYF0qGhw60xBvzi2as7gUGdKKr2vz3AvMyUupt0tl5WK5a87OF8_TbEu-iMJQKLT-Btnd3yvjrqEWidmScqFJU9gW0shyv1lsTdIKmzHdnCzwBxtnLImzulJyqTBlVeuoZ9aq7kPW2boixMmFBtRkV67juPkDAdy-aJIT7XyJtAQnv7lW2qmdbk6NptRki5l58AP_V3ND2YNnG3jlVo258eFNJocPCs6dIvN8QazhmvWITRzmE8n7awBwSVE'
-const IMG_PENT = 'https://lh3.googleusercontent.com/aida-public/AB6AXuD0aGUlELqfjWORQGu3YOkH_cmkhbt6-MHV1WiU4l_BoqUsFldiDuxnXJZej4xzwDgVLSaYJGc6mxRLv9cKzF6QH0aceCMx3dNXO85JFyZ_bIuwPPnYfs_hfPgFUVVIO0X5QJw5iAWCZoi5nI0WSHwZr9KeZbeiSz-tttTXyvELmPcKh0al0zDbuNU6TcfKa3yTH1BgZsfe5c6ZvqNft7WNujG8DlhLIs-jGlNR_I9H-aAfUSwFSY1oSF-E0P9su_BiRxgqhUCQHkU'
+
+const TEAL = '#68dbae'
+const TEAL_DIM = 'rgba(104,219,174,0.10)'
+const TEAL_BORDER = 'rgba(104,219,174,0.20)'
+const SURFACE = '#0d1117'
+
+const FILTERS = ['🏠 Todos', '💰 Venta', '📅 Renta corta', '📋 Renta larga', '⭐ CNG Exclusive']
+
+const PROPERTIES = [
+  {
+    id: 1,
+    emoji: '🌊',
+    name: 'Skyline Ocean View South Beach',
+    type: 'Renta corta',
+    typeColor: TEAL,
+    location: 'Miami, FL',
+    flag: '🇺🇸',
+    beds: 2, baths: 2,
+    price: '$280',
+    period: '/ noche',
+    priceColor: TEAL,
+    rating: '4.9',
+    reviews: 48,
+    tags: ['🛏 2 Rec.', '🚿 2 Baños', '🌊 Vista al mar', '🏊 Alberca'],
+    exclusive: true,
+    cngPlus: true,
+    featured: true,
+    filter: 'Renta corta',
+  },
+  {
+    id: 2,
+    emoji: '🏙',
+    name: 'Brickell Modern Loft',
+    type: 'Renta larga',
+    typeColor: TEAL,
+    location: 'Miami · Brickell',
+    flag: '🇺🇸',
+    beds: 2,
+    price: '$3,200',
+    period: '/mes',
+    priceColor: TEAL,
+    filter: 'Renta larga',
+  },
+  {
+    id: 3,
+    emoji: '🏡',
+    name: 'Casa Lomas de Chapultepec',
+    type: 'Venta',
+    typeColor: '#e7c092',
+    location: 'CDMX · Lomas',
+    flag: '🇲🇽',
+    beds: 4,
+    price: '$4.2M',
+    period: 'USD',
+    priceColor: '#e7c092',
+    filter: 'Venta',
+  },
+  {
+    id: 4,
+    emoji: '🏖',
+    name: 'Villa Punta Mita',
+    type: 'Renta corta',
+    typeColor: TEAL,
+    location: 'Nayarit · Punta Mita',
+    flag: '🇲🇽',
+    beds: 5,
+    price: '$850',
+    period: '/ noche',
+    priceColor: TEAL,
+    exclusive: true,
+    filter: 'Renta corta',
+  },
+  {
+    id: 5,
+    emoji: '🏢',
+    name: 'Penthouse Wynwood',
+    type: 'Venta',
+    typeColor: '#e7c092',
+    location: 'Miami · Wynwood',
+    flag: '🇺🇸',
+    beds: 3,
+    price: '$1.8M',
+    period: 'USD',
+    priceColor: '#e7c092',
+    filter: 'Venta',
+  },
+]
+
+const CHAT_INIT = [
+  { role: 'ai', text: 'Hola Oscar 👋 Cuéntame qué buscas — ¿comprar, rentar por temporada o larga estancia? Yo encuentro la propiedad ideal para ti.' }
+]
+
 export default function RealEstateScreen({ onBack }) {
+  const [activeFilter, setActiveFilter] = useState('🏠 Todos')
+  const [messages, setMessages] = useState(CHAT_INIT)
+  const [input, setInput] = useState('')
+  const [searched, setSearched] = useState(false)
+  const [searchTerm, setSearchTerm] = useState('')
+
+  const filtered = activeFilter === '🏠 Todos'
+    ? PROPERTIES
+    : activeFilter === '⭐ CNG Exclusive'
+      ? PROPERTIES.filter(p => p.exclusive)
+      : PROPERTIES.filter(p => p.filter === activeFilter.replace(/^.+\s/, '').trim())
+
+  const featured = filtered.find(p => p.featured)
+  const rest = filtered.filter(p => !p.featured)
+
+  function handleSend() {
+    const text = input.trim()
+    if (!text) return
+    setMessages(prev => [
+      ...prev,
+      { role: 'user', text },
+      { role: 'ai', text: `Excelente 🏡 Encontré propiedades para "${text}". ¿Tienes alguna preferencia de zona o presupuesto?` }
+    ])
+    setSearchTerm(text)
+    setInput('')
+    setSearched(true)
+  }
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column' }}>
-      <TopBar title="Real Estate" leftIcon="arrow_back" onLeft={onBack} rightContent={<div style={{ display: 'flex', gap: 16 }}><Icon name="map" size={24} style={{ color: C.primaryBright }} /><Icon name="filter_list" size={24} style={{ color: C.text }} /></div>} />
-      <div style={{ padding: '0 16px 120px', display: 'flex', flexDirection: 'column', gap: 32 }}>
-        <div style={{ display: 'flex', gap: 12, overflowX: 'auto' }}>
-          {['All', 'Buy', 'Rent', 'Invest'].map((f, i) => (
-            <button key={f} style={{ padding: '8px 24px', borderRadius: 99, background: i === 0 ? C.primaryBright : C.surfaceLow, color: i === 0 ? C.text : C.textDim, fontWeight: i === 0 ? 700 : 500, whiteSpace: 'nowrap', border: 'none', cursor: 'pointer', fontSize: 14, fontFamily: FONT.body }}>{f}</button>
+    <div style={{ display: 'flex', flexDirection: 'column', background: '#080C14', minHeight: '100vh' }}>
+      <TopBar title="Real Estate" leftIcon="arrow_back" onLeft={onBack} rightContent={
+        <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ padding: '7px 12px', background: TEAL_DIM, border: `1px solid ${TEAL_BORDER}`, borderRadius: 99, display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ fontSize: 13 }}>🇲🇽</span>
+            <span style={{ fontSize: 11, color: TEAL, fontWeight: 700 }}>MX</span>
+          </div>
+          <div style={{ padding: '7px 12px', background: TEAL_DIM, border: `1px solid ${TEAL_BORDER}`, borderRadius: 99, display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ fontSize: 13 }}>🇺🇸</span>
+            <span style={{ fontSize: 11, color: TEAL, fontWeight: 700 }}>US</span>
+          </div>
+        </div>
+      } />
+
+      <div style={{ padding: '0 16px 120px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+        {/* Spark RE Assistant */}
+        <div style={{ background: 'linear-gradient(135deg, #080f0d, #0d1a14)', border: `1px solid ${TEAL_BORDER}`, borderRadius: 20, padding: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+            <div style={{ width: 42, height: 42, borderRadius: 13, background: 'linear-gradient(135deg,#0f2a1e,#1a3a28)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>🏛</div>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontSize: 10, color: TEAL, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', margin: '0 0 2px' }}>Asesor de Propiedades</p>
+              <p style={{ fontSize: 14, color: '#c8e8d8', fontWeight: 700, margin: 0, fontFamily: FONT.headline }}>Spark · CNG Real Estate</p>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+              <div style={{ width: 7, height: 7, borderRadius: 99, background: TEAL }} />
+              <p style={{ fontSize: 10, color: TEAL, margin: 0, fontWeight: 600 }}>activo</p>
+            </div>
+          </div>
+
+          {/* Chat */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+            {messages.map((m, i) => (
+              <div key={i} style={{
+                background: '#0a1010',
+                border: `1px solid ${m.role === 'ai' ? 'rgba(104,219,174,0.15)' : 'rgba(104,219,174,0.1)'}`,
+                borderRadius: m.role === 'ai' ? '0 14px 14px 14px' : '14px 14px 0 14px',
+                padding: '10px 14px', fontSize: 13,
+                color: m.role === 'ai' ? '#a8d8c8' : '#c8e8d8',
+                lineHeight: 1.55,
+                maxWidth: '86%',
+                alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
+              }}>{m.text}</div>
+            ))}
+          </div>
+
+          {/* Input */}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSend()}
+              placeholder="¿Comprar, rentar o invertir?"
+              style={{ flex: 1, background: 'rgba(255,255,255,0.04)', border: `1px solid ${TEAL_BORDER}`, borderRadius: 12, padding: '11px 14px', fontSize: 13, color: '#c8e8d8', fontFamily: FONT.body, outline: 'none' }}
+            />
+            <button
+              onClick={handleSend}
+              style={{ width: 42, height: 42, background: TEAL, border: 'none', borderRadius: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+            >
+              <Icon name="send" size={18} style={{ color: '#0a2010' }} />
+            </button>
+          </div>
+        </div>
+
+        {/* Filter pills */}
+        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'none' }}>
+          {FILTERS.map(f => (
+            <button
+              key={f}
+              onClick={() => setActiveFilter(f)}
+              style={{
+                padding: '7px 16px', borderRadius: 99, fontSize: 11, fontWeight: 700,
+                whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: FONT.body,
+                border: activeFilter === f ? 'none' : `1px solid rgba(255,255,255,0.07)`,
+                outline: activeFilter === f ? `1px solid ${TEAL_BORDER}` : 'none',
+                background: activeFilter === f ? '#0f1a1a' : 'rgba(255,255,255,0.03)',
+                color: activeFilter === f ? TEAL : '#445',
+              }}
+            >{f}</button>
           ))}
         </div>
-        <div style={{ background: C.surfaceLow, borderRadius: 24, overflow: 'hidden' }}>
-          <div style={{ aspectRatio: '4/5', position: 'relative' }}>
-            <img src={IMG_GLASS} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            <div style={{ position: 'absolute', top: 16, left: 16 }}><span style={{ background: C.primaryBright, fontSize: 10, fontWeight: 700, padding: '4px 12px', borderRadius: 99, color: '#fff', textTransform: 'uppercase', letterSpacing: 3 }}>REAL ESTATE</span></div>
-            <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 24, background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)' }}>
-              <h3 style={{ fontFamily: FONT.headline, fontSize: 24, fontWeight: 800, color: C.text, marginBottom: 4 }}>Glass House Sanctuary</h3>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'rgba(241,239,232,0.7)', fontSize: 14 }}><Icon name="location_on" size={14} /> Tulum, MX</div>
-            </div>
-          </div>
-          <div style={{ padding: 24 }}>
-            <div style={{ fontSize: 24, fontWeight: 900, color: C.secondaryDark, marginBottom: 16 }}>,000 <span style={{ fontSize: 12, fontWeight: 500, color: C.textFaint }}>USD</span></div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, paddingTop: 16, borderTop: '1px solid rgba(241,239,232,0.05)' }}>
-              {[{ l: 'Bed', v: '4' }, { l: 'Bath', v: '3' }, { l: 'sqft', v: '2,400' }].map((s) => (
-                <div key={s.l} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}><span style={{ fontSize: 12, color: C.textFaint, marginBottom: 4 }}>{s.l}</span><span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{s.v}</span></div>
-              ))}
-            </div>
-          </div>
+
+        {/* Results label */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          {searched
+            ? <p style={{ fontSize: 12, color: '#445', margin: 0 }}>Resultados para <span style={{ color: TEAL, fontWeight: 700 }}>"{searchTerm}"</span></p>
+            : <p style={{ fontSize: 12, color: '#445', margin: 0 }}>Portafolio <span style={{ color: TEAL, fontWeight: 700 }}>CNG · MX & US</span></p>
+          }
+          <p style={{ fontSize: 11, color: TEAL, fontWeight: 700, margin: 0 }}>{filtered.length} props.</p>
         </div>
-        <div style={{ background: C.surfaceLow, borderRadius: 24, overflow: 'hidden' }}>
-          <div style={{ height: 200, position: 'relative' }}>
-            <img src={IMG_PENT} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 24, background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)' }}>
-              <h3 style={{ fontFamily: FONT.headline, fontSize: 20, fontWeight: 800, color: C.text }}>Penthouse Azure</h3>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'rgba(241,239,232,0.7)', fontSize: 12 }}><Icon name="location_on" size={14} /> Miami Beach, FL</div>
+
+        {/* Property cards */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+          {/* Featured card */}
+          {featured && (
+            <div style={{ background: '#0d1a14', border: `1px solid rgba(104,219,174,0.25)`, borderRadius: 20, overflow: 'hidden' }}>
+              <div style={{ position: 'relative' }}>
+                <div style={{ height: 160, background: 'linear-gradient(135deg,#0a1f18,#0f2a20)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 64 }}>{featured.emoji}</div>
+                <div style={{ position: 'absolute', top: 10, left: 10, background: TEAL, padding: '4px 12px', borderRadius: 99, fontSize: 10, color: '#0a2010', fontWeight: 800 }}>✦ CNG EXCLUSIVE</div>
+                <div style={{ position: 'absolute', top: 10, right: 10, background: 'rgba(0,0,0,0.55)', padding: '5px 10px', borderRadius: 99 }}>
+                  <span style={{ fontSize: 10, color: '#fff', fontWeight: 700 }}>📅 {featured.type}</span>
+                </div>
+                <div style={{ position: 'absolute', bottom: 10, right: 10, background: 'rgba(0,0,0,0.55)', padding: '4px 10px', borderRadius: 99 }}>
+                  <span style={{ fontSize: 11, color: '#fff', fontWeight: 700 }}>{featured.flag} {featured.location}</span>
+                </div>
+              </div>
+              <div style={{ padding: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                  <h3 style={{ fontSize: 17, fontWeight: 800, color: '#e8f5f0', margin: 0, fontFamily: FONT.headline, lineHeight: 1.2, flex: 1, marginRight: 12 }}>{featured.name}</h3>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <p style={{ fontSize: 18, fontWeight: 900, color: featured.priceColor, margin: 0, fontFamily: FONT.headline }}>{featured.price}</p>
+                    <p style={{ fontSize: 10, color: '#3a6a5a', margin: 0 }}>{featured.period}</p>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+                  {featured.tags.map(tag => (
+                    <span key={tag} style={{ fontSize: 10, padding: '3px 10px', borderRadius: 99, fontWeight: 700, background: TEAL_DIM, color: TEAL, border: `1px solid ${TEAL_BORDER}` }}>{tag}</span>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <span style={{ fontSize: 12, color: '#3a6a5a' }}>⭐ {featured.rating} · {featured.reviews} reseñas</span>
+                  {featured.cngPlus && (
+                    <span style={{ fontSize: 11, background: 'rgba(231,192,146,0.1)', color: '#e7c092', padding: '3px 10px', borderRadius: 99, fontWeight: 700, border: '1px solid rgba(231,192,146,0.2)' }}>CNG+ precio especial</span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button style={{ flex: 1, padding: 11, background: TEAL_DIM, border: `1px solid ${TEAL_BORDER}`, borderRadius: 10, fontSize: 12, color: TEAL, fontWeight: 700, cursor: 'pointer', fontFamily: FONT.body }}>Ver detalles</button>
+                  <button style={{ flex: 1, padding: 11, background: TEAL, border: 'none', borderRadius: 10, fontSize: 12, color: '#0a2010', fontWeight: 800, cursor: 'pointer', fontFamily: FONT.body }}>Reservar ahora</button>
+                </div>
+              </div>
             </div>
-          </div>
-          <div style={{ padding: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ fontSize: 22, fontWeight: 900, color: C.secondaryDark }}>,200,000 <span style={{ fontSize: 12, fontWeight: 500, color: C.textFaint }}>USD</span></div>
-            <button style={{ background: C.primaryBright, color: '#fff', padding: 12, borderRadius: 12, border: 'none', cursor: 'pointer' }}><Icon name="arrow_forward" size={20} /></button>
-          </div>
+          )}
+
+          {/* Compact cards */}
+          {rest.map(p => (
+            <div key={p.id} style={{ background: SURFACE, border: '1px solid rgba(255,255,255,0.06)', borderRadius: 18, overflow: 'hidden', display: 'flex' }}>
+              <div style={{ width: 110, background: 'linear-gradient(135deg,#0a1510,#0f1e18)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 40, flexShrink: 0, position: 'relative' }}>
+                {p.emoji}
+                {p.exclusive && (
+                  <div style={{ position: 'absolute', bottom: 6, left: 0, right: 0, textAlign: 'center' }}>
+                    <span style={{ fontSize: 9, background: TEAL, color: '#0a2010', padding: '2px 6px', borderRadius: 99, fontWeight: 800 }}>✦ EXCL.</span>
+                  </div>
+                )}
+              </div>
+              <div style={{ flex: 1, padding: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                  <h3 style={{ fontSize: 14, fontWeight: 800, color: '#e8f5f0', margin: 0, fontFamily: FONT.headline, lineHeight: 1.3, flex: 1, marginRight: 8 }}>{p.name}</h3>
+                  <span style={{ fontSize: 10, background: p.typeColor === TEAL ? TEAL_DIM : 'rgba(231,192,146,0.1)', color: p.typeColor, padding: '2px 8px', borderRadius: 99, fontWeight: 700, border: `1px solid ${p.typeColor === TEAL ? TEAL_BORDER : 'rgba(231,192,146,0.2)'}`, whiteSpace: 'nowrap' }}>{p.type}</span>
+                </div>
+                <p style={{ fontSize: 11, color: '#2a4a3a', margin: '0 0 8px' }}>{p.flag} {p.location} · {p.beds} Rec.</p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <span style={{ fontSize: 16, fontWeight: 800, color: p.priceColor, fontFamily: FONT.headline }}>{p.price}</span>
+                    <span style={{ fontSize: 10, color: '#2a4a3a', marginLeft: 4 }}>{p.period}</span>
+                  </div>
+                  <button style={{ padding: '7px 14px', background: p.typeColor === TEAL ? TEAL : 'rgba(231,192,146,0.15)', border: p.typeColor === TEAL ? 'none' : '1px solid rgba(231,192,146,0.25)', borderRadius: 9, fontSize: 11, color: p.typeColor === TEAL ? '#0a2010' : '#e7c092', fontWeight: 800, cursor: 'pointer', fontFamily: FONT.body }}>Ver más</button>
+                </div>
+              </div>
+            </div>
+          ))}
+
         </div>
       </div>
       <BackButton onClick={onBack} />
