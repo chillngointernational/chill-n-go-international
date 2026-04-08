@@ -13,7 +13,7 @@ const CATEGORIES = ['🍗 Food', '🍹 Bares', '💆 Spa & Wellness', '💪 Gym'
 const BUSINESSES = [
     {
         id: 1,
-        emoji: '🍗',
+        img: 'https://images.unsplash.com/photo-1527477396000-e27163b481c2?w=800&q=80',
         name: 'Wings Republic',
         type: 'Restaurante · Alitas & Burgers',
         address: 'Av. Presidente Masaryk 123, Polanco',
@@ -27,7 +27,7 @@ const BUSINESSES = [
     },
     {
         id: 2,
-        emoji: '🍻',
+        img: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=400&q=80',
         name: 'Buffalo Wild Wings',
         type: 'Restaurante · Bar',
         address: 'Antara Fashion Hall, Polanco',
@@ -40,7 +40,7 @@ const BUSINESSES = [
     },
     {
         id: 3,
-        emoji: '🍗',
+        img: 'https://images.unsplash.com/photo-1567521464027-f127ff144326?w=400&q=80',
         name: 'Wingstop',
         type: 'Restaurante',
         address: 'Polanco, CDMX',
@@ -54,7 +54,7 @@ const BUSINESSES = [
     },
     {
         id: 4,
-        emoji: '💆',
+        img: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?w=400&q=80',
         name: 'Zen Spa Polanco',
         type: 'Spa & Bienestar',
         address: 'Emilio Castelar 95, Polanco',
@@ -67,7 +67,7 @@ const BUSINESSES = [
     },
     {
         id: 5,
-        emoji: '💪',
+        img: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=400&q=80',
         name: 'Smart Fit Polanco',
         type: 'Gimnasio',
         address: 'Ejército Nacional 769, Polanco',
@@ -113,9 +113,7 @@ export default function StoreLocalScreen({ onBack }) {
         setSearched(true)
     }
 
-    function openMaps(url) {
-        window.open(url, '_blank')
-    }
+    function openMaps(url) { window.open(url, '_blank') }
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', background: '#080C14', minHeight: '100vh' }}>
@@ -128,11 +126,12 @@ export default function StoreLocalScreen({ onBack }) {
 
             <div style={{ padding: '0 16px 120px', display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-                {/* Spark Assistant */}
+                {/* Spark */}
                 <div style={{ background: 'linear-gradient(135deg, #100c06, #1a1208)', border: `1px solid ${GOLD_BORDER}`, borderRadius: 20, padding: 16 }}>
-                    {/* Header */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
-                        <div style={{ width: 42, height: 42, borderRadius: 13, background: 'linear-gradient(135deg,#2a1a08,#3a2810)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>✦</div>
+                        <div style={{ width: 42, height: 42, borderRadius: 13, background: 'linear-gradient(135deg,#2a1a08,#3a2810)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Icon name="storefront" size={20} style={{ color: GOLD }} />
+                        </div>
                         <div style={{ flex: 1 }}>
                             <p style={{ fontSize: 10, color: GOLD, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', margin: '0 0 2px' }}>Asistente de Comercios</p>
                             <p style={{ fontSize: 14, color: '#f5ead8', fontWeight: 700, margin: 0, fontFamily: FONT.headline }}>Spark · Directorio CNG</p>
@@ -143,24 +142,20 @@ export default function StoreLocalScreen({ onBack }) {
                         </div>
                     </div>
 
-                    {/* Chat messages */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
                         {messages.map((m, i) => (
                             <div key={i} style={{
-                                background: m.role === 'ai' ? '#100e08' : '#100e08',
+                                background: '#100e08',
                                 border: `1px solid ${m.role === 'ai' ? 'rgba(231,192,146,0.15)' : 'rgba(231,192,146,0.1)'}`,
                                 borderRadius: m.role === 'ai' ? '0 14px 14px 14px' : '14px 14px 0 14px',
-                                padding: '10px 14px',
-                                fontSize: 13,
+                                padding: '10px 14px', fontSize: 13,
                                 color: m.role === 'ai' ? '#e0c88a' : '#f0e4c0',
-                                lineHeight: 1.55,
-                                maxWidth: '86%',
+                                lineHeight: 1.55, maxWidth: '86%',
                                 alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
                             }}>{m.text}</div>
                         ))}
                     </div>
 
-                    {/* Input */}
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                         <input
                             value={input}
@@ -169,10 +164,7 @@ export default function StoreLocalScreen({ onBack }) {
                             placeholder="¿Qué se te antoja o necesitas?"
                             style={{ flex: 1, background: 'rgba(255,255,255,0.04)', border: `1px solid ${GOLD_BORDER}`, borderRadius: 12, padding: '11px 14px', fontSize: 13, color: '#f5ead8', fontFamily: FONT.body, outline: 'none' }}
                         />
-                        <button
-                            onClick={handleSend}
-                            style={{ width: 42, height: 42, background: GOLD, border: 'none', borderRadius: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-                        >
+                        <button onClick={handleSend} style={{ width: 42, height: 42, background: GOLD, border: 'none', borderRadius: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                             <Icon name="send" size={18} style={{ color: '#1a0e00' }} />
                         </button>
                     </div>
@@ -181,18 +173,14 @@ export default function StoreLocalScreen({ onBack }) {
                 {/* Category pills */}
                 <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'none' }}>
                     {CATEGORIES.map(cat => (
-                        <button
-                            key={cat}
-                            onClick={() => setActiveCategory(cat)}
-                            style={{
-                                padding: '7px 16px', borderRadius: 99, fontSize: 11, fontWeight: 700,
-                                whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: FONT.body,
-                                border: activeCategory === cat ? 'none' : `1px solid rgba(255,255,255,0.07)`,
-                                outline: activeCategory === cat ? `1px solid ${GOLD_BORDER}` : 'none',
-                                background: activeCategory === cat ? '#1e1510' : 'rgba(255,255,255,0.03)',
-                                color: activeCategory === cat ? GOLD : '#445',
-                            }}
-                        >{cat}</button>
+                        <button key={cat} onClick={() => setActiveCategory(cat)} style={{
+                            padding: '7px 16px', borderRadius: 99, fontSize: 11, fontWeight: 700,
+                            whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: FONT.body,
+                            border: activeCategory === cat ? 'none' : `1px solid rgba(255,255,255,0.07)`,
+                            outline: activeCategory === cat ? `1px solid ${GOLD_BORDER}` : 'none',
+                            background: activeCategory === cat ? '#1e1510' : 'rgba(255,255,255,0.03)',
+                            color: activeCategory === cat ? GOLD : '#445',
+                        }}>{cat}</button>
                     ))}
                 </div>
 
@@ -208,11 +196,12 @@ export default function StoreLocalScreen({ onBack }) {
                 {/* Business cards */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
-                    {/* Featured card — large */}
+                    {/* Featured — hero image */}
                     {featured && (
                         <div style={{ background: '#0d1008', border: `1px solid rgba(231,192,146,0.25)`, borderRadius: 18, overflow: 'hidden' }}>
-                            <div style={{ position: 'relative' }}>
-                                <div style={{ height: 130, background: 'linear-gradient(135deg,#1a1208,#2a1e08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 56 }}>{featured.emoji}</div>
+                            <div style={{ position: 'relative', height: 160 }}>
+                                <img src={featured.img} alt={featured.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, #0d1008 0%, rgba(13,16,8,0.4) 60%, transparent 100%)' }} />
                                 <div style={{ position: 'absolute', top: 10, left: 10, background: GOLD, padding: '4px 12px', borderRadius: 99, fontSize: 10, color: '#1a0e00', fontWeight: 800 }}>MÁS CERCA · {featured.distance}</div>
                                 <div style={{ position: 'absolute', top: 10, right: 10, background: 'rgba(0,0,0,0.5)', padding: '4px 10px', borderRadius: 99, fontSize: 11, color: '#fff', fontWeight: 700 }}>⭐ {featured.rating}</div>
                             </div>
@@ -232,20 +221,22 @@ export default function StoreLocalScreen({ onBack }) {
                                     <button style={{ flex: 1, padding: 11, background: GOLD_DIM, border: `1px solid ${GOLD_BORDER}`, borderRadius: 10, fontSize: 12, color: GOLD, fontWeight: 700, cursor: 'pointer', fontFamily: FONT.body }}>
                                         🛵 Delivery <span style={{ fontSize: 10, opacity: 0.6 }}>· Próximamente</span>
                                     </button>
-                                    <button
-                                        onClick={() => openMaps(featured.mapsUrl)}
-                                        style={{ flex: 1, padding: 11, background: GOLD, border: 'none', borderRadius: 10, fontSize: 12, color: '#1a0e00', fontWeight: 800, cursor: 'pointer', fontFamily: FONT.body }}
-                                    >📍 Ir al lugar</button>
+                                    <button onClick={() => openMaps(featured.mapsUrl)} style={{ flex: 1, padding: 11, background: GOLD, border: 'none', borderRadius: 10, fontSize: 12, color: '#1a0e00', fontWeight: 800, cursor: 'pointer', fontFamily: FONT.body }}>
+                                        📍 Ir al lugar
+                                    </button>
                                 </div>
                             </div>
                         </div>
                     )}
 
-                    {/* Compact cards */}
+                    {/* Compact cards — imagen lateral */}
                     {rest.map(b => (
-                        <div key={b.id} style={{ background: SURFACE, border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, padding: 14, display: 'flex', gap: 14, alignItems: 'center' }}>
-                            <div style={{ width: 68, height: 68, background: '#0a0c08', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, flexShrink: 0 }}>{b.emoji}</div>
-                            <div style={{ flex: 1 }}>
+                        <div key={b.id} style={{ background: SURFACE, border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, overflow: 'hidden', display: 'flex' }}>
+                            <div style={{ width: 100, flexShrink: 0, position: 'relative', overflow: 'hidden' }}>
+                                <img src={b.img} alt={b.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to right, transparent, rgba(13,17,23,0.3))' }} />
+                            </div>
+                            <div style={{ flex: 1, padding: 14 }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
                                     <h3 style={{ fontSize: 14, fontWeight: 800, color: '#f5ead8', margin: 0, fontFamily: FONT.headline }}>{b.name}</h3>
                                     {b.open
@@ -257,12 +248,11 @@ export default function StoreLocalScreen({ onBack }) {
                                 <p style={{ fontSize: 11, color: '#445', margin: '0 0 10px' }}>{b.open ? b.address : b.opensAt}</p>
                                 <div style={{ display: 'flex', gap: 8 }}>
                                     <button style={{ flex: 1, padding: 8, background: GOLD_DIM, border: `1px solid ${GOLD_BORDER}`, borderRadius: 10, fontSize: 11, color: b.open ? GOLD : '#445', fontWeight: 700, cursor: b.open ? 'pointer' : 'not-allowed', opacity: b.open ? 1 : 0.4, fontFamily: FONT.body }}>
-                                        🛵 Delivery <span style={{ fontSize: 9, opacity: 0.6 }}>· Próx.</span>
+                                        🛵 <span style={{ fontSize: 9, opacity: 0.6 }}>Próx.</span>
                                     </button>
-                                    <button
-                                        onClick={() => openMaps(b.mapsUrl)}
-                                        style={{ flex: 1, padding: 8, background: GOLD, border: 'none', borderRadius: 10, fontSize: 11, color: '#1a0e00', fontWeight: 800, cursor: 'pointer', fontFamily: FONT.body }}
-                                    >📍 Ir al lugar</button>
+                                    <button onClick={() => openMaps(b.mapsUrl)} style={{ flex: 1, padding: 8, background: GOLD, border: 'none', borderRadius: 10, fontSize: 11, color: '#1a0e00', fontWeight: 800, cursor: 'pointer', fontFamily: FONT.body }}>
+                                        📍 Ir al lugar
+                                    </button>
                                 </div>
                             </div>
                         </div>
