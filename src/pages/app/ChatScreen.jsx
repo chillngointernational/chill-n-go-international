@@ -150,7 +150,7 @@ export default function ChatScreen({ conversationId, onBack }) {
   const bottomRef = useRef(null)
 
   // Track pending optimistic IDs so realtime can dedup
-  const pendingOptimisticRef = useRef(new Map()) // tempId -> true, then tempId -> realId after insert
+  const pendingOptimisticRef = useRef(new Map())
 
   // --- Nuevos estados para "Escribiendo..." ---
   const [isTyping, setIsTyping] = useState(false)
@@ -201,7 +201,6 @@ export default function ChatScreen({ conversationId, onBack }) {
   /* ── Fetch messages ─────────────────────────────────────────── */
   const fetchMessages = useCallback(async () => {
     if (!conversationId || !user) return
-    // Ensure Supabase realtime has the current auth token
     const { data: { session } } = await supabase.auth.getSession()
     if (session?.access_token) {
       supabase.realtime.setAuth(session.access_token)
@@ -217,7 +216,6 @@ export default function ChatScreen({ conversationId, onBack }) {
       if (error) throw error
       setMessages(msgs || [])
 
-      // Mark incoming messages as read (single call, only if needed)
       const unreadIncoming = (msgs || []).filter(
         m => m.sender_id !== user.id && m.delivery_status !== 'read'
       )
@@ -228,7 +226,6 @@ export default function ChatScreen({ conversationId, onBack }) {
           .update({ delivery_status: 'read', read_at: new Date().toISOString() })
           .in('id', unreadIds)
 
-        // Update local state immediately so UI shows read status
         setMessages(prev => prev.map(m =>
           unreadIds.includes(m.id)
             ? { ...m, delivery_status: 'read', read_at: new Date().toISOString() }
@@ -236,7 +233,6 @@ export default function ChatScreen({ conversationId, onBack }) {
         ))
       }
 
-      // Fetch other user info
       const { data: members } = await supabase
         .from('cng_conversation_members')
         .select('user_id')
@@ -252,7 +248,6 @@ export default function ChatScreen({ conversationId, onBack }) {
         if (member) setOtherUser(member)
       }
 
-      // Reset unread counter for current user
       await supabase
         .from('cng_conversation_members')
         .update({ unread_count: 0, last_read_at: new Date().toISOString() })
@@ -276,20 +271,23 @@ export default function ChatScreen({ conversationId, onBack }) {
     let channel = null
 
     const setup = async () => {
-      // Ensure realtime has the current auth token for RLS
       const { data: { session } } = await supabase.auth.getSession()
       if (session?.access_token) {
         supabase.realtime.setAuth(session.access_token)
       }
 
       channel = supabase
-        .channel('messages-' + conversationId)
-        // Escuchar los eventos "typing" por Broadcast
+        .channel('messages-' + conversationId, {
+          config: {
+            broadcast: { ack: false },
+          },
+        })
         .on('broadcast', { event: 'typing' }, (payload) => {
+          console.log('📡 [RECEPCIÓN] Llegó evento Broadcast:', payload);
+
           if (payload.payload.user_id !== user.id) {
             setIsTyping(payload.payload.is_typing)
 
-            // Timeout de seguridad: Ocultar tras 3 segundos de inactividad
             clearTimeout(hideTypingTimeoutRef.current)
             if (payload.payload.is_typing) {
               hideTypingTimeoutRef.current = setTimeout(() => {
@@ -310,7 +308,6 @@ export default function ChatScreen({ conversationId, onBack }) {
 
           setMessages(prev => {
             if (prev.some(m => m.id === newMsg.id)) return prev
-
             if (isOwnRealtimeEcho) {
               const optimisticIdx = prev.findIndex(m =>
                 typeof m.id === 'string' &&
@@ -325,27 +322,13 @@ export default function ChatScreen({ conversationId, onBack }) {
               }
               return prev
             }
-
             return [...prev, newMsg]
           })
-
           scrollToBottom()
 
           if (!isOwnRealtimeEcho) {
-            supabase
-              .from('cng_messages')
-              .update({ delivery_status: 'read', read_at: new Date().toISOString() })
-              .eq('id', newMsg.id)
-              .then(({ error }) => {
-                if (error) console.error('mark-read error:', error)
-              })
-
-            supabase
-              .from('cng_conversation_members')
-              .update({ unread_count: 0, last_read_at: new Date().toISOString() })
-              .eq('conversation_id', conversationId)
-              .eq('user_id', user.id)
-              .then(() => { })
+            supabase.from('cng_messages').update({ delivery_status: 'read', read_at: new Date().toISOString() }).eq('id', newMsg.id).then(() => { })
+            supabase.from('cng_conversation_members').update({ unread_count: 0, last_read_at: new Date().toISOString() }).eq('conversation_id', conversationId).eq('user_id', user.id).then(() => { })
           }
         })
         .on('postgres_changes', {
@@ -354,15 +337,12 @@ export default function ChatScreen({ conversationId, onBack }) {
           table: 'cng_messages',
           filter: 'conversation_id=eq.' + conversationId,
         }, (payload) => {
-          setMessages(prev => prev.map(m =>
-            m.id === payload.new.id
-              ? { ...m, ...payload.new }
-              : m
-          ))
+          setMessages(prev => prev.map(m => m.id === payload.new.id ? { ...m, ...payload.new } : m))
         })
-        .subscribe()
+        .subscribe((status) => {
+          console.log('🔌 Estado de conexión Realtime:', status);
+        })
 
-      // Guardar el canal para poder emitir eventos desde el input
       channelRef.current = channel
     }
 
@@ -387,17 +367,16 @@ export default function ChatScreen({ conversationId, onBack }) {
     setText(val)
 
     if (channelRef.current && user) {
-      // Emitir que estamos escribiendo
+      console.log('📤 [ENVÍO] Teclado presionado, enviando typing:', val.length > 0);
+
       channelRef.current.send({
         type: 'broadcast',
         event: 'typing',
         payload: { user_id: user.id, is_typing: val.length > 0 }
       })
 
-      // Limpiar timeout anterior
       clearTimeout(typingTimeoutRef.current)
 
-      // Si dejamos de teclear por 2 segundos, emitir que ya no escribimos
       if (val.length > 0) {
         typingTimeoutRef.current = setTimeout(() => {
           channelRef.current.send({
@@ -407,6 +386,8 @@ export default function ChatScreen({ conversationId, onBack }) {
           })
         }, 2000)
       }
+    } else {
+      console.warn('⚠️ [AVISO] No se pudo enviar el typing porque no hay canal activo.');
     }
   }
 
@@ -457,15 +438,11 @@ export default function ChatScreen({ conversationId, onBack }) {
       const { data, error } = await supabase.from('cng_messages').insert(row).select().single()
       if (error) throw error
 
-      // Replace optimistic with real message from DB
       setMessages(prev => {
-        // Check if realtime already replaced the optimistic
         const hasReal = prev.some(m => m.id === data.id)
         if (hasReal) {
-          // Realtime beat us — just remove the optimistic if still there
           return prev.filter(m => m.id !== tempId)
         }
-        // Normal case — swap optimistic for real
         return prev.map(m => m.id === tempId ? data : m)
       })
     } catch (e) {
