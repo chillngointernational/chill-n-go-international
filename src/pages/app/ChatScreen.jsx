@@ -195,6 +195,11 @@ export default function ChatScreen({ conversationId, onBack }) {
   /* ── Fetch messages ─────────────────────────────────────────── */
   const fetchMessages = useCallback(async () => {
     if (!conversationId || !user) return
+    // Ensure Supabase realtime has the current auth token
+    const { data: { session } } = await supabase.auth.getSession()
+    if (session?.access_token) {
+      supabase.realtime.setAuth(session.access_token)
+    }
     try {
       const { data: msgs, error } = await supabase
         .from('cng_messages')
@@ -262,83 +267,85 @@ export default function ChatScreen({ conversationId, onBack }) {
   useEffect(() => {
     if (!conversationId || !user) return
 
-    const channel = supabase
-      .channel('messages-' + conversationId)
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'cng_messages',
-        filter: 'conversation_id=eq.' + conversationId,
-      }, (payload) => {
-        const newMsg = payload.new
+    let channel = null
 
-        // Check if this is our own message that we already have as optimistic
-        const isOwnRealtimeEcho = newMsg.sender_id === user.id
+    const setup = async () => {
+      // Ensure realtime has the current auth token for RLS
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.access_token) {
+        supabase.realtime.setAuth(session.access_token)
+      }
 
-        setMessages(prev => {
-          // If we already have this exact ID, skip
-          if (prev.some(m => m.id === newMsg.id)) return prev
+      channel = supabase
+        .channel('messages-' + conversationId)
+        .on('postgres_changes', {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'cng_messages',
+          filter: 'conversation_id=eq.' + conversationId,
+        }, (payload) => {
+          const newMsg = payload.new
+          const isOwnRealtimeEcho = newMsg.sender_id === user.id
 
-          if (isOwnRealtimeEcho) {
-            // Check if there's an optimistic message we should replace
-            // Find any temp- message with same content + sender + close timestamp
-            const optimisticIdx = prev.findIndex(m =>
-              typeof m.id === 'string' &&
-              m.id.startsWith('temp-') &&
-              m.sender_id === newMsg.sender_id &&
-              m.content === newMsg.content
-            )
-            if (optimisticIdx !== -1) {
-              // Replace optimistic with real
-              const updated = [...prev]
-              updated[optimisticIdx] = newMsg
-              return updated
+          setMessages(prev => {
+            if (prev.some(m => m.id === newMsg.id)) return prev
+
+            if (isOwnRealtimeEcho) {
+              const optimisticIdx = prev.findIndex(m =>
+                typeof m.id === 'string' &&
+                m.id.startsWith('temp-') &&
+                m.sender_id === newMsg.sender_id &&
+                m.content === newMsg.content
+              )
+              if (optimisticIdx !== -1) {
+                const updated = [...prev]
+                updated[optimisticIdx] = newMsg
+                return updated
+              }
+              return prev
             }
-            // If handleSend already replaced it, skip to avoid duplicate
-            return prev
+
+            return [...prev, newMsg]
+          })
+
+          scrollToBottom()
+
+          if (!isOwnRealtimeEcho) {
+            supabase
+              .from('cng_messages')
+              .update({ delivery_status: 'read', read_at: new Date().toISOString() })
+              .eq('id', newMsg.id)
+              .then(({ error }) => {
+                if (error) console.error('mark-read error:', error)
+              })
+
+            supabase
+              .from('cng_conversation_members')
+              .update({ unread_count: 0, last_read_at: new Date().toISOString() })
+              .eq('conversation_id', conversationId)
+              .eq('user_id', user.id)
+              .then(() => { })
           }
-
-          // Message from the other user — add it
-          return [...prev, newMsg]
         })
+        .on('postgres_changes', {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'cng_messages',
+          filter: 'conversation_id=eq.' + conversationId,
+        }, (payload) => {
+          setMessages(prev => prev.map(m =>
+            m.id === payload.new.id
+              ? { ...m, ...payload.new }
+              : m
+          ))
+        })
+        .subscribe()
+    }
 
-        scrollToBottom()
-
-        // If it's from the other user, mark as read since chat is open
-        if (!isOwnRealtimeEcho) {
-          supabase
-            .from('cng_messages')
-            .update({ delivery_status: 'read', read_at: new Date().toISOString() })
-            .eq('id', newMsg.id)
-            .then(({ error }) => {
-              if (error) console.error('mark-read error:', error)
-            })
-
-          supabase
-            .from('cng_conversation_members')
-            .update({ unread_count: 0, last_read_at: new Date().toISOString() })
-            .eq('conversation_id', conversationId)
-            .eq('user_id', user.id)
-            .then(() => { })
-        }
-      })
-      .on('postgres_changes', {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'cng_messages',
-        filter: 'conversation_id=eq.' + conversationId,
-      }, (payload) => {
-        // Update delivery_status for ANY update (covers sent→delivered→read)
-        setMessages(prev => prev.map(m =>
-          m.id === payload.new.id
-            ? { ...m, ...payload.new }
-            : m
-        ))
-      })
-      .subscribe()
+    setup()
 
     return () => {
-      supabase.removeChannel(channel)
+      if (channel) supabase.removeChannel(channel)
     }
   }, [conversationId, user])
 
