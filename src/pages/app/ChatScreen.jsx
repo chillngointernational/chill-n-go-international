@@ -177,7 +177,14 @@ export default function ChatScreen({ conversationId, onBack }) {
   const [micSupported, setMicSupported] = useState(true)
   const mediaRecorderRef = useRef(null)
   const chunksRef = useRef([])
+  const [contextMenu, setContextMenu] = useState(null)      // { msgId, x, y } for context menu position
 
+  // ─── VIEW ONCE states ─────────────────────────────────────
+  const [viewOnceViewer, setViewOnceViewer] = useState(null)
+  const [viewOnceCountdown, setViewOnceCountdown] = useState(0)
+  const viewOnceTimerRef = useRef(null)
+  const [showAttachMenu, setShowAttachMenu] = useState(false)
+  const viewOnceFileInputRef = useRef(null)
   // ─── EDIT & DELETE states ──────────────────────────────────
   const [editingMsg, setEditingMsg] = useState(null)       // message object being edited
   const [editText, setEditText] = useState('')              // edit input text
@@ -406,8 +413,8 @@ export default function ChatScreen({ conversationId, onBack }) {
 
   /* ── Close popups on outside click ──────────────────────────── */
   useEffect(() => {
-    if (!reactionPopup && !showStickers && !contextMenu) return
-    const handler = () => { closeReactionPopup(); setShowStickers(false); setContextMenu(null) }
+    if (!reactionPopup && !showStickers && !contextMenu && !showAttachMenu) return
+    const handler = () => { closeReactionPopup(); setShowStickers(false); setContextMenu(null); setShowAttachMenu(false) }
     const timer = setTimeout(() => document.addEventListener('click', handler), 300)
     return () => { clearTimeout(timer); document.removeEventListener('click', handler) }
   }, [reactionPopup, showStickers, contextMenu])
@@ -644,6 +651,58 @@ export default function ChatScreen({ conversationId, onBack }) {
     }
     mediaRecorderRef.current = null
     setRecording(false)
+  }
+
+  /* ── Send media — VIEW ONCE ─────────────────────────────────── */
+  const handleViewOnceFileSelect = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file || !user) return
+    e.target.value = ''
+    setShowAttachMenu(false)
+    setUploading(true)
+    try {
+      const path = `messages/${conversationId}/viewonce-${Date.now()}-${file.name}`
+      const { error: upErr } = await supabase.storage.from('cng-media').upload(path, file, { contentType: file.type })
+      if (upErr) throw upErr
+      const { data: urlData } = supabase.storage.from('cng-media').getPublicUrl(path)
+      const isVideo = file.type.startsWith('video/')
+      const { error } = await supabase.from('cng_messages').insert({
+        conversation_id: conversationId,
+        sender_id: user.id,
+        content: isVideo ? '🔒 Video · Ver una vez' : '🔒 Foto · Ver una vez',
+        message_type: isVideo ? 'video' : 'image',
+        media_url: urlData.publicUrl,
+        delivery_status: 'sent',
+        is_view_once: true,
+      })
+      if (error) throw error
+    } catch (e) { console.error('View once upload error:', e) }
+    finally { setUploading(false) }
+  }
+
+  const openViewOnce = async (msg) => {
+    const isMine = msg.sender_id === user?.id
+    if (!isMine && msg.viewed_once_at) return
+    setViewOnceViewer(msg)
+    setViewOnceCountdown(5)
+    if (!isMine && !msg.viewed_once_at) {
+      const now = new Date().toISOString()
+      await supabase.from('cng_messages').update({ viewed_once_at: now }).eq('id', msg.id)
+      setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, viewed_once_at: now } : m))
+    }
+    clearInterval(viewOnceTimerRef.current)
+    let remaining = 5
+    viewOnceTimerRef.current = setInterval(() => {
+      remaining -= 1
+      setViewOnceCountdown(remaining)
+      if (remaining <= 0) { clearInterval(viewOnceTimerRef.current); setViewOnceViewer(null) }
+    }, 1000)
+  }
+
+  const closeViewOnce = () => {
+    clearInterval(viewOnceTimerRef.current)
+    setViewOnceViewer(null)
+    setViewOnceCountdown(0)
   }
 
   /* ── Reaction popup helpers ──────────────────────────────────── */
@@ -895,6 +954,50 @@ export default function ChatScreen({ conversationId, onBack }) {
         <p style={{ fontSize: 13, fontFamily: FONT.body, fontStyle: 'italic', color: 'rgba(223,226,235,0.3)', lineHeight: 1.5 }}>
           🚫 Mensaje eliminado
         </p>
+      )
+    }
+
+    // ── VIEW ONCE message ──
+    if (msg.is_view_once) {
+      const isMyMsg = msg.sender_id === user?.id
+      const wasViewed = !!msg.viewed_once_at
+
+      if (isMyMsg) {
+        return (
+          <div onClick={() => openViewOnce(msg)} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', minWidth: 160 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 99, background: wasViewed ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: wasViewed ? '2px solid rgba(255,255,255,0.15)' : '2px solid rgba(255,255,255,0.3)' }}>
+              <Icon name={wasViewed ? 'visibility_off' : 'photo_camera'} size={20} style={{ color: wasViewed ? 'rgba(255,255,255,0.4)' : '#fff' }} />
+            </div>
+            <div>
+              <p style={{ fontSize: 13, fontFamily: FONT.body, fontWeight: 600, color: wasViewed ? 'rgba(255,255,255,0.5)' : '#fff' }}>{msg.message_type === 'video' ? 'Video' : 'Foto'} · Ver una vez</p>
+              <p style={{ fontSize: 11, fontFamily: FONT.body, color: wasViewed ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.6)' }}>{wasViewed ? 'Abierto' : 'No abierto'}</p>
+            </div>
+          </div>
+        )
+      }
+
+      if (wasViewed) {
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 160 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 99, background: 'rgba(255,255,255,0.03)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px dashed rgba(223,226,235,0.15)' }}>
+              <Icon name="visibility_off" size={20} style={{ color: 'rgba(223,226,235,0.25)' }} />
+            </div>
+            <p style={{ fontSize: 13, fontFamily: FONT.body, fontStyle: 'italic', color: 'rgba(223,226,235,0.35)' }}>{msg.message_type === 'video' ? 'Video' : 'Foto'} · Ya visto</p>
+          </div>
+        )
+      }
+
+      return (
+        <div onClick={() => openViewOnce(msg)} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', minWidth: 160 }}>
+          <div style={{ width: 44, height: 44, borderRadius: 99, background: 'linear-gradient(135deg, #1D9E75, #68dbae)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 16px rgba(29,158,117,0.4)', animation: 'pulseGlow 2s infinite' }}>
+            <Icon name={msg.message_type === 'video' ? 'videocam' : 'photo_camera'} size={22} style={{ color: '#fff' }} />
+          </div>
+          <div>
+            <p style={{ fontSize: 14, fontFamily: FONT.body, fontWeight: 600, color: C.text }}>{msg.message_type === 'video' ? 'Video' : 'Foto'} · Ver una vez</p>
+            <p style={{ fontSize: 11, fontFamily: FONT.body, color: C.primaryBright }}>Toca para abrir</p>
+          </div>
+          <style>{`@keyframes pulseGlow { 0%, 100% { box-shadow: 0 0 16px rgba(29,158,117,0.4); } 50% { box-shadow: 0 0 24px rgba(29,158,117,0.7); } }`}</style>
+        </div>
       )
     }
 
@@ -1332,6 +1435,60 @@ export default function ChatScreen({ conversationId, onBack }) {
         style={{ display: 'none' }}
         onChange={handleFileSelect}
       />
+      {/* Hidden file input — View Once */}
+      <input
+        ref={viewOnceFileInputRef}
+        type="file"
+        accept="image/*,video/*"
+        style={{ display: 'none' }}
+        onChange={handleViewOnceFileSelect}
+      />
+
+      {/* ══ VIEW ONCE fullscreen viewer ═══════════════════════ */}
+      {viewOnceViewer && (
+        <div onClick={closeViewOnce} style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,0.95)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ position: 'absolute', top: 20, right: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 44, height: 44, borderRadius: 99, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="44" height="44" style={{ position: 'absolute', transform: 'rotate(-90deg)' }}>
+                <circle cx="22" cy="22" r="18" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="3" />
+                <circle cx="22" cy="22" r="18" fill="none" stroke="#68dbae" strokeWidth="3" strokeDasharray={`${2 * Math.PI * 18}`} strokeDashoffset={`${2 * Math.PI * 18 * (1 - viewOnceCountdown / 5)}`} strokeLinecap="round" style={{ transition: 'stroke-dashoffset 1s linear' }} />
+              </svg>
+              <span style={{ fontSize: 16, fontWeight: 700, color: '#fff', fontFamily: FONT.headline, zIndex: 1 }}>{viewOnceCountdown}</span>
+            </div>
+            <div onClick={(e) => { e.stopPropagation(); closeViewOnce() }} style={{ width: 40, height: 40, borderRadius: 99, background: 'rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+              <Icon name="close" size={24} style={{ color: '#fff' }} />
+            </div>
+          </div>
+          <div style={{ position: 'absolute', top: 28, left: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Icon name="timer" size={18} style={{ color: '#68dbae' }} />
+            <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', fontFamily: FONT.body }}>Ver una vez</span>
+          </div>
+          <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: '90vw', maxHeight: '75vh' }}>
+            {viewOnceViewer.message_type === 'video'
+              ? <video src={viewOnceViewer.media_url} autoPlay playsInline style={{ maxWidth: '100%', maxHeight: '75vh', borderRadius: 16 }} />
+              : <img src={viewOnceViewer.media_url} alt="" style={{ maxWidth: '100%', maxHeight: '75vh', borderRadius: 16, objectFit: 'contain' }} />
+            }
+          </div>
+          <p style={{ position: 'absolute', bottom: 30, fontSize: 13, color: 'rgba(255,255,255,0.5)', fontFamily: FONT.body }}>
+            {viewOnceViewer.sender_id === user?.id ? 'Tu foto' : membersMap[viewOnceViewer.sender_id]?.full_name || 'Miembro'}
+          </p>
+        </div>
+      )}
+
+      {/* ── Attach menu popup (normal + view once) ───────────── */}
+      {showAttachMenu && (
+        <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', bottom: 80, left: 16, background: 'rgba(13,17,23,0.97)', border: '1px solid rgba(241,239,232,0.1)', borderRadius: 16, backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', boxShadow: '0 12px 40px rgba(0,0,0,0.6)', zIndex: 300, padding: 4, minWidth: 200 }}>
+          <div onClick={() => { fileInputRef.current?.click(); setShowAttachMenu(false) }} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer', borderRadius: 12, transition: 'background 0.15s' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
+            <div style={{ width: 36, height: 36, borderRadius: 99, background: 'rgba(104,219,174,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="photo_library" size={20} style={{ color: C.primaryBright }} /></div>
+            <div><p style={{ fontSize: 14, fontWeight: 600, color: C.text, fontFamily: FONT.body }}>Foto o Video</p><p style={{ fontSize: 11, color: C.textDim, fontFamily: FONT.body }}>Envío normal</p></div>
+          </div>
+          <div style={{ height: 1, background: 'rgba(241,239,232,0.06)', margin: '0 12px' }} />
+          <div onClick={() => { viewOnceFileInputRef.current?.click(); setShowAttachMenu(false) }} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer', borderRadius: 12, transition: 'background 0.15s' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
+            <div style={{ width: 36, height: 36, borderRadius: 99, background: 'rgba(184,149,106,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="timer" size={20} style={{ color: '#e7c092' }} /></div>
+            <div><p style={{ fontSize: 14, fontWeight: 600, color: C.text, fontFamily: FONT.body }}>Ver una vez</p><p style={{ fontSize: 11, color: C.textDim, fontFamily: FONT.body }}>Se autodestruye al verla</p></div>
+          </div>
+        </div>
+      )}
 
       {/* ── Delete Confirmation Modal ────────────────────────── */}
       {deleteConfirm && (
@@ -1504,13 +1661,13 @@ export default function ChatScreen({ conversationId, onBack }) {
 
       {/* Input bar */}
       <div style={{ padding: '8px 16px 16px', ...GLASS_NAV, borderTop: '1px solid rgba(241,239,232,0.08)', display: 'flex', alignItems: 'center', gap: 8 }}>
-        {/* Attach — hide during edit */}
+        {/* Attach — opens menu with normal + view once */}
         {!isEditing && (
           <div
-            onClick={() => fileInputRef.current?.click()}
+            onClick={(e) => { e.stopPropagation(); setShowAttachMenu(v => !v); setShowStickers(false) }}
             style={{ width: 36, height: 36, borderRadius: 99, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
           >
-            <Icon name="attach_file" size={22} style={{ color: C.textDim }} />
+            <Icon name="attach_file" size={22} style={{ color: showAttachMenu ? C.primary : C.textDim }} />
           </div>
         )}
 
