@@ -177,7 +177,6 @@ export default function ChatScreen({ conversationId, onBack }) {
   const [micSupported, setMicSupported] = useState(true)
   const mediaRecorderRef = useRef(null)
   const chunksRef = useRef([])
-  const [contextMenu, setContextMenu] = useState(null)      // { msgId, x, y } for context menu position
 
   // ─── VIEW ONCE states ─────────────────────────────────────
   const [viewOnceViewer, setViewOnceViewer] = useState(null)
