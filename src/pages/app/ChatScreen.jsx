@@ -370,7 +370,34 @@ export default function ChatScreen({ conversationId, onBack }) {
 
     setup()
 
+    // Auto-reconnect: check every 5s if channel dropped
+    const reconnectInterval = setInterval(() => {
+      const ch = channelRef.current
+      if (ch && ch.state !== 'joined' && ch.state !== 'joining') {
+        console.log('[Chat] Channel dropped (' + ch.state + '), reconnecting...')
+        supabase.removeChannel(ch)
+        channelRef.current = null
+        setup()
+      }
+    }, 5000)
+
+    // Reconnect on tab focus (mobile sleep / tab switch)
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        const ch = channelRef.current
+        if (!ch || (ch.state !== 'joined' && ch.state !== 'joining')) {
+          console.log('[Chat] Tab resumed, reconnecting...')
+          if (ch) supabase.removeChannel(ch)
+          channelRef.current = null
+          setup()
+        }
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+
     return () => {
+      clearInterval(reconnectInterval)
+      document.removeEventListener('visibilitychange', handleVisibility)
       if (channel) supabase.removeChannel(channel)
     }
   }, [conversationId, user])
