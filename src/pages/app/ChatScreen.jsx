@@ -503,36 +503,48 @@ export default function ChatScreen({ conversationId, onBack }) {
     }
   }
 
-  /* ── Send media (image/video) ───────────────────────────────── */
+  /* ── Send media (image/video) MÚLTIPLE ──────────────────────── */
   const handleFileSelect = async (e) => {
-    const file = e.target.files?.[0]
-    if (!file || !user) return
-    e.target.value = ''
+    const files = e.target.files
+    // Verificamos que haya archivos seleccionados
+    if (!files || files.length === 0 || !user) return
+
+    e.target.value = '' // Limpiamos el input
     setUploading(true)
 
     try {
-      const path = `messages/${conversationId}/${Date.now()}-${file.name}`
-      const { error: upErr } = await supabase.storage
-        .from('cng-media')
-        .upload(path, file, { contentType: file.type })
-      if (upErr) throw upErr
+      // Creamos un array de promesas para subir todos los archivos al mismo tiempo
+      const uploadPromises = Array.from(files).map(async (file) => {
+        // Generamos un string aleatorio para que los nombres no colisionen si se suben en el mismo milisegundo
+        const randomSuffix = Math.random().toString(36).substring(2, 8)
+        const path = `messages/${conversationId}/${Date.now()}-${randomSuffix}-${file.name}`
 
-      const { data: urlData } = supabase.storage
-        .from('cng-media')
-        .getPublicUrl(path)
+        const { error: upErr } = await supabase.storage
+          .from('cng-media')
+          .upload(path, file, { contentType: file.type })
+        if (upErr) throw upErr
 
-      const isVideo = file.type.startsWith('video/')
-      const msgType = isVideo ? 'video' : 'image'
+        const { data: urlData } = supabase.storage
+          .from('cng-media')
+          .getPublicUrl(path)
 
-      const { error } = await supabase.from('cng_messages').insert({
-        conversation_id: conversationId,
-        sender_id: user.id,
-        content: urlData.publicUrl,
-        message_type: msgType,
-        media_url: urlData.publicUrl,
-        delivery_status: 'sent',
+        const isVideo = file.type.startsWith('video/')
+        const msgType = isVideo ? 'video' : 'image'
+
+        const { error } = await supabase.from('cng_messages').insert({
+          conversation_id: conversationId,
+          sender_id: user.id,
+          content: urlData.publicUrl,
+          message_type: msgType,
+          media_url: urlData.publicUrl,
+          delivery_status: 'sent',
+        })
+        if (error) throw error
       })
-      if (error) throw error
+
+      // Esperamos a que TODAS las imágenes/videos se procesen
+      await Promise.all(uploadPromises)
+
     } catch (e) {
       console.error('Upload error:', e)
     } finally {
@@ -1316,6 +1328,7 @@ export default function ChatScreen({ conversationId, onBack }) {
         ref={fileInputRef}
         type="file"
         accept="image/*,video/*"
+        multiple
         style={{ display: 'none' }}
         onChange={handleFileSelect}
       />
