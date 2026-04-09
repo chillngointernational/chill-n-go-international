@@ -361,7 +361,9 @@ export default function ChatScreen({ conversationId, onBack }) {
         }, (payload) => {
           setMessages(prev => prev.map(m => m.id === payload.new.id ? { ...m, ...payload.new } : m))
         })
-        .subscribe() // <- Quitamos el semáforo de aquí
+        .subscribe((status) => {
+          console.log('[Chat] Realtime status:', status)
+        })
 
       channelRef.current = channel
     }
