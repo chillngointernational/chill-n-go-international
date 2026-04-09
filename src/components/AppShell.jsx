@@ -171,16 +171,15 @@ export default function AppShell() {
                 </nav>
 
                 {/* Desktop main content */}
-                <div
-                    ref={scrollRef}
-                    style={{
-                        height: '100%',
-                        overflowY: isFs ? 'hidden' : 'auto',
-                        overflowX: 'hidden',
-                        paddingBottom: showNav ? 96 : 0,
-                        paddingTop: isFs ? 0 : 8,
-                    }}
-                >
+                <div ref={scrollRef} style={{
+                    flex: 1,
+                    minWidth: 0,
+                    height: '100%',
+                    overflowY: isFs ? 'hidden' : 'auto',
+                    overflowX: 'hidden',
+                    paddingBottom: showNav ? 96 : 0,
+                    paddingTop: isFs ? 0 : 8,
+                }}>
                     {renderContent()}
                 </div>
             </div>
