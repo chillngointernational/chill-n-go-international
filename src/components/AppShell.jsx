@@ -1,4 +1,6 @@
-import { useRef } from 'react'
+import { useRef, useState, useEffect } from 'react'
+import { supabase } from '../lib/supabase'
+import { useAuth } from '../context/AuthContext'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { C, FONT, Icon, GRADIENT, GLASS_NAV, useDesktop } from '../stitch'
 import FeedScreen from '../pages/app/FeedScreen'
@@ -30,6 +32,24 @@ export default function AppShell() {
     const navigate = useNavigate()
     const scrollRef = useRef(null)
     const isDesktop = useDesktop()
+    const { user } = useAuth()
+    const [unreadCount, setUnreadCount] = useState(0)
+
+    useEffect(() => {
+        if (!user) return
+        const fetchUnread = async () => {
+            const { data } = await supabase
+                .from('cng_conversation_members')
+                .select('unread_count')
+                .eq('user_id', user.id)
+                .gt('unread_count', 0)
+            const total = (data || []).reduce((sum, r) => sum + (r.unread_count || 0), 0)
+            setUnreadCount(total)
+        }
+        fetchUnread()
+        const interval = setInterval(fetchUnread, 5000)
+        return () => clearInterval(interval)
+    }, [user])
 
     // Parse current screen from URL
     const pathParts = location.pathname.replace('/app/', '').replace('/app', '').split('/')
@@ -294,7 +314,27 @@ export default function AppShell() {
                                     userSelect: 'none',
                                 }}
                             >
-                                <Icon name={t.icon} fill={activeTab === t.id} size={24} />
+                                <div style={{ position: 'relative' }}>
+                                    <Icon name={t.icon} fill={activeTab === t.id} size={24} />
+                                    {t.id === 'messages' && unreadCount > 0 && (
+                                        <div style={{
+                                            position: 'absolute',
+                                            top: -4,
+                                            right: -8,
+                                            minWidth: 16,
+                                            height: 16,
+                                            borderRadius: 99,
+                                            background: '#ff4444',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            padding: '0 4px',
+                                            border: '2px solid #0D1117',
+                                        }}>
+                                            <span style={{ fontSize: 9, fontWeight: 700, color: '#fff', fontFamily: FONT.body }}>{unreadCount > 99 ? '99+' : unreadCount}</span>
+                                        </div>
+                                    )}
+                                </div>
                                 <span style={{
                                     fontSize: 10,
                                     letterSpacing: 2,
