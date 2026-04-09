@@ -527,15 +527,18 @@ export default function ChatScreen({ conversationId, onBack }) {
         .getPublicUrl(path)
       const isVideo = file.type.startsWith('video/')
       const msgType = isVideo ? 'video' : 'image'
-      const { error } = await supabase.from('cng_messages').insert({
+      const { data: newMsg, error } = await supabase.from('cng_messages').insert({
         conversation_id: conversationId,
         sender_id: user.id,
         content: urlData.publicUrl,
         message_type: msgType,
         media_url: urlData.publicUrl,
         delivery_status: 'sent',
-      })
+      }).select().single()
       if (error) throw error
+      setMessages(prev => prev.some(m => m.id === newMsg.id) ? prev : [...prev, newMsg])
+      scrollToBottom()
+      scrollToBottom()
     } catch (e) {
       console.error('Upload error:', e)
     } finally {
