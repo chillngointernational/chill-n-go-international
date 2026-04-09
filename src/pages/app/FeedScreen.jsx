@@ -246,6 +246,7 @@ function PostCard({ post, currentUserId, onLike, onBookmark, onComment, onShare,
   const initial = displayName[0]?.toUpperCase() || 'M'
   const avatarUrl = member?.avatar_url
   const tag = TAG_COLORS[post.category] || TAG_COLORS.general
+  const [isMuted, setIsMuted] = useState(true)
 
   const videoRef = useRef(null)
   const cardRef = useRef(null)
@@ -291,18 +292,19 @@ function PostCard({ post, currentUserId, onLike, onBookmark, onComment, onShare,
       {/* Background */}
       {post.media_url ? (
         <div style={{ position: 'absolute', inset: 0 }}>
-          {post.media_type === 'video' ? (
-            <video
-              ref={videoRef}
-              src={post.media_url}
-              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-              loop
-              playsInline
-              muted
+          {post.media_type === 'video' && (
+            <div
               onClick={handleVideoTap}
-            />
-          ) : (
-            <img src={post.media_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              style={{
+                position: 'absolute', top: 16, right: 16, zIndex: 15,
+                width: 36, height: 36, borderRadius: 99,
+                background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer',
+              }}
+            >
+              <Icon name={isMuted ? 'volume_off' : 'volume_up'} size={18} style={{ color: '#fff' }} />
+            </div>
           )}
         </div>
       ) : (
