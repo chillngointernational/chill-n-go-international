@@ -11,35 +11,6 @@ function timeFormat(dateStr) {
 /* ── Reactions localStorage helper ────────────────────────────── */
 const REACTION_EMOJIS = ['❤️', '😂', '😮', '😢', '🔥', '👍']
 
-function getReactions(messageId) {
-  try {
-    const all = JSON.parse(localStorage.getItem('cng_reactions') || '{}')
-    return all[messageId] || {}
-  } catch { return {} }
-}
-
-function setReaction(messageId, userId, emoji) {
-  try {
-    const all = JSON.parse(localStorage.getItem('cng_reactions') || '{}')
-    if (!all[messageId]) all[messageId] = {}
-    if (all[messageId][userId] === emoji) {
-      delete all[messageId][userId]
-    } else {
-      all[messageId][userId] = emoji
-    }
-    if (Object.keys(all[messageId]).length === 0) delete all[messageId]
-    localStorage.setItem('cng_reactions', JSON.stringify(all))
-  } catch { /* noop */ }
-}
-
-function aggregateReactions(reactions) {
-  const counts = {}
-  Object.values(reactions).forEach(emoji => {
-    counts[emoji] = (counts[emoji] || 0) + 1
-  })
-  return counts
-}
-
 /* ── Sticker grid ─────────────────────────────────────────────── */
 const STICKER_EMOJIS = [
   '😀', '😂', '🥰', '😎', '🔥', '❤️', '👍', '👏', '🎉', '💯',
@@ -161,7 +132,7 @@ export default function ChatScreen({ conversationId, onBack }) {
   // Reactions & Modals
   const [reactionPopup, setReactionPopup] = useState(null)
   const [reactionPopupAnim, setReactionPopupAnim] = useState(false)
-  const [, forceReactions] = useState(0)
+  const [reactions, setReactions] = useState({})
   const longPressTimer = useRef(null)
   const [replyTo, setReplyTo] = useState(null)
   const [forwardMsg, setForwardMsg] = useState(null)
@@ -193,6 +164,62 @@ export default function ChatScreen({ conversationId, onBack }) {
   useEffect(() => {
     if (!navigator.mediaDevices?.getUserMedia) setMicSupported(false)
   }, [])
+
+  /* ── Reactions from Supabase ────────────────────────────────── */
+  const fetchReactions = useCallback(async (messageIds) => {
+    if (!messageIds || messageIds.length === 0) return
+    try {
+      const { data } = await supabase
+        .from('cng_message_reactions')
+        .select('id, message_id, user_id, emoji')
+        .in('message_id', messageIds)
+      const map = {}
+        ; (data || []).forEach(r => {
+          if (!map[r.message_id]) map[r.message_id] = []
+          map[r.message_id].push(r)
+        })
+      setReactions(prev => ({ ...prev, ...map }))
+    } catch (e) { console.error('Fetch reactions error:', e) }
+  }, [])
+
+  const handleReact = async (msgId, emoji) => {
+    if (!user) return
+    closeReactionPopup()
+    const existing = (reactions[msgId] || []).find(r => r.user_id === user.id)
+
+    if (existing && existing.emoji === emoji) {
+      // Remove reaction (toggle off)
+      setReactions(prev => ({
+        ...prev,
+        [msgId]: (prev[msgId] || []).filter(r => r.id !== existing.id)
+      }))
+      await supabase.from('cng_message_reactions').delete().eq('id', existing.id)
+    } else {
+      if (existing) {
+        // Remove old reaction first
+        setReactions(prev => ({
+          ...prev,
+          [msgId]: (prev[msgId] || []).filter(r => r.id !== existing.id)
+        }))
+        await supabase.from('cng_message_reactions').delete().eq('id', existing.id)
+      }
+      // Add new reaction
+      const tempReaction = { id: 'temp-' + Date.now(), message_id: msgId, user_id: user.id, emoji }
+      setReactions(prev => ({
+        ...prev,
+        [msgId]: [...(prev[msgId] || []), tempReaction]
+      }))
+      const { data, error } = await supabase.from('cng_message_reactions')
+        .insert({ message_id: msgId, user_id: user.id, emoji })
+        .select().single()
+      if (!error && data) {
+        setReactions(prev => ({
+          ...prev,
+          [msgId]: (prev[msgId] || []).map(r => r.id === tempReaction.id ? data : r)
+        }))
+      }
+    }
+  }
 
   const scrollToBottom = () => {
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
@@ -245,6 +272,8 @@ export default function ChatScreen({ conversationId, onBack }) {
 
       if (error) throw error
       setMessages(msgs || [])
+      const msgIds = (msgs || []).map(m => m.id)
+      if (msgIds.length > 0) fetchReactions(msgIds)
 
       const unreadIncoming = (msgs || []).filter(
         m => m.sender_id !== user.id && m.delivery_status !== 'read' && !m.is_deleted
@@ -370,6 +399,32 @@ export default function ChatScreen({ conversationId, onBack }) {
           filter: 'conversation_id=eq.' + conversationId,
         }, (payload) => {
           setMessages(prev => prev.map(m => m.id === payload.new.id ? { ...m, ...payload.new } : m))
+        })
+        .on('postgres_changes', {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'cng_message_reactions',
+        }, (payload) => {
+          const r = payload.new
+          if (r.user_id !== user.id) {
+            setReactions(prev => ({
+              ...prev,
+              [r.message_id]: [...(prev[r.message_id] || []).filter(x => x.id !== r.id), r]
+            }))
+          }
+        })
+        .on('postgres_changes', {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'cng_message_reactions',
+        }, (payload) => {
+          const r = payload.old
+          if (r.user_id !== user.id) {
+            setReactions(prev => ({
+              ...prev,
+              [r.message_id]: (prev[r.message_id] || []).filter(x => x.id !== r.id)
+            }))
+          }
         })
         .subscribe((status) => {
           console.log('[Chat] Realtime status:', status)
@@ -731,11 +786,6 @@ export default function ChatScreen({ conversationId, onBack }) {
       openReactionPopup(msgId)
     }
   }
-  const handleReact = (msgId, emoji) => {
-    setReaction(msgId, user.id, emoji)
-    closeReactionPopup()
-    forceReactions(x => x + 1)
-  }
 
   /* ── EDIT message handlers ─────────────────────────────────── */
   const startEdit = (msg) => {
@@ -1048,9 +1098,10 @@ export default function ChatScreen({ conversationId, onBack }) {
 
         {messages.map((msg) => {
           const isMine = msg.sender_id === user?.id
-          const reactions = getReactions(msg.id)
-          const counts = aggregateReactions(reactions)
-          const hasReactions = Object.keys(counts).length > 0
+          const msgReactions = reactions[msg.id] || []
+          const reactionCounts = {}
+          msgReactions.forEach(r => { reactionCounts[r.emoji] = (reactionCounts[r.emoji] || 0) + 1 })
+          const hasReactions = Object.keys(reactionCounts).length > 0
           const repliedMsg = msg.reply_to_id ? messagesMap[msg.reply_to_id] : null
           const isForwarded = (() => {
             try { return msg.metadata && JSON.parse(msg.metadata)?.forwarded } catch { return false }
@@ -1316,26 +1367,29 @@ export default function ChatScreen({ conversationId, onBack }) {
               {/* Reaction pills */}
               {hasReactions && (
                 <div style={{ display: 'flex', gap: 4, marginTop: 2, paddingLeft: isMine ? 0 : 4, paddingRight: isMine ? 4 : 0 }}>
-                  {Object.entries(counts).map(([emoji, count]) => (
-                    <span
-                      key={emoji}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 3,
-                        fontSize: 12,
-                        background: C.surfaceHigh,
-                        border: `1px solid ${C.outlineVariant}`,
-                        borderRadius: 99,
-                        padding: '2px 8px',
-                        color: C.text,
-                        cursor: 'pointer',
-                      }}
-                      onClick={() => handleReact(msg.id, emoji)}
-                    >
-                      {emoji} {count > 1 && <span style={{ fontSize: 10, color: C.textDim }}>{count}</span>}
-                    </span>
-                  ))}
+                  {Object.entries(reactionCounts).map(([emoji, count]) => {
+                    const myReaction = msgReactions.some(r => r.user_id === user?.id && r.emoji === emoji)
+                    return (
+                      <span
+                        key={emoji}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 3,
+                          fontSize: 12,
+                          background: myReaction ? 'rgba(104,219,174,0.15)' : C.surfaceHigh,
+                          border: myReaction ? `1px solid ${C.primary}` : `1px solid ${C.outlineVariant}`,
+                          borderRadius: 99,
+                          padding: '2px 8px',
+                          color: C.text,
+                          cursor: 'pointer',
+                        }}
+                        onClick={() => handleReact(msg.id, emoji)}
+                      >
+                        {emoji} {count > 1 && <span style={{ fontSize: 10, color: C.textDim }}>{count}</span>}
+                      </span>
+                    )
+                  })}
                 </div>
               )}
             </div>
