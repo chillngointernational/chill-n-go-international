@@ -240,6 +240,25 @@ function DemoPost() {
   )
 }
 
+function CaptionText({ text, maxLength = 80 }) {
+  const [expanded, setExpanded] = useState(false)
+  const needsTruncate = text.length > maxLength
+
+  return (
+    <p style={{ fontSize: 14, color: 'rgba(241,239,232,0.9)', lineHeight: 1.6, fontFamily: FONT.body }}>
+      {needsTruncate && !expanded ? text.slice(0, maxLength) + '... ' : text + ' '}
+      {needsTruncate && (
+        <span
+          onClick={(e) => { e.stopPropagation(); setExpanded(v => !v) }}
+          style={{ color: C.textDim, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+        >
+          {expanded ? 'less' : 'more'}
+        </span>
+      )}
+    </p>
+  )
+}
+
 function PostCard({ post, currentUserId, onLike, onBookmark, onComment, onShare, onFollow, userInteracted }) {
   const member = post.cng_members
   const displayName = member?.full_name || member?.ref_code || 'Member'
@@ -394,7 +413,7 @@ function PostCard({ post, currentUserId, onLike, onBookmark, onComment, onShare,
           <span style={{ fontFamily: FONT.headline, fontWeight: 800, fontSize: 16, color: C.text }}>@{member?.ref_code || displayName.toLowerCase().replace(/\s/g, '_')}</span>
         </div>
         {post.caption && (
-          <p style={{ fontSize: 14, color: 'rgba(241,239,232,0.9)', lineHeight: 1.6, fontFamily: FONT.body }}>{post.caption}</p>
+          <CaptionText text={post.caption} />
         )}
         {post.category && post.category !== 'general' && (
           <div style={{ display: 'flex', gap: 8 }}>
