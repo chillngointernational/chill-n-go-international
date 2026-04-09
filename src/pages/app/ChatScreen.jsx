@@ -23,7 +23,7 @@ function setReaction(messageId, userId, emoji) {
     const all = JSON.parse(localStorage.getItem('cng_reactions') || '{}')
     if (!all[messageId]) all[messageId] = {}
     if (all[messageId][userId] === emoji) {
-      delete all[messageId][userId] // toggle off
+      delete all[messageId][userId]
     } else {
       all[messageId][userId] = emoji
     }
@@ -124,18 +124,10 @@ function VoicePlayer({ url, isMine }) {
 
 /* ── Delivery Status icon ─────────────────────────────────────── */
 const DeliveryStatus = ({ status }) => {
-  if (status === 'sending') return (
-    <span className="material-symbols-outlined" style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', verticalAlign: 'middle', lineHeight: 1 }}>schedule</span>
-  )
-  if (status === 'sent') return (
-    <span className="material-symbols-outlined" style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', verticalAlign: 'middle', lineHeight: 1 }}>done</span>
-  )
-  if (status === 'delivered') return (
-    <span className="material-symbols-outlined" style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', verticalAlign: 'middle', lineHeight: 1 }}>done_all</span>
-  )
-  if (status === 'read') return (
-    <span className="material-symbols-outlined" style={{ fontSize: 12, color: '#53BDEB', verticalAlign: 'middle', lineHeight: 1 }}>done_all</span>
-  )
+  if (status === 'sending') return <span className="material-symbols-outlined" style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', verticalAlign: 'middle', lineHeight: 1 }}>schedule</span>
+  if (status === 'sent') return <span className="material-symbols-outlined" style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', verticalAlign: 'middle', lineHeight: 1 }}>done</span>
+  if (status === 'delivered') return <span className="material-symbols-outlined" style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', verticalAlign: 'middle', lineHeight: 1 }}>done_all</span>
+  if (status === 'read') return <span className="material-symbols-outlined" style={{ fontSize: 12, color: '#53BDEB', verticalAlign: 'middle', lineHeight: 1 }}>done_all</span>
   return null
 }
 
@@ -146,50 +138,41 @@ export default function ChatScreen({ conversationId, onBack }) {
 
   // --- Estados de Datos de la Conversación ---
   const [conversation, setConversation] = useState(null)
-  const [membersMap, setMembersMap] = useState({}) // Diccionario { id: { perfil } }
-  const [otherUser, setOtherUser] = useState(null) // Para compatibilidad de DMs
+  const [membersMap, setMembersMap] = useState({})
+  const [otherUser, setOtherUser] = useState(null)
 
   const [text, setText] = useState('')
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const bottomRef = useRef(null)
 
-  // Track pending optimistic IDs so realtime can dedup
+  // Track pending optimistic IDs
   const pendingOptimisticRef = useRef(new Map())
 
-  // --- Nuevos estados para "Escribiendo..." Múltiple ---
-  const [typingUsers, setTypingUsers] = useState({}) // { 'id-usuario': 'Nombre' }
-  const typingTimeoutRef = useRef(null) // Para mi propio teclado
-  const activeTypingTimeoutsRef = useRef({}) // Para limpiar timeouts de otros
+  // --- Estados para "Escribiendo..." Múltiple ---
+  const [typingUsers, setTypingUsers] = useState({})
+  const typingTimeoutRef = useRef(null)
+  const activeTypingTimeoutsRef = useRef({})
   const channelRef = useRef(null)
 
-  // Reactions
+  // Semáforo de seguridad para Realtime
+  const isRealtimeReady = useRef(false)
+
+  // Reactions & Modals
   const [reactionPopup, setReactionPopup] = useState(null)
   const [reactionPopupAnim, setReactionPopupAnim] = useState(false)
   const [, forceReactions] = useState(0)
   const longPressTimer = useRef(null)
-
-  // Reply
   const [replyTo, setReplyTo] = useState(null)
-
-  // Forward modal
   const [forwardMsg, setForwardMsg] = useState(null)
   const [fwdSearch, setFwdSearch] = useState('')
   const [fwdMembers, setFwdMembers] = useState([])
   const [fwdLoading, setFwdLoading] = useState(false)
   const [fwdSending, setFwdSending] = useState(false)
-
-  // Message refs for scroll-to-reply
   const messageRefs = useRef({})
-
-  // Sticker picker
   const [showStickers, setShowStickers] = useState(false)
-
-  // Media upload
   const fileInputRef = useRef(null)
   const [uploading, setUploading] = useState(false)
-
-  // Voice recording
   const [recording, setRecording] = useState(false)
   const [micSupported, setMicSupported] = useState(true)
   const mediaRecorderRef = useRef(null)
@@ -211,7 +194,6 @@ export default function ChatScreen({ conversationId, onBack }) {
       supabase.realtime.setAuth(session.access_token)
     }
     try {
-      // 1. Obtener detalles de la conversación (para saber si es grupo o dm)
       const { data: convData } = await supabase
         .from('cng_conversations')
         .select('*')
@@ -220,7 +202,6 @@ export default function ChatScreen({ conversationId, onBack }) {
 
       setConversation(convData)
 
-      // 2. Obtener miembros del chat
       const { data: memberRows } = await supabase
         .from('cng_conversation_members')
         .select('user_id')
@@ -228,7 +209,6 @@ export default function ChatScreen({ conversationId, onBack }) {
 
       const userIds = (memberRows || []).map(m => m.user_id)
 
-      // 3. Obtener perfiles de todos los miembros
       if (userIds.length > 0) {
         const { data: profiles } = await supabase
           .from('cng_members')
@@ -239,14 +219,13 @@ export default function ChatScreen({ conversationId, onBack }) {
         profiles?.forEach(p => pMap[p.user_id] = p)
         setMembersMap(pMap)
 
-        // Si es DM, mantenemos la lógica de otherUser para compatibilidad
-        if (convData?.type === 'dm') {
+        // FIX: Agregamos 'direct' a la validación para que reconozca los DMs nuevos
+        if (convData?.type === 'dm' || convData?.type === 'direct') {
           const otherId = userIds.find(id => id !== user.id)
           if (otherId && pMap[otherId]) setOtherUser(pMap[otherId])
         }
       }
 
-      // 4. Obtener mensajes
       const { data: msgs, error } = await supabase
         .from('cng_messages')
         .select('*')
@@ -257,7 +236,6 @@ export default function ChatScreen({ conversationId, onBack }) {
       if (error) throw error
       setMessages(msgs || [])
 
-      // 5. Marcar como leído
       const unreadIncoming = (msgs || []).filter(
         m => m.sender_id !== user.id && m.delivery_status !== 'read'
       )
@@ -296,6 +274,7 @@ export default function ChatScreen({ conversationId, onBack }) {
     if (!conversationId || !user) return
 
     let channel = null
+    isRealtimeReady.current = false // Reiniciamos el semáforo al montar
 
     const setup = async () => {
       const { data: { session } } = await supabase.auth.getSession()
@@ -314,10 +293,8 @@ export default function ChatScreen({ conversationId, onBack }) {
 
           if (senderId !== user.id) {
             if (payload.payload.is_typing) {
-              // Añadir al usuario a la lista de "escribiendo"
               setTypingUsers(prev => ({ ...prev, [senderId]: payload.payload.name }))
 
-              // Refrescar su timeout de inactividad
               clearTimeout(activeTypingTimeoutsRef.current[senderId])
               activeTypingTimeoutsRef.current[senderId] = setTimeout(() => {
                 setTypingUsers(prev => {
@@ -328,7 +305,6 @@ export default function ChatScreen({ conversationId, onBack }) {
               }, 3000)
               scrollToBottom()
             } else {
-              // Quitarlo inmediatamente si dejó de escribir o envió
               setTypingUsers(prev => {
                 const newMap = { ...prev }
                 delete newMap[senderId]
@@ -368,8 +344,17 @@ export default function ChatScreen({ conversationId, onBack }) {
           scrollToBottom()
 
           if (!isOwnRealtimeEcho) {
-            supabase.from('cng_messages').update({ delivery_status: 'read', read_at: new Date().toISOString() }).eq('id', newMsg.id).then(() => { })
-            supabase.from('cng_conversation_members').update({ unread_count: 0, last_read_at: new Date().toISOString() }).eq('conversation_id', conversationId).eq('user_id', user.id).then(() => { })
+            // FIX: Actualizamos a leído y capturamos posibles errores
+            supabase.from('cng_messages')
+              .update({ delivery_status: 'read', read_at: new Date().toISOString() })
+              .eq('id', newMsg.id)
+              .then(({ error }) => { if (error) console.error("Error marcando leído:", error) })
+
+            supabase.from('cng_conversation_members')
+              .update({ unread_count: 0, last_read_at: new Date().toISOString() })
+              .eq('conversation_id', conversationId)
+              .eq('user_id', user.id)
+              .then(() => { })
           }
         })
         .on('postgres_changes', {
@@ -378,9 +363,15 @@ export default function ChatScreen({ conversationId, onBack }) {
           table: 'cng_messages',
           filter: 'conversation_id=eq.' + conversationId,
         }, (payload) => {
+          // Actualización de palomitas azules
           setMessages(prev => prev.map(m => m.id === payload.new.id ? { ...m, ...payload.new } : m))
         })
-        .subscribe()
+        .subscribe((status) => {
+          // El Semáforo 100% seguro:
+          if (status === 'SUBSCRIBED') {
+            isRealtimeReady.current = true
+          }
+        })
 
       channelRef.current = channel
     }
@@ -405,8 +396,8 @@ export default function ChatScreen({ conversationId, onBack }) {
     const val = e.target.value
     setText(val)
 
-    if (channelRef.current && user && channelRef.current.state === 'joined') {
-      // Obtenemos nuestro propio nombre del diccionario para enviarlo
+    // Usamos el semáforo isRealtimeReady
+    if (channelRef.current && isRealtimeReady.current && user) {
       const myName = membersMap[user.id]?.full_name?.split(' ')[0] || 'Alguien'
 
       channelRef.current.send({
@@ -419,7 +410,7 @@ export default function ChatScreen({ conversationId, onBack }) {
 
       if (val.length > 0) {
         typingTimeoutRef.current = setTimeout(() => {
-          if (channelRef.current && channelRef.current.state === 'joined') {
+          if (channelRef.current && isRealtimeReady.current) {
             channelRef.current.send({
               type: 'broadcast',
               event: 'typing',
@@ -441,7 +432,7 @@ export default function ChatScreen({ conversationId, onBack }) {
     setReplyTo(null)
     setSending(true)
 
-    if (channelRef.current && channelRef.current.state === 'joined') {
+    if (channelRef.current && isRealtimeReady.current) {
       channelRef.current.send({
         type: 'broadcast',
         event: 'typing',
@@ -699,7 +690,7 @@ export default function ChatScreen({ conversationId, onBack }) {
       if (!targetConvId) {
         const { data: conv, error: convErr } = await supabase
           .from('cng_conversations')
-          .insert({ type: 'dm' })
+          .insert({ type: 'direct' }) // FIX: unificamos a direct
           .select()
           .single()
         if (convErr) throw convErr
@@ -768,9 +759,9 @@ export default function ChatScreen({ conversationId, onBack }) {
   // Generar el texto de "quién escribe"
   const typists = Object.values(typingUsers)
   let typingText = ''
-  if (typists.length === 1) typingText = `${typists[0]} está escribiendo`
-  else if (typists.length === 2) typingText = `${typists[0]} y ${typists[1]} están escribiendo`
-  else if (typists.length > 2) typingText = `Varios están escribiendo`
+  if (typists.length === 1) typingText = `${typists[0]} está escribiendo...`
+  else if (typists.length === 2) typingText = `${typists[0]} y ${typists[1]} están escribiendo...`
+  else if (typists.length > 2) typingText = `Varios están escribiendo...`
 
   /* ── Render message content ─────────────────────────────────── */
   const renderContent = (msg, isMine) => {
