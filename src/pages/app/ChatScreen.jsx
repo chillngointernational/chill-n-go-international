@@ -509,49 +509,33 @@ export default function ChatScreen({ conversationId, onBack }) {
     }
   }
 
-  /* ── Send media (image/video) MÚLTIPLE ──────────────────────── */
+  /* ── Send media (image/video) ───────────────────────────────── */
   const handleFileSelect = async (e) => {
-    const files = e.target.files
-    // Verificamos que haya archivos seleccionados
-    if (!files || files.length === 0 || !user) return
-
-    e.target.value = '' // Limpiamos el input
+    const file = e.target.files?.[0]
+    if (!file || !user) return
+    e.target.value = ''
     setShowAttachMenu(false)
     setUploading(true)
-
     try {
-      // Creamos un array de promesas para subir todos los archivos al mismo tiempo
-      const uploadPromises = Array.from(files).map(async (file) => {
-        // Generamos un string aleatorio para que los nombres no colisionen si se suben en el mismo milisegundo
-        const randomSuffix = Math.random().toString(36).substring(2, 8)
-        const path = `messages/${conversationId}/${Date.now()}-${randomSuffix}-${file.name}`
-
-        const { error: upErr } = await supabase.storage
-          .from('cng-media')
-          .upload(path, file, { contentType: file.type })
-        if (upErr) throw upErr
-
-        const { data: urlData } = supabase.storage
-          .from('cng-media')
-          .getPublicUrl(path)
-
-        const isVideo = file.type.startsWith('video/')
-        const msgType = isVideo ? 'video' : 'image'
-
-        const { error } = await supabase.from('cng_messages').insert({
-          conversation_id: conversationId,
-          sender_id: user.id,
-          content: urlData.publicUrl,
-          message_type: msgType,
-          media_url: urlData.publicUrl,
-          delivery_status: 'sent',
-        })
-        if (error) throw error
+      const path = `messages/${conversationId}/${Date.now()}-${file.name}`
+      const { error: upErr } = await supabase.storage
+        .from('cng-media')
+        .upload(path, file, { contentType: file.type })
+      if (upErr) throw upErr
+      const { data: urlData } = supabase.storage
+        .from('cng-media')
+        .getPublicUrl(path)
+      const isVideo = file.type.startsWith('video/')
+      const msgType = isVideo ? 'video' : 'image'
+      const { error } = await supabase.from('cng_messages').insert({
+        conversation_id: conversationId,
+        sender_id: user.id,
+        content: urlData.publicUrl,
+        message_type: msgType,
+        media_url: urlData.publicUrl,
+        delivery_status: 'sent',
       })
-
-      // Esperamos a que TODAS las imágenes/videos se procesen
-      await Promise.all(uploadPromises)
-
+      if (error) throw error
     } catch (e) {
       console.error('Upload error:', e)
     } finally {
@@ -1431,7 +1415,6 @@ export default function ChatScreen({ conversationId, onBack }) {
         ref={fileInputRef}
         type="file"
         accept="image/*,video/*"
-        multiple
         style={{ display: 'none' }}
         onChange={handleFileSelect}
       />
@@ -1478,7 +1461,7 @@ export default function ChatScreen({ conversationId, onBack }) {
       {/* ── Attach menu popup (normal + view once) ───────────── */}
       {showAttachMenu && (
         <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', bottom: 80, left: 16, background: 'rgba(13,17,23,0.97)', border: '1px solid rgba(241,239,232,0.1)', borderRadius: 16, backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', boxShadow: '0 12px 40px rgba(0,0,0,0.6)', zIndex: 300, padding: 4, minWidth: 200 }}>
-          <div onClick={() => fileInputRef.current?.click()} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer', borderRadius: 12, transition: 'background 0.15s' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
+          <div onClick={() => { setShowAttachMenu(false); setTimeout(() => fileInputRef.current?.click(), 300) }} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer', borderRadius: 12, transition: 'background 0.15s' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
             <div style={{ width: 36, height: 36, borderRadius: 99, background: 'rgba(104,219,174,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="photo_library" size={20} style={{ color: C.primaryBright }} /></div>
             <div><p style={{ fontSize: 14, fontWeight: 600, color: C.text, fontFamily: FONT.body }}>Foto o Video</p><p style={{ fontSize: 11, color: C.textDim, fontFamily: FONT.body }}>Envío normal</p></div>
           </div>
