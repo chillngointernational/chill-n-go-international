@@ -274,7 +274,6 @@ export default function ChatScreen({ conversationId, onBack }) {
     if (!conversationId || !user) return
 
     let channel = null
-    isRealtimeReady.current = false // Reiniciamos el semáforo al montar
 
     const setup = async () => {
       const { data: { session } } = await supabase.auth.getSession()
@@ -284,9 +283,7 @@ export default function ChatScreen({ conversationId, onBack }) {
 
       channel = supabase
         .channel('messages-' + conversationId, {
-          config: {
-            broadcast: { ack: false },
-          },
+          config: { broadcast: { ack: false } },
         })
         .on('broadcast', { event: 'typing' }, (payload) => {
           const senderId = payload.payload.user_id;
@@ -344,11 +341,10 @@ export default function ChatScreen({ conversationId, onBack }) {
           scrollToBottom()
 
           if (!isOwnRealtimeEcho) {
-            // FIX: Actualizamos a leído y capturamos posibles errores
             supabase.from('cng_messages')
               .update({ delivery_status: 'read', read_at: new Date().toISOString() })
               .eq('id', newMsg.id)
-              .then(({ error }) => { if (error) console.error("Error marcando leído:", error) })
+              .then(() => { })
 
             supabase.from('cng_conversation_members')
               .update({ unread_count: 0, last_read_at: new Date().toISOString() })
@@ -363,15 +359,9 @@ export default function ChatScreen({ conversationId, onBack }) {
           table: 'cng_messages',
           filter: 'conversation_id=eq.' + conversationId,
         }, (payload) => {
-          // Actualización de palomitas azules
           setMessages(prev => prev.map(m => m.id === payload.new.id ? { ...m, ...payload.new } : m))
         })
-        .subscribe((status) => {
-          // El Semáforo 100% seguro:
-          if (status === 'SUBSCRIBED') {
-            isRealtimeReady.current = true
-          }
-        })
+        .subscribe() // <- Quitamos el semáforo de aquí
 
       channelRef.current = channel
     }
@@ -396,26 +386,26 @@ export default function ChatScreen({ conversationId, onBack }) {
     const val = e.target.value
     setText(val)
 
-    // Usamos el semáforo isRealtimeReady
-    if (channelRef.current && isRealtimeReady.current && user) {
+    if (channelRef.current && user) {
       const myName = membersMap[user.id]?.full_name?.split(' ')[0] || 'Alguien'
 
+      // Lo enviamos sin preguntar el estado. Supabase se encarga del resto.
       channelRef.current.send({
         type: 'broadcast',
         event: 'typing',
         payload: { user_id: user.id, is_typing: val.length > 0, name: myName }
-      })
+      }).catch(() => { }) // Ignoramos errores de red internos
 
       clearTimeout(typingTimeoutRef.current)
 
       if (val.length > 0) {
         typingTimeoutRef.current = setTimeout(() => {
-          if (channelRef.current && isRealtimeReady.current) {
+          if (channelRef.current) {
             channelRef.current.send({
               type: 'broadcast',
               event: 'typing',
               payload: { user_id: user.id, is_typing: false }
-            })
+            }).catch(() => { })
           }
         }, 2000)
       }
