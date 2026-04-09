@@ -284,27 +284,38 @@ function PostCard({ post, currentUserId, onLike, onBookmark, onComment, onShare,
       video.pause()
       setIsPlaying(false)
     }
-    // Toggle mute on tap
-    video.muted = !video.muted
   }
   return (
     <div ref={cardRef} style={{ position: 'relative', width: '100%', height: '100%', flexShrink: 0, scrollSnapAlign: 'start' }}>
       {/* Background */}
       {post.media_url ? (
         <div style={{ position: 'absolute', inset: 0 }}>
-          {post.media_type === 'video' && (
-            <div
-              onClick={handleVideoTap}
-              style={{
-                position: 'absolute', top: 16, right: 16, zIndex: 15,
-                width: 36, height: 36, borderRadius: 99,
-                background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                cursor: 'pointer',
-              }}
-            >
-              <Icon name={isMuted ? 'volume_off' : 'volume_up'} size={18} style={{ color: '#fff' }} />
-            </div>
+          {post.media_type === 'video' ? (
+            <>
+              <video
+                ref={videoRef}
+                src={post.media_url}
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                loop
+                playsInline
+                muted
+                onClick={handleVideoTap}
+              />
+              <div
+                onClick={(e) => { e.stopPropagation(); const v = videoRef.current; if (v) { v.muted = !v.muted; setIsMuted(v.muted) } }}
+                style={{
+                  position: 'absolute', top: 16, right: 16, zIndex: 15,
+                  width: 36, height: 36, borderRadius: 99,
+                  background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer',
+                }}
+              >
+                <Icon name={isMuted ? 'volume_off' : 'volume_up'} size={18} style={{ color: '#fff' }} />
+              </div>
+            </>
+          ) : (
+            <img src={post.media_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           )}
         </div>
       ) : (
