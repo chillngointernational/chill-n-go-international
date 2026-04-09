@@ -1482,7 +1482,7 @@ export default function ChatScreen({ conversationId, onBack }) {
             <div><p style={{ fontSize: 14, fontWeight: 600, color: C.text, fontFamily: FONT.body }}>Foto o Video</p><p style={{ fontSize: 11, color: C.textDim, fontFamily: FONT.body }}>Envío normal</p></div>
           </div>
           <div style={{ height: 1, background: 'rgba(241,239,232,0.06)', margin: '0 12px' }} />
-          <div onClick={() => { viewOnceFileInputRef.current?.click(); setShowAttachMenu(false) }} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer', borderRadius: 12, transition: 'background 0.15s' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
+          <div onClick={() => { setShowAttachMenu(false); setTimeout(() => viewOnceFileInputRef.current?.click(), 100) }} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer', borderRadius: 12, transition: 'background 0.15s' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
             <div style={{ width: 36, height: 36, borderRadius: 99, background: 'rgba(184,149,106,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="timer" size={20} style={{ color: '#e7c092' }} /></div>
             <div><p style={{ fontSize: 14, fontWeight: 600, color: C.text, fontFamily: FONT.body }}>Ver una vez</p><p style={{ fontSize: 11, color: C.textDim, fontFamily: FONT.body }}>Se autodestruye al verla</p></div>
           </div>
