@@ -653,7 +653,7 @@ export default function ChatScreen({ conversationId, onBack }) {
       if (upErr) throw upErr
       const { data: urlData } = supabase.storage.from('cng-media').getPublicUrl(path)
       const isVideo = file.type.startsWith('video/')
-      const { error } = await supabase.from('cng_messages').insert({
+      const { data: newMsg, error } = await supabase.from('cng_messages').insert({
         conversation_id: conversationId,
         sender_id: user.id,
         content: isVideo ? '🔒 Video · Ver una vez' : '🔒 Foto · Ver una vez',
@@ -661,8 +661,10 @@ export default function ChatScreen({ conversationId, onBack }) {
         media_url: urlData.publicUrl,
         delivery_status: 'sent',
         is_view_once: true,
-      })
+      }).select().single()
       if (error) throw error
+      setMessages(prev => prev.some(m => m.id === newMsg.id) ? prev : [...prev, newMsg])
+      scrollToBottom()
     } catch (e) { console.error('View once upload error:', e) }
     finally { setUploading(false) }
   }
