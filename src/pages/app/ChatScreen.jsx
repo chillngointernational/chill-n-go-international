@@ -155,6 +155,8 @@ export default function ChatScreen({ conversationId, onBack }) {
   const viewOnceTimerRef = useRef(null)
   const [showAttachMenu, setShowAttachMenu] = useState(false)
   const viewOnceFileInputRef = useRef(null)
+  const docFileInputRef = useRef(null)
+  const [locationLoading, setLocationLoading] = useState(false)
   // ─── EDIT & DELETE states ──────────────────────────────────
   const [editingMsg, setEditingMsg] = useState(null)       // message object being edited
   const [editText, setEditText] = useState('')              // edit input text
@@ -748,6 +750,69 @@ export default function ChatScreen({ conversationId, onBack }) {
     setViewOnceViewer(null)
     setViewOnceCountdown(0)
   }
+  /* ── Send document ──────────────────────────────────────────── */
+  const handleDocFileSelect = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file || !user) return
+    e.target.value = ''
+    setShowAttachMenu(false)
+    setUploading(true)
+    try {
+      const path = `messages/${conversationId}/docs-${Date.now()}-${file.name}`
+      const { error: upErr } = await supabase.storage.from('cng-media').upload(path, file, { contentType: file.type })
+      if (upErr) throw upErr
+      const { data: urlData } = supabase.storage.from('cng-media').getPublicUrl(path)
+      const { data: newMsg, error } = await supabase.from('cng_messages').insert({
+        conversation_id: conversationId,
+        sender_id: user.id,
+        content: file.name,
+        message_type: 'document',
+        media_url: urlData.publicUrl,
+        delivery_status: 'sent',
+      }).select().single()
+      if (error) throw error
+      setMessages(prev => prev.some(m => m.id === newMsg.id) ? prev : [...prev, newMsg])
+      scrollToBottom()
+    } catch (e) { console.error('Doc upload error:', e) }
+    finally { setUploading(false) }
+  }
+
+  /* ── Send location ──────────────────────────────────────────── */
+  const handleSendLocation = async () => {
+    if (!user || locationLoading) return
+    setShowAttachMenu(false)
+    if (!navigator.geolocation) {
+      alert('Tu navegador no soporta geolocalización')
+      return
+    }
+    setLocationLoading(true)
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const lat = position.coords.latitude
+        const lng = position.coords.longitude
+        try {
+          const locationData = JSON.stringify({ lat, lng })
+          const { data: newMsg, error } = await supabase.from('cng_messages').insert({
+            conversation_id: conversationId,
+            sender_id: user.id,
+            content: locationData,
+            message_type: 'location',
+            delivery_status: 'sent',
+          }).select().single()
+          if (error) throw error
+          setMessages(prev => prev.some(m => m.id === newMsg.id) ? prev : [...prev, newMsg])
+          scrollToBottom()
+        } catch (e) { console.error('Location send error:', e) }
+        finally { setLocationLoading(false) }
+      },
+      (err) => {
+        console.error('Geolocation error:', err)
+        alert('No se pudo obtener tu ubicación. Verifica los permisos.')
+        setLocationLoading(false)
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    )
+  }
 
   /* ── Reaction popup helpers ──────────────────────────────────── */
   const openReactionPopup = (msgId) => {
@@ -1050,6 +1115,46 @@ export default function ChatScreen({ conversationId, onBack }) {
     }
     if (msg.message_type === 'voice') {
       return <VoicePlayer url={url} isMine={isMine} />
+    }
+    if (msg.message_type === 'document') {
+      const fileName = msg.content || 'Documento'
+      const ext = fileName.split('.').pop()?.toUpperCase() || 'FILE'
+      return (
+        <div
+          onClick={() => window.open(msg.media_url, '_blank')}
+          style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', minWidth: 200 }}
+        >
+          <div style={{ width: 44, height: 44, borderRadius: 12, background: isMine ? 'rgba(255,255,255,0.15)' : 'rgba(104,219,174,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Icon name="description" size={24} style={{ color: isMine ? '#fff' : C.primary }} />
+          </div>
+          <div style={{ flex: 1, overflow: 'hidden' }}>
+            <p style={{ fontSize: 13, fontFamily: FONT.body, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fileName}</p>
+            <p style={{ fontSize: 11, fontFamily: FONT.body, color: isMine ? 'rgba(255,255,255,0.5)' : C.textDim }}>{ext} · Toca para abrir</p>
+          </div>
+          <Icon name="download" size={20} style={{ color: isMine ? 'rgba(255,255,255,0.6)' : C.textDim, flexShrink: 0 }} />
+        </div>
+      )
+    }
+    if (msg.message_type === 'location') {
+      let lat, lng
+      try { const loc = JSON.parse(msg.content); lat = loc.lat; lng = loc.lng } catch { lat = 0; lng = 0 }
+      const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${lng - 0.005},${lat - 0.003},${lng + 0.005},${lat + 0.003}&layer=mapnik&marker=${lat},${lng}`
+      const linkUrl = `https://www.google.com/maps?q=${lat},${lng}`
+      return (
+        <div style={{ minWidth: 220 }}>
+          <div style={{ width: '100%', height: 140, borderRadius: 12, overflow: 'hidden', marginBottom: 8, background: '#1a1a2e' }}>
+            <iframe src={mapUrl} style={{ width: '100%', height: '100%', border: 'none' }} title="Location" loading="lazy" />
+          </div>
+          <div
+            onClick={() => window.open(linkUrl, '_blank')}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}
+          >
+            <Icon name="location_on" size={18} style={{ color: isMine ? '#fff' : C.primary }} />
+            <p style={{ fontSize: 13, fontFamily: FONT.body, fontWeight: 600 }}>Ubicación compartida</p>
+            <Icon name="open_in_new" size={14} style={{ color: isMine ? 'rgba(255,255,255,0.5)' : C.textDim, marginLeft: 'auto' }} />
+          </div>
+        </div>
+      )
     }
     return <p style={{ fontSize: 14, fontFamily: FONT.body, lineHeight: 1.5, wordBreak: 'break-word' }}>{msg.content}</p>
   }
@@ -1485,6 +1590,14 @@ export default function ChatScreen({ conversationId, onBack }) {
         style={{ display: 'none' }}
         onChange={handleViewOnceFileSelect}
       />
+      {/* Hidden file input — Documents */}
+      <input
+        ref={docFileInputRef}
+        type="file"
+        accept=".pdf,.doc,.docx,.xlsx,.xls,.csv,.txt,.zip,.rar,.pptx,.ppt"
+        style={{ display: 'none' }}
+        onChange={handleDocFileSelect}
+      />
 
       {/* ══ VIEW ONCE fullscreen viewer ═══════════════════════ */}
       {viewOnceViewer && (
@@ -1528,6 +1641,16 @@ export default function ChatScreen({ conversationId, onBack }) {
           <div onClick={() => { setShowAttachMenu(false); setTimeout(() => viewOnceFileInputRef.current?.click(), 300) }} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer', borderRadius: 12, transition: 'background 0.15s' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
             <div style={{ width: 36, height: 36, borderRadius: 99, background: 'rgba(184,149,106,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="timer" size={20} style={{ color: '#e7c092' }} /></div>
             <div><p style={{ fontSize: 14, fontWeight: 600, color: C.text, fontFamily: FONT.body }}>Ver una vez</p><p style={{ fontSize: 11, color: C.textDim, fontFamily: FONT.body }}>Se autodestruye al verla</p></div>
+          </div>
+          <div style={{ height: 1, background: 'rgba(241,239,232,0.06)', margin: '0 12px' }} />
+          <div onClick={() => { setShowAttachMenu(false); setTimeout(() => docFileInputRef.current?.click(), 300) }} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer', borderRadius: 12, transition: 'background 0.15s' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
+            <div style={{ width: 36, height: 36, borderRadius: 99, background: 'rgba(140,132,235,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="description" size={20} style={{ color: '#c5c0ff' }} /></div>
+            <div><p style={{ fontSize: 14, fontWeight: 600, color: C.text, fontFamily: FONT.body }}>Documento</p><p style={{ fontSize: 11, color: C.textDim, fontFamily: FONT.body }}>PDF, Word, Excel, etc.</p></div>
+          </div>
+          <div style={{ height: 1, background: 'rgba(241,239,232,0.06)', margin: '0 12px' }} />
+          <div onClick={handleSendLocation} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: locationLoading ? 'wait' : 'pointer', borderRadius: 12, transition: 'background 0.15s' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
+            <div style={{ width: 36, height: 36, borderRadius: 99, background: 'rgba(255,100,100,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="location_on" size={20} style={{ color: '#ff6b6b' }} /></div>
+            <div><p style={{ fontSize: 14, fontWeight: 600, color: C.text, fontFamily: FONT.body }}>{locationLoading ? 'Obteniendo...' : 'Ubicación'}</p><p style={{ fontSize: 11, color: C.textDim, fontFamily: FONT.body }}>Comparte tu ubicación actual</p></div>
           </div>
         </div>
       )}
