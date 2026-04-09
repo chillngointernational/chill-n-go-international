@@ -381,26 +381,26 @@ export default function ChatScreen({ conversationId, onBack }) {
     return () => { clearTimeout(timer); document.removeEventListener('click', handler) }
   }, [reactionPopup, showStickers])
 
-  /* ── Manejador de "Escribiendo" ────────────────────────────── */
+  /* ── Manejador de "Escribiendo" (A PRUEBA DE BALAS) ────────────────────────────── */
   const handleTextChange = (e) => {
     const val = e.target.value
     setText(val)
 
-    if (channelRef.current && user) {
+    // Solo enviamos si el canal existe Y está oficialmente "joined" (conectado)
+    if (channelRef.current && channelRef.current.state === 'joined' && user) {
       const myName = membersMap[user.id]?.full_name?.split(' ')[0] || 'Alguien'
 
-      // Lo enviamos sin preguntar el estado. Supabase se encarga del resto.
       channelRef.current.send({
         type: 'broadcast',
         event: 'typing',
         payload: { user_id: user.id, is_typing: val.length > 0, name: myName }
-      }).catch(() => { }) // Ignoramos errores de red internos
+      }).catch(() => { }) // Ignoramos errores internos de red silenciosamente
 
       clearTimeout(typingTimeoutRef.current)
 
       if (val.length > 0) {
         typingTimeoutRef.current = setTimeout(() => {
-          if (channelRef.current) {
+          if (channelRef.current && channelRef.current.state === 'joined') {
             channelRef.current.send({
               type: 'broadcast',
               event: 'typing',
@@ -422,12 +422,12 @@ export default function ChatScreen({ conversationId, onBack }) {
     setReplyTo(null)
     setSending(true)
 
-    if (channelRef.current && isRealtimeReady.current) {
+    if (channelRef.current && channelRef.current.state === 'joined') {
       channelRef.current.send({
         type: 'broadcast',
         event: 'typing',
         payload: { user_id: user.id, is_typing: false }
-      })
+      }).catch(() => { })
       clearTimeout(typingTimeoutRef.current)
     }
 
@@ -1014,11 +1014,17 @@ export default function ChatScreen({ conversationId, onBack }) {
         <div
           onClick={(e) => e.stopPropagation()}
           style={{
-            ...POPUP_STYLE,
-            position: 'absolute',
-            bottom: 80,
-            left: 16,
-            right: 16,
+            position: 'fixed',
+            bottom: 90,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: 'calc(100% - 32px)',
+            maxWidth: 358,
+            background: 'rgba(13,17,23,0.97)',
+            border: '1px solid rgba(241,239,232,0.1)',
+            borderRadius: 16,
+            boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
+            zIndex: 300,
             padding: 16,
             display: 'grid',
             gridTemplateColumns: 'repeat(6, 1fr)',

@@ -31,7 +31,7 @@ function CommentsPanel({ post, userId, onClose, onCountUpdate }) {
       .in('user_id', userIds)
 
     const memberMap = {}
-    ;(members || []).forEach(m => { memberMap[m.user_id] = m })
+      ; (members || []).forEach(m => { memberMap[m.user_id] = m })
 
     setComments(rawComments.map(c => ({ ...c, cng_members: memberMap[c.user_id] || {} })))
     setLoading(false)
@@ -260,7 +260,7 @@ function PostCard({ post, currentUserId, onLike, onBookmark, onComment, onShare,
         const video = videoRef.current
         if (!video) return
         if (entry.isIntersecting) {
-          video.play().then(() => setIsPlaying(true)).catch(() => {})
+          video.play().then(() => setIsPlaying(true)).catch(() => { })
         } else {
           video.pause()
           video.currentTime = 0
@@ -278,13 +278,14 @@ function PostCard({ post, currentUserId, onLike, onBookmark, onComment, onShare,
     const video = videoRef.current
     if (!video) return
     if (video.paused) {
-      video.play().then(() => setIsPlaying(true)).catch(() => {})
+      video.play().then(() => setIsPlaying(true)).catch(() => { })
     } else {
       video.pause()
       setIsPlaying(false)
     }
+    // Toggle mute on tap
+    video.muted = !video.muted
   }
-
   return (
     <div ref={cardRef} style={{ position: 'relative', width: '100%', height: '100%', flexShrink: 0, scrollSnapAlign: 'start' }}>
       {/* Background */}
@@ -297,7 +298,7 @@ function PostCard({ post, currentUserId, onLike, onBookmark, onComment, onShare,
               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               loop
               playsInline
-              controls
+              muted
               onClick={handleVideoTap}
             />
           ) : (
