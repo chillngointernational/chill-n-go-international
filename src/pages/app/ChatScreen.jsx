@@ -143,7 +143,12 @@ const DeliveryStatus = ({ status }) => {
 export default function ChatScreen({ conversationId, onBack }) {
   const { user } = useAuth()
   const [messages, setMessages] = useState([])
-  const [otherUser, setOtherUser] = useState(null)
+
+  // --- Estados de Datos de la Conversación ---
+  const [conversation, setConversation] = useState(null)
+  const [membersMap, setMembersMap] = useState({}) // Diccionario { id: { perfil } }
+  const [otherUser, setOtherUser] = useState(null) // Para compatibilidad de DMs
+
   const [text, setText] = useState('')
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
@@ -152,10 +157,10 @@ export default function ChatScreen({ conversationId, onBack }) {
   // Track pending optimistic IDs so realtime can dedup
   const pendingOptimisticRef = useRef(new Map())
 
-  // --- Nuevos estados para "Escribiendo..." ---
-  const [isTyping, setIsTyping] = useState(false)
-  const typingTimeoutRef = useRef(null)
-  const hideTypingTimeoutRef = useRef(null)
+  // --- Nuevos estados para "Escribiendo..." Múltiple ---
+  const [typingUsers, setTypingUsers] = useState({}) // { 'id-usuario': 'Nombre' }
+  const typingTimeoutRef = useRef(null) // Para mi propio teclado
+  const activeTypingTimeoutsRef = useRef({}) // Para limpiar timeouts de otros
   const channelRef = useRef(null)
 
   // Reactions
@@ -198,7 +203,7 @@ export default function ChatScreen({ conversationId, onBack }) {
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
   }
 
-  /* ── Fetch messages ─────────────────────────────────────────── */
+  /* ── Fetch messages and Group Data ─────────────────────────── */
   const fetchMessages = useCallback(async () => {
     if (!conversationId || !user) return
     const { data: { session } } = await supabase.auth.getSession()
@@ -206,6 +211,42 @@ export default function ChatScreen({ conversationId, onBack }) {
       supabase.realtime.setAuth(session.access_token)
     }
     try {
+      // 1. Obtener detalles de la conversación (para saber si es grupo o dm)
+      const { data: convData } = await supabase
+        .from('cng_conversations')
+        .select('*')
+        .eq('id', conversationId)
+        .single()
+
+      setConversation(convData)
+
+      // 2. Obtener miembros del chat
+      const { data: memberRows } = await supabase
+        .from('cng_conversation_members')
+        .select('user_id')
+        .eq('conversation_id', conversationId)
+
+      const userIds = (memberRows || []).map(m => m.user_id)
+
+      // 3. Obtener perfiles de todos los miembros
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('cng_members')
+          .select('user_id, full_name, ref_code, avatar_url')
+          .in('user_id', userIds)
+
+        const pMap = {}
+        profiles?.forEach(p => pMap[p.user_id] = p)
+        setMembersMap(pMap)
+
+        // Si es DM, mantenemos la lógica de otherUser para compatibilidad
+        if (convData?.type === 'dm') {
+          const otherId = userIds.find(id => id !== user.id)
+          if (otherId && pMap[otherId]) setOtherUser(pMap[otherId])
+        }
+      }
+
+      // 4. Obtener mensajes
       const { data: msgs, error } = await supabase
         .from('cng_messages')
         .select('*')
@@ -216,6 +257,7 @@ export default function ChatScreen({ conversationId, onBack }) {
       if (error) throw error
       setMessages(msgs || [])
 
+      // 5. Marcar como leído
       const unreadIncoming = (msgs || []).filter(
         m => m.sender_id !== user.id && m.delivery_status !== 'read'
       )
@@ -231,21 +273,6 @@ export default function ChatScreen({ conversationId, onBack }) {
             ? { ...m, delivery_status: 'read', read_at: new Date().toISOString() }
             : m
         ))
-      }
-
-      const { data: members } = await supabase
-        .from('cng_conversation_members')
-        .select('user_id')
-        .eq('conversation_id', conversationId)
-
-      const otherId = members?.find(m => m.user_id !== user.id)?.user_id
-      if (otherId) {
-        const { data: member } = await supabase
-          .from('cng_members')
-          .select('full_name, ref_code, avatar_url')
-          .eq('user_id', otherId)
-          .single()
-        if (member) setOtherUser(member)
       }
 
       await supabase
@@ -283,17 +310,31 @@ export default function ChatScreen({ conversationId, onBack }) {
           },
         })
         .on('broadcast', { event: 'typing' }, (payload) => {
-          console.log('📡 [RECEPCIÓN] Llegó evento Broadcast:', payload);
+          const senderId = payload.payload.user_id;
 
-          if (payload.payload.user_id !== user.id) {
-            setIsTyping(payload.payload.is_typing)
-
-            clearTimeout(hideTypingTimeoutRef.current)
+          if (senderId !== user.id) {
             if (payload.payload.is_typing) {
-              hideTypingTimeoutRef.current = setTimeout(() => {
-                setIsTyping(false)
+              // Añadir al usuario a la lista de "escribiendo"
+              setTypingUsers(prev => ({ ...prev, [senderId]: payload.payload.name }))
+
+              // Refrescar su timeout de inactividad
+              clearTimeout(activeTypingTimeoutsRef.current[senderId])
+              activeTypingTimeoutsRef.current[senderId] = setTimeout(() => {
+                setTypingUsers(prev => {
+                  const newMap = { ...prev }
+                  delete newMap[senderId]
+                  return newMap
+                })
               }, 3000)
               scrollToBottom()
+            } else {
+              // Quitarlo inmediatamente si dejó de escribir o envió
+              setTypingUsers(prev => {
+                const newMap = { ...prev }
+                delete newMap[senderId]
+                return newMap
+              })
+              clearTimeout(activeTypingTimeoutsRef.current[senderId])
             }
           }
         })
@@ -339,9 +380,7 @@ export default function ChatScreen({ conversationId, onBack }) {
         }, (payload) => {
           setMessages(prev => prev.map(m => m.id === payload.new.id ? { ...m, ...payload.new } : m))
         })
-        .subscribe((status) => {
-          console.log('🔌 Estado de conexión Realtime:', status);
-        })
+        .subscribe()
 
       channelRef.current = channel
     }
@@ -361,26 +400,25 @@ export default function ChatScreen({ conversationId, onBack }) {
     return () => { clearTimeout(timer); document.removeEventListener('click', handler) }
   }, [reactionPopup, showStickers])
 
-  /* ── Manejador de "Escribiendo" MEJORADO ────────────────────────────── */
+  /* ── Manejador de "Escribiendo" ────────────────────────────── */
   const handleTextChange = (e) => {
     const val = e.target.value
     setText(val)
 
-    // Validamos que el canal exista, que haya usuario, Y que el canal esté "SUBSCRIBED"
     if (channelRef.current && user && channelRef.current.state === 'joined') {
-      console.log('📤 [ENVÍO] Teclado presionado, enviando typing:', val.length > 0);
+      // Obtenemos nuestro propio nombre del diccionario para enviarlo
+      const myName = membersMap[user.id]?.full_name?.split(' ')[0] || 'Alguien'
 
       channelRef.current.send({
         type: 'broadcast',
         event: 'typing',
-        payload: { user_id: user.id, is_typing: val.length > 0 }
+        payload: { user_id: user.id, is_typing: val.length > 0, name: myName }
       })
 
       clearTimeout(typingTimeoutRef.current)
 
       if (val.length > 0) {
         typingTimeoutRef.current = setTimeout(() => {
-          // Volvemos a checar el estado antes de mandar el "false"
           if (channelRef.current && channelRef.current.state === 'joined') {
             channelRef.current.send({
               type: 'broadcast',
@@ -390,9 +428,6 @@ export default function ChatScreen({ conversationId, onBack }) {
           }
         }, 2000)
       }
-    } else {
-      // Si el canal aún dice 'joining' o 'closed', ignoramos el tipeo silenciosamente
-      console.log('⏳ [ESPERA] Canal Realtime conectando, ignorando typing por ahora...');
     }
   }
 
@@ -406,8 +441,7 @@ export default function ChatScreen({ conversationId, onBack }) {
     setReplyTo(null)
     setSending(true)
 
-    // Apagar indicador de escribiendo al enviar
-    if (channelRef.current) {
+    if (channelRef.current && channelRef.current.state === 'joined') {
       channelRef.current.send({
         type: 'broadcast',
         event: 'typing',
@@ -416,7 +450,6 @@ export default function ChatScreen({ conversationId, onBack }) {
       clearTimeout(typingTimeoutRef.current)
     }
 
-    // Optimistic message
     const tempId = 'temp-' + Date.now()
     const optimistic = {
       id: tempId,
@@ -721,8 +754,23 @@ export default function ChatScreen({ conversationId, onBack }) {
     handleSend(emoji, 'text')
   }
 
-  const displayName = otherUser?.full_name || otherUser?.ref_code || 'Chat'
-  const initial = displayName[0]?.toUpperCase() || 'C'
+  /* ── Cálculos de Interfaz Dinámica (DM vs Grupo) ───────────── */
+  const isGroup = conversation?.type === 'group'
+
+  const displayAvatar = isGroup ? conversation?.avatar_url : otherUser?.avatar_url
+  const displayName = isGroup
+    ? (conversation?.name || 'Grupo de CNG')
+    : (otherUser?.full_name || otherUser?.ref_code || 'Chat')
+
+  const initial = displayName[0]?.toUpperCase() || (isGroup ? 'G' : 'C')
+  const subTitle = isGroup ? `${Object.keys(membersMap).length} miembros` : 'Online'
+
+  // Generar el texto de "quién escribe"
+  const typists = Object.values(typingUsers)
+  let typingText = ''
+  if (typists.length === 1) typingText = `${typists[0]} está escribiendo`
+  else if (typists.length === 2) typingText = `${typists[0]} y ${typists[1]} están escribiendo`
+  else if (typists.length > 2) typingText = `Varios están escribiendo`
 
   /* ── Render message content ─────────────────────────────────── */
   const renderContent = (msg, isMine) => {
@@ -748,15 +796,15 @@ export default function ChatScreen({ conversationId, onBack }) {
           <Icon name="arrow_back" size={24} style={{ color: C.textDim }} />
         </div>
         <div style={{ width: 40, height: 40, borderRadius: 99, overflow: 'hidden', flexShrink: 0 }}>
-          {otherUser?.avatar_url ? (
-            <img src={otherUser.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          {displayAvatar ? (
+            <img src={displayAvatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           ) : (
             <div style={{ width: '100%', height: '100%', background: C.surfaceHigh, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 700, color: C.text, fontFamily: FONT.headline }}>{initial}</div>
           )}
         </div>
         <div style={{ flex: 1 }}>
           <h1 style={{ fontFamily: FONT.headline, fontSize: 16, fontWeight: 700, color: C.text }}>{displayName}</h1>
-          <p style={{ fontSize: 11, color: C.primaryBright }}>Online</p>
+          <p style={{ fontSize: 11, color: isGroup ? C.textDim : C.primaryBright }}>{subTitle}</p>
         </div>
         <Icon name="more_vert" size={24} style={{ color: C.textDim }} />
       </header>
@@ -772,8 +820,10 @@ export default function ChatScreen({ conversationId, onBack }) {
 
         {!loading && messages.length === 0 && (
           <div style={{ textAlign: 'center', padding: '60px 0' }}>
-            <Icon name="waving_hand" size={48} style={{ color: C.textFaint, marginBottom: 16 }} />
-            <p style={{ color: C.textDim, fontSize: 14, fontFamily: FONT.body }}>Say hello to {displayName}!</p>
+            <Icon name={isGroup ? 'groups' : 'waving_hand'} size={48} style={{ color: C.textFaint, marginBottom: 16 }} />
+            <p style={{ color: C.textDim, fontSize: 14, fontFamily: FONT.body }}>
+              {isGroup ? `Inicia la conversación en ${displayName}!` : `Say hello to ${displayName}!`}
+            </p>
           </div>
         )}
 
@@ -789,6 +839,14 @@ export default function ChatScreen({ conversationId, onBack }) {
 
           return (
             <div key={msg.id} ref={el => { messageRefs.current[msg.id] = el }} style={{ display: 'flex', flexDirection: 'column', alignItems: isMine ? 'flex-end' : 'flex-start' }}>
+
+              {/* Etiqueta de remitente para grupos */}
+              {isGroup && !isMine && (
+                <span style={{ fontSize: 11, color: C.primary, fontWeight: 600, marginLeft: 12, marginBottom: 2, fontFamily: FONT.headline }}>
+                  {membersMap[msg.sender_id]?.full_name?.split(' ')[0] || 'Miembro'}
+                </span>
+              )}
+
               <div
                 style={{ position: 'relative', maxWidth: '75%' }}
                 onPointerDown={() => handleMsgPointerDown(msg.id)}
@@ -828,7 +886,7 @@ export default function ChatScreen({ conversationId, onBack }) {
                     >
                       <div style={{ flex: 1, overflow: 'hidden' }}>
                         <p style={{ fontSize: 11, fontWeight: 700, color: C.primary, fontFamily: FONT.headline, marginBottom: 2 }}>
-                          {repliedMsg.sender_id === user?.id ? 'You' : (otherUser?.full_name || 'User')}
+                          {repliedMsg.sender_id === user?.id ? 'You' : (membersMap[repliedMsg.sender_id]?.full_name || 'User')}
                         </p>
                         <p style={{ fontSize: 12, color: isMine ? 'rgba(255,255,255,0.7)' : C.textDim, fontFamily: FONT.body, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {repliedMsg.message_type === 'image' ? '📷 Photo' : repliedMsg.message_type === 'video' ? '🎬 Video' : repliedMsg.message_type === 'voice' ? '🎙️ Voice' : repliedMsg.content}
@@ -935,11 +993,11 @@ export default function ChatScreen({ conversationId, onBack }) {
           )
         })}
 
-        {/* Indicador de escribiendo */}
-        {isTyping && (
+        {/* Indicador de escribiendo (Múltiple) */}
+        {typists.length > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', alignSelf: 'flex-start' }}>
             <p style={{ fontSize: 12, color: C.textDim, fontFamily: FONT.body, fontStyle: 'italic' }}>
-              {otherUser?.full_name?.split(' ')[0] || 'Alguien'} está escribiendo
+              {typingText}
             </p>
             <div style={{ display: 'flex', gap: 3 }}>
               <span style={{ width: 4, height: 4, background: C.textDim, borderRadius: 99, animation: 'bounce 1.4s infinite ease-in-out both' }} />
@@ -1017,7 +1075,7 @@ export default function ChatScreen({ conversationId, onBack }) {
           <div style={{ width: 3, height: 36, borderRadius: 2, background: C.primary, flexShrink: 0 }} />
           <div style={{ flex: 1, overflow: 'hidden' }}>
             <p style={{ fontSize: 12, fontWeight: 700, color: C.primary, fontFamily: FONT.headline }}>
-              {replyTo.sender_id === user?.id ? 'You' : (otherUser?.full_name || 'User')}
+              {replyTo.sender_id === user?.id ? 'You' : (membersMap[replyTo.sender_id]?.full_name || 'User')}
             </p>
             <p style={{ fontSize: 13, color: C.textDim, fontFamily: FONT.body, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {replyTo.message_type === 'image' ? '📷 Photo' : replyTo.message_type === 'video' ? '🎬 Video' : replyTo.message_type === 'voice' ? '🎙️ Voice' : replyTo.content}
