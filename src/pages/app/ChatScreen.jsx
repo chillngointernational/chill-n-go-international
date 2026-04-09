@@ -178,6 +178,12 @@ export default function ChatScreen({ conversationId, onBack }) {
   const mediaRecorderRef = useRef(null)
   const chunksRef = useRef([])
 
+  // ─── EDIT & DELETE states ──────────────────────────────────
+  const [editingMsg, setEditingMsg] = useState(null)       // message object being edited
+  const [editText, setEditText] = useState('')              // edit input text
+  const [deleteConfirm, setDeleteConfirm] = useState(null)  // message to confirm delete
+  const [contextMenu, setContextMenu] = useState(null)      // { msgId, x, y } for context menu position
+
   useEffect(() => {
     if (!navigator.mediaDevices?.getUserMedia) setMicSupported(false)
   }, [])
@@ -219,7 +225,6 @@ export default function ChatScreen({ conversationId, onBack }) {
         profiles?.forEach(p => pMap[p.user_id] = p)
         setMembersMap(pMap)
 
-        // FIX: Agregamos 'direct' a la validación para que reconozca los DMs nuevos
         if (convData?.type === 'dm' || convData?.type === 'direct') {
           const otherId = userIds.find(id => id !== user.id)
           if (otherId && pMap[otherId]) setOtherUser(pMap[otherId])
@@ -230,14 +235,13 @@ export default function ChatScreen({ conversationId, onBack }) {
         .from('cng_messages')
         .select('*')
         .eq('conversation_id', conversationId)
-        .eq('is_deleted', false)
         .order('created_at', { ascending: true })
 
       if (error) throw error
       setMessages(msgs || [])
 
       const unreadIncoming = (msgs || []).filter(
-        m => m.sender_id !== user.id && m.delivery_status !== 'read'
+        m => m.sender_id !== user.id && m.delivery_status !== 'read' && !m.is_deleted
       )
       if (unreadIncoming.length > 0) {
         const unreadIds = unreadIncoming.map(m => m.id)
@@ -370,7 +374,6 @@ export default function ChatScreen({ conversationId, onBack }) {
 
     setup()
 
-    // Auto-reconnect: check every 5s if channel dropped
     const reconnectInterval = setInterval(() => {
       const ch = channelRef.current
       if (ch && ch.state !== 'joined' && ch.state !== 'joining') {
@@ -381,7 +384,6 @@ export default function ChatScreen({ conversationId, onBack }) {
       }
     }, 5000)
 
-    // Reconnect on tab focus (mobile sleep / tab switch)
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
         const ch = channelRef.current
@@ -404,18 +406,17 @@ export default function ChatScreen({ conversationId, onBack }) {
 
   /* ── Close popups on outside click ──────────────────────────── */
   useEffect(() => {
-    if (!reactionPopup && !showStickers) return
-    const handler = () => { closeReactionPopup(); setShowStickers(false) }
+    if (!reactionPopup && !showStickers && !contextMenu) return
+    const handler = () => { closeReactionPopup(); setShowStickers(false); setContextMenu(null) }
     const timer = setTimeout(() => document.addEventListener('click', handler), 300)
     return () => { clearTimeout(timer); document.removeEventListener('click', handler) }
-  }, [reactionPopup, showStickers])
+  }, [reactionPopup, showStickers, contextMenu])
 
-  /* ── Manejador de "Escribiendo" (A PRUEBA DE BALAS) ────────────────────────────── */
+  /* ── Manejador de "Escribiendo" ────────────────────────────── */
   const handleTextChange = (e) => {
     const val = e.target.value
     setText(val)
 
-    // Solo enviamos si el canal existe Y está oficialmente "joined" (conectado)
     if (channelRef.current && channelRef.current.state === 'joined' && user) {
       const myName = membersMap[user.id]?.full_name?.split(' ')[0] || 'Alguien'
 
@@ -423,7 +424,7 @@ export default function ChatScreen({ conversationId, onBack }) {
         type: 'broadcast',
         event: 'typing',
         payload: { user_id: user.id, is_typing: val.length > 0, name: myName }
-      }).catch(() => { }) // Ignoramos errores internos de red silenciosamente
+      }).catch(() => { })
 
       clearTimeout(typingTimeoutRef.current)
 
@@ -644,16 +645,109 @@ export default function ChatScreen({ conversationId, onBack }) {
   }
 
   /* ── Reaction handlers ──────────────────────────────────────── */
-  const handleMsgPointerDown = (msgId) => {
-    longPressTimer.current = setTimeout(() => openReactionPopup(msgId), 500)
+  const handleMsgPointerDown = (msgId, isMine) => {
+    longPressTimer.current = setTimeout(() => {
+      if (isMine) {
+        // For own messages: show context menu (edit/delete)
+        const el = messageRefs.current[msgId]
+        if (el) {
+          const rect = el.getBoundingClientRect()
+          setContextMenu({ msgId, x: rect.left, y: rect.top - 8 })
+        }
+      } else {
+        // For other's messages: show reaction popup
+        openReactionPopup(msgId)
+      }
+    }, 500)
   }
   const handleMsgPointerUp = () => {
     clearTimeout(longPressTimer.current)
+  }
+  const handleContextMenuEvent = (e, msgId, isMine) => {
+    e.preventDefault()
+    if (isMine) {
+      setContextMenu({ msgId, x: e.clientX, y: e.clientY })
+    } else {
+      openReactionPopup(msgId)
+    }
   }
   const handleReact = (msgId, emoji) => {
     setReaction(msgId, user.id, emoji)
     closeReactionPopup()
     forceReactions(x => x + 1)
+  }
+
+  /* ── EDIT message handlers ─────────────────────────────────── */
+  const startEdit = (msg) => {
+    setEditingMsg(msg)
+    setEditText(msg.content)
+    setContextMenu(null)
+  }
+
+  const cancelEdit = () => {
+    setEditingMsg(null)
+    setEditText('')
+  }
+
+  const saveEdit = async () => {
+    if (!editingMsg || !editText.trim()) return
+    const trimmed = editText.trim()
+    if (trimmed === editingMsg.content) { cancelEdit(); return }
+
+    const msgId = editingMsg.id
+    const oldContent = editingMsg.content
+
+    // Optimistic update
+    setMessages(prev => prev.map(m =>
+      m.id === msgId ? { ...m, content: trimmed, edited_at: new Date().toISOString() } : m
+    ))
+    cancelEdit()
+
+    try {
+      const { error } = await supabase
+        .from('cng_messages')
+        .update({ content: trimmed, edited_at: new Date().toISOString() })
+        .eq('id', msgId)
+      if (error) throw error
+    } catch (e) {
+      console.error('Edit error:', e)
+      // Revert
+      setMessages(prev => prev.map(m =>
+        m.id === msgId ? { ...m, content: oldContent, edited_at: null } : m
+      ))
+    }
+  }
+
+  /* ── DELETE message handlers ───────────────────────────────── */
+  const confirmDelete = (msg) => {
+    setDeleteConfirm(msg)
+    setContextMenu(null)
+  }
+
+  const executeDelete = async () => {
+    if (!deleteConfirm) return
+    const msgId = deleteConfirm.id
+    const oldMsg = { ...deleteConfirm }
+
+    // Optimistic soft delete
+    setMessages(prev => prev.map(m =>
+      m.id === msgId ? { ...m, is_deleted: true, content: '' } : m
+    ))
+    setDeleteConfirm(null)
+
+    try {
+      const { error } = await supabase
+        .from('cng_messages')
+        .update({ is_deleted: true, content: '' })
+        .eq('id', msgId)
+      if (error) throw error
+    } catch (e) {
+      console.error('Delete error:', e)
+      // Revert
+      setMessages(prev => prev.map(m =>
+        m.id === msgId ? oldMsg : m
+      ))
+    }
   }
 
   /* ── Reply handler ─────────────────────────────────────────── */
@@ -709,7 +803,7 @@ export default function ChatScreen({ conversationId, onBack }) {
       if (!targetConvId) {
         const { data: conv, error: convErr } = await supabase
           .from('cng_conversations')
-          .insert({ type: 'direct' }) // FIX: unificamos a direct
+          .insert({ type: 'direct' })
           .select()
           .single()
         if (convErr) throw convErr
@@ -775,7 +869,6 @@ export default function ChatScreen({ conversationId, onBack }) {
   const initial = displayName[0]?.toUpperCase() || (isGroup ? 'G' : 'C')
   const subTitle = isGroup ? `${Object.keys(membersMap).length} miembros` : 'Online'
 
-  // Generar el texto de "quién escribe"
   const typists = Object.values(typingUsers)
   let typingText = ''
   if (typists.length === 1) typingText = `${typists[0]} está escribiendo...`
@@ -784,6 +877,15 @@ export default function ChatScreen({ conversationId, onBack }) {
 
   /* ── Render message content ─────────────────────────────────── */
   const renderContent = (msg, isMine) => {
+    // Soft-deleted message
+    if (msg.is_deleted) {
+      return (
+        <p style={{ fontSize: 13, fontFamily: FONT.body, fontStyle: 'italic', color: 'rgba(223,226,235,0.3)', lineHeight: 1.5 }}>
+          🚫 Mensaje eliminado
+        </p>
+      )
+    }
+
     const url = msg.media_url || msg.content
 
     if (msg.message_type === 'image') {
@@ -797,6 +899,9 @@ export default function ChatScreen({ conversationId, onBack }) {
     }
     return <p style={{ fontSize: 14, fontFamily: FONT.body, lineHeight: 1.5, wordBreak: 'break-word' }}>{msg.content}</p>
   }
+
+  /* ── Check if currently in edit mode ────────────────────────── */
+  const isEditing = !!editingMsg
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -846,12 +951,13 @@ export default function ChatScreen({ conversationId, onBack }) {
           const isForwarded = (() => {
             try { return msg.metadata && JSON.parse(msg.metadata)?.forwarded } catch { return false }
           })()
+          const isDeleted = msg.is_deleted
 
           return (
             <div key={msg.id} ref={el => { messageRefs.current[msg.id] = el }} style={{ display: 'flex', flexDirection: 'column', alignItems: isMine ? 'flex-end' : 'flex-start' }}>
 
               {/* Etiqueta de remitente para grupos */}
-              {isGroup && !isMine && (
+              {isGroup && !isMine && !isDeleted && (
                 <span style={{ fontSize: 11, color: C.primary, fontWeight: 600, marginLeft: 12, marginBottom: 2, fontFamily: FONT.headline }}>
                   {membersMap[msg.sender_id]?.full_name?.split(' ')[0] || 'Miembro'}
                 </span>
@@ -859,28 +965,31 @@ export default function ChatScreen({ conversationId, onBack }) {
 
               <div
                 style={{ position: 'relative', maxWidth: '75%' }}
-                onPointerDown={() => handleMsgPointerDown(msg.id)}
+                onPointerDown={() => handleMsgPointerDown(msg.id, isMine && !isDeleted)}
                 onPointerUp={handleMsgPointerUp}
                 onPointerLeave={handleMsgPointerUp}
-                onContextMenu={(e) => { e.preventDefault(); openReactionPopup(msg.id) }}
+                onContextMenu={(e) => handleContextMenuEvent(e, msg.id, isMine && !isDeleted)}
               >
                 <div style={{
-                  padding: msg.message_type === 'image' || msg.message_type === 'video' ? 4 : '12px 16px',
+                  padding: !isDeleted && (msg.message_type === 'image' || msg.message_type === 'video') ? 4 : '12px 16px',
                   borderRadius: 16,
                   borderBottomRightRadius: isMine ? 4 : 16,
                   borderBottomLeftRadius: isMine ? 16 : 4,
-                  background: isMine ? GRADIENT.primary : C.surfaceHigh,
+                  background: isDeleted
+                    ? 'rgba(255,255,255,0.03)'
+                    : (isMine ? GRADIENT.primary : C.surfaceHigh),
                   color: isMine ? '#fff' : C.text,
+                  border: isDeleted ? '1px solid rgba(241,239,232,0.06)' : 'none',
                 }}>
                   {/* Forwarded label */}
-                  {isForwarded && (
+                  {isForwarded && !isDeleted && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4, opacity: 0.7 }}>
                       <Icon name="shortcut" size={12} style={{ color: isMine ? 'rgba(255,255,255,0.7)' : C.textDim }} />
                       <span style={{ fontSize: 11, fontStyle: 'italic', color: isMine ? 'rgba(255,255,255,0.7)' : C.textDim, fontFamily: FONT.body }}>Forwarded</span>
                     </div>
                   )}
                   {/* Reply preview */}
-                  {repliedMsg && (
+                  {repliedMsg && !isDeleted && (
                     <div
                       onClick={(e) => { e.stopPropagation(); scrollToMessage(repliedMsg.id) }}
                       style={{
@@ -905,31 +1014,102 @@ export default function ChatScreen({ conversationId, onBack }) {
                     </div>
                   )}
                   {renderContent(msg, isMine)}
-                  {isMine ? (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3, marginTop: 4, padding: msg.message_type === 'image' || msg.message_type === 'video' ? '0 8px 4px' : 0 }}>
-                      <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)' }}>{timeFormat(msg.created_at)}</span>
-                      <DeliveryStatus status={msg.delivery_status || 'sent'} />
-                    </div>
-                  ) : (
-                    <p style={{ fontSize: 10, color: C.textFaint, marginTop: 4, textAlign: 'left', padding: msg.message_type === 'image' || msg.message_type === 'video' ? '0 8px 4px' : 0 }}>{timeFormat(msg.created_at)}</p>
+                  {!isDeleted && (
+                    isMine ? (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3, marginTop: 4, padding: msg.message_type === 'image' || msg.message_type === 'video' ? '0 8px 4px' : 0 }}>
+                        {msg.edited_at && (
+                          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', fontStyle: 'italic', marginRight: 2 }}>editado</span>
+                        )}
+                        <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)' }}>{timeFormat(msg.created_at)}</span>
+                        <DeliveryStatus status={msg.delivery_status || 'sent'} />
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 4, padding: msg.message_type === 'image' || msg.message_type === 'video' ? '0 8px 4px' : 0 }}>
+                        {msg.edited_at && (
+                          <span style={{ fontSize: 10, color: 'rgba(223,226,235,0.35)', fontStyle: 'italic', marginRight: 2 }}>editado</span>
+                        )}
+                        <span style={{ fontSize: 10, color: C.textFaint }}>{timeFormat(msg.created_at)}</span>
+                      </div>
+                    )
                   )}
                 </div>
 
-                {/* Reaction + actions popup */}
-                {reactionPopup === msg.id && (
+                {/* ── Context Menu (Edit/Delete) for OWN messages ─── */}
+                {contextMenu && contextMenu.msgId === msg.id && isMine && !isDeleted && (
                   <div
                     onClick={(e) => e.stopPropagation()}
                     style={{
                       ...POPUP_STYLE,
                       bottom: '100%',
-                      [isMine ? 'right' : 'left']: 0,
+                      right: 0,
+                      marginBottom: 8,
+                      padding: 4,
+                      minWidth: 160,
+                      borderRadius: 12,
+                    }}
+                  >
+                    {/* Edit option — only for text messages */}
+                    {msg.message_type === 'text' && (
+                      <div
+                        onClick={() => startEdit(msg)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', cursor: 'pointer', borderRadius: 8, transition: 'background 0.15s' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                      >
+                        <Icon name="edit" size={18} style={{ color: C.text }} />
+                        <span style={{ fontSize: 14, color: C.text, fontFamily: FONT.body }}>Editar</span>
+                      </div>
+                    )}
+                    {/* Reply option */}
+                    <div
+                      onClick={() => { handleReply(msg); setContextMenu(null) }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', cursor: 'pointer', borderRadius: 8, transition: 'background 0.15s' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                    >
+                      <Icon name="reply" size={18} style={{ color: C.text }} />
+                      <span style={{ fontSize: 14, color: C.text, fontFamily: FONT.body }}>Responder</span>
+                    </div>
+                    {/* Forward option */}
+                    <div
+                      onClick={() => { handleForwardOpen(msg); setContextMenu(null) }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', cursor: 'pointer', borderRadius: 8, transition: 'background 0.15s' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                    >
+                      <Icon name="shortcut" size={18} style={{ color: C.text }} />
+                      <span style={{ fontSize: 14, color: C.text, fontFamily: FONT.body }}>Reenviar</span>
+                    </div>
+                    {/* Separator */}
+                    <div style={{ height: 1, background: 'rgba(241,239,232,0.08)', margin: '2px 12px' }} />
+                    {/* Delete option */}
+                    <div
+                      onClick={() => confirmDelete(msg)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', cursor: 'pointer', borderRadius: 8, transition: 'background 0.15s' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,68,68,0.08)' }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                    >
+                      <Icon name="delete" size={18} style={{ color: '#ff4444' }} />
+                      <span style={{ fontSize: 14, color: '#ff4444', fontFamily: FONT.body }}>Eliminar</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Reaction + actions popup (for OTHER people's messages) */}
+                {reactionPopup === msg.id && !isMine && (
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      ...POPUP_STYLE,
+                      bottom: '100%',
+                      left: 0,
                       marginBottom: 8,
                       padding: 0,
                       minWidth: 220,
                       transform: reactionPopupAnim ? 'scale(1)' : 'scale(0.8)',
                       opacity: reactionPopupAnim ? 1 : 0,
                       transition: 'transform 0.15s ease-out, opacity 0.15s ease-out',
-                      transformOrigin: isMine ? 'bottom right' : 'bottom left',
+                      transformOrigin: 'bottom left',
                     }}
                   >
                     {/* Emoji row */}
@@ -949,6 +1129,61 @@ export default function ChatScreen({ conversationId, onBack }) {
                     {/* Separator */}
                     <div style={{ height: 1, background: 'rgba(241,239,232,0.08)', margin: '0 12px' }} />
                     {/* Action buttons */}
+                    <div style={{ display: 'flex', gap: 0 }}>
+                      <div
+                        onClick={() => handleReply(msg)}
+                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px 8px', cursor: 'pointer', borderRadius: '0 0 0 16px', transition: 'background 0.15s' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)' }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                      >
+                        <Icon name="reply" size={16} style={{ color: C.textDim }} />
+                        <span style={{ fontSize: 13, color: C.text, fontFamily: FONT.body }}>Reply</span>
+                      </div>
+                      <div style={{ width: 1, background: 'rgba(241,239,232,0.08)', margin: '6px 0' }} />
+                      <div
+                        onClick={() => handleForwardOpen(msg)}
+                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px 8px', cursor: 'pointer', borderRadius: '0 0 16px 0', transition: 'background 0.15s' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)' }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                      >
+                        <Icon name="shortcut" size={16} style={{ color: C.textDim }} />
+                        <span style={{ fontSize: 13, color: C.text, fontFamily: FONT.body }}>Forward</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Reaction popup for OWN messages (shown via reaction popup, not context menu) */}
+                {reactionPopup === msg.id && isMine && (
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      ...POPUP_STYLE,
+                      bottom: '100%',
+                      right: 0,
+                      marginBottom: 8,
+                      padding: 0,
+                      minWidth: 220,
+                      transform: reactionPopupAnim ? 'scale(1)' : 'scale(0.8)',
+                      opacity: reactionPopupAnim ? 1 : 0,
+                      transition: 'transform 0.15s ease-out, opacity 0.15s ease-out',
+                      transformOrigin: 'bottom right',
+                    }}
+                  >
+                    <div style={{ display: 'flex', gap: 6, padding: '10px 14px 8px', justifyContent: 'center' }}>
+                      {REACTION_EMOJIS.map(em => (
+                        <span
+                          key={em}
+                          onClick={() => handleReact(msg.id, em)}
+                          style={{ fontSize: 24, cursor: 'pointer', transition: 'transform 0.15s', padding: '2px 4px', borderRadius: 8 }}
+                          onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.35)'; e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
+                          onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.background = 'transparent' }}
+                        >
+                          {em}
+                        </span>
+                      ))}
+                    </div>
+                    <div style={{ height: 1, background: 'rgba(241,239,232,0.08)', margin: '0 12px' }} />
                     <div style={{ display: 'flex', gap: 0 }}>
                       <div
                         onClick={() => handleReply(msg)}
@@ -1085,8 +1320,79 @@ export default function ChatScreen({ conversationId, onBack }) {
         onChange={handleFileSelect}
       />
 
+      {/* ── Delete Confirmation Modal ────────────────────────── */}
+      {deleteConfirm && (
+        <div
+          onClick={() => setDeleteConfirm(null)}
+          style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: 320,
+              background: 'rgba(13,17,23,0.97)',
+              borderRadius: 20,
+              border: '1px solid rgba(241,239,232,0.1)',
+              backdropFilter: 'blur(20px)',
+              WebkitBackdropFilter: 'blur(20px)',
+              padding: '28px 24px 20px',
+              textAlign: 'center',
+            }}
+          >
+            <Icon name="delete" size={40} style={{ color: '#ff4444', marginBottom: 12 }} />
+            <h3 style={{ fontFamily: FONT.headline, fontSize: 18, fontWeight: 700, color: C.text, marginBottom: 8 }}>¿Eliminar mensaje?</h3>
+            <p style={{ fontSize: 13, color: C.textDim, fontFamily: FONT.body, marginBottom: 24, lineHeight: 1.5 }}>
+              Este mensaje será eliminado para todos los participantes de la conversación.
+            </p>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <div
+                onClick={() => setDeleteConfirm(null)}
+                style={{
+                  flex: 1,
+                  padding: '12px 0',
+                  borderRadius: 12,
+                  background: 'rgba(255,255,255,0.05)',
+                  color: C.text,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  fontFamily: FONT.body,
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                  transition: 'background 0.15s',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+              >
+                Cancelar
+              </div>
+              <div
+                onClick={executeDelete}
+                style={{
+                  flex: 1,
+                  padding: '12px 0',
+                  borderRadius: 12,
+                  background: '#ff4444',
+                  color: '#fff',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  fontFamily: FONT.body,
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                  transition: 'background 0.15s',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = '#e03030' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = '#ff4444' }}
+              >
+                Eliminar
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Reply bar */}
-      {replyTo && (
+      {replyTo && !isEditing && (
         <div style={{ padding: '8px 16px', background: 'rgba(13,17,23,0.8)', borderTop: '1px solid rgba(241,239,232,0.08)', display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ width: 3, height: 36, borderRadius: 2, background: C.primary, flexShrink: 0 }} />
           <div style={{ flex: 1, overflow: 'hidden' }}>
@@ -1098,6 +1404,22 @@ export default function ChatScreen({ conversationId, onBack }) {
             </p>
           </div>
           <div onClick={() => setReplyTo(null)} style={{ cursor: 'pointer', padding: 4 }}>
+            <Icon name="close" size={18} style={{ color: C.textDim }} />
+          </div>
+        </div>
+      )}
+
+      {/* Edit bar */}
+      {isEditing && (
+        <div style={{ padding: '8px 16px', background: 'rgba(13,17,23,0.8)', borderTop: '1px solid rgba(241,239,232,0.08)', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 3, height: 36, borderRadius: 2, background: '#B8956A', flexShrink: 0 }} />
+          <div style={{ flex: 1, overflow: 'hidden' }}>
+            <p style={{ fontSize: 12, fontWeight: 700, color: '#B8956A', fontFamily: FONT.headline }}>Editando mensaje</p>
+            <p style={{ fontSize: 13, color: C.textDim, fontFamily: FONT.body, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {editingMsg.content}
+            </p>
+          </div>
+          <div onClick={cancelEdit} style={{ cursor: 'pointer', padding: 4 }}>
             <Icon name="close" size={18} style={{ color: C.textDim }} />
           </div>
         </div>
@@ -1169,33 +1491,54 @@ export default function ChatScreen({ conversationId, onBack }) {
 
       {/* Input bar */}
       <div style={{ padding: '8px 16px 16px', ...GLASS_NAV, borderTop: '1px solid rgba(241,239,232,0.08)', display: 'flex', alignItems: 'center', gap: 8 }}>
-        {/* Attach */}
-        <div
-          onClick={() => fileInputRef.current?.click()}
-          style={{ width: 36, height: 36, borderRadius: 99, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
-        >
-          <Icon name="attach_file" size={22} style={{ color: C.textDim }} />
-        </div>
+        {/* Attach — hide during edit */}
+        {!isEditing && (
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            style={{ width: 36, height: 36, borderRadius: 99, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+          >
+            <Icon name="attach_file" size={22} style={{ color: C.textDim }} />
+          </div>
+        )}
 
-        {/* Stickers */}
-        <div
-          onClick={(e) => { e.stopPropagation(); setShowStickers(v => !v) }}
-          style={{ width: 36, height: 36, borderRadius: 99, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
-        >
-          <Icon name="emoji_emotions" size={22} style={{ color: showStickers ? C.primary : C.textDim }} />
-        </div>
+        {/* Stickers — hide during edit */}
+        {!isEditing && (
+          <div
+            onClick={(e) => { e.stopPropagation(); setShowStickers(v => !v) }}
+            style={{ width: 36, height: 36, borderRadius: 99, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+          >
+            <Icon name="emoji_emotions" size={22} style={{ color: showStickers ? C.primary : C.textDim }} />
+          </div>
+        )}
+
+        {/* Cancel edit button */}
+        {isEditing && (
+          <div
+            onClick={cancelEdit}
+            style={{ width: 36, height: 36, borderRadius: 99, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, background: 'rgba(255,255,255,0.05)' }}
+          >
+            <Icon name="close" size={22} style={{ color: C.textDim }} />
+          </div>
+        )}
 
         {/* Text input */}
         <div style={{ flex: 1, position: 'relative' }}>
           <input
-            placeholder="Type a message..."
-            value={text}
-            onChange={handleTextChange}
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
+            placeholder={isEditing ? 'Editar mensaje...' : 'Type a message...'}
+            value={isEditing ? editText : text}
+            onChange={isEditing ? (e) => setEditText(e.target.value) : handleTextChange}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                if (isEditing) saveEdit()
+                else handleSend()
+              }
+              if (e.key === 'Escape' && isEditing) cancelEdit()
+            }}
             style={{
               width: '100%',
-              background: 'rgba(255,255,255,0.05)',
-              border: 'none',
+              background: isEditing ? 'rgba(184,149,106,0.08)' : 'rgba(255,255,255,0.05)',
+              border: isEditing ? '1px solid rgba(184,149,106,0.3)' : 'none',
               borderRadius: 24,
               padding: '12px 16px',
               color: C.text,
@@ -1206,8 +1549,26 @@ export default function ChatScreen({ conversationId, onBack }) {
           />
         </div>
 
-        {/* Mic / Send */}
-        {text.trim() ? (
+        {/* Save (edit mode) / Send / Mic */}
+        {isEditing ? (
+          <div
+            onClick={saveEdit}
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 99,
+              background: editText.trim() ? 'linear-gradient(135deg, #B8956A, #e7c092)' : C.surfaceHigh,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: editText.trim() ? 'pointer' : 'default',
+              flexShrink: 0,
+              transition: 'all 0.2s',
+            }}
+          >
+            <Icon name="check" size={22} style={{ color: editText.trim() ? '#fff' : C.textFaint }} />
+          </div>
+        ) : text.trim() ? (
           <div
             onClick={() => handleSend()}
             style={{
