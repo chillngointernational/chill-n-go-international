@@ -240,7 +240,7 @@ function DemoPost() {
   )
 }
 
-function PostCard({ post, currentUserId, onLike, onBookmark, onComment, onShare, onFollow }) {
+function PostCard({ post, currentUserId, onLike, onBookmark, onComment, onShare, onFollow, userInteracted }) {
   const member = post.cng_members
   const displayName = member?.full_name || member?.ref_code || 'Member'
   const initial = displayName[0]?.toUpperCase() || 'M'
@@ -274,6 +274,16 @@ function PostCard({ post, currentUserId, onLike, onBookmark, onComment, onShare,
     observer.observe(cardRef.current)
     return () => observer.disconnect()
   }, [post.media_type])
+
+  // Auto-unmute after first user interaction
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || post.media_type !== 'video') return
+    if (userInteracted) {
+      video.muted = false
+      setIsMuted(false)
+    }
+  }, [userInteracted, post.media_type])
 
   const handleVideoTap = () => {
     const video = videoRef.current
@@ -410,6 +420,19 @@ export default function FeedScreen() {
   const scrollRef = useRef(null)
   const [commentPost, setCommentPost] = useState(null)
   const [toast, setToast] = useState(null)
+  const [userInteracted, setUserInteracted] = useState(false)
+
+  // After first tap anywhere, unmute all videos
+  useEffect(() => {
+    if (userInteracted) return
+    const handler = () => setUserInteracted(true)
+    document.addEventListener('click', handler, { once: true })
+    document.addEventListener('touchstart', handler, { once: true })
+    return () => {
+      document.removeEventListener('click', handler)
+      document.removeEventListener('touchstart', handler)
+    }
+  }, [userInteracted])
 
   const fetchPosts = useCallback(async () => {
     if (!user) { setLoading(false); return }
@@ -597,6 +620,7 @@ export default function FeedScreen() {
             onComment={handleComment}
             onShare={handleShare}
             onFollow={handleFollow}
+            userInteracted={userInteracted}
           />
         </div>
       ))}
