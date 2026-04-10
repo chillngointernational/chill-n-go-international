@@ -443,6 +443,9 @@ export default function MessagesScreen({ onOpenChat }) {
   const [createStoryOpen, setCreateStoryOpen] = useState(false)
   const [myStories, setMyStories] = useState([])       // current user's own stories
 
+  // ═══ ARCHIVED STATE ═══
+  const [showArchived, setShowArchived] = useState(false)
+
   /* ── Fetch Stories ── */
   const fetchStories = useCallback(async () => {
     if (!user) { setStoriesLoading(false); return }
@@ -541,7 +544,7 @@ export default function MessagesScreen({ onOpenChat }) {
     try {
       const { data: memberships, error: memErr } = await supabase
         .from('cng_conversation_members')
-        .select('conversation_id, unread_count')
+        .select('conversation_id, unread_count, is_muted, is_archived, is_pinned')
         .eq('user_id', user.id)
 
       if (memErr) throw memErr
@@ -549,7 +552,11 @@ export default function MessagesScreen({ onOpenChat }) {
 
       const convIds = memberships.map(m => m.conversation_id)
       const unreadMap = {}
-      memberships.forEach(m => { unreadMap[m.conversation_id] = m.unread_count })
+      const memberFlagsMap = {}
+      memberships.forEach(m => {
+        unreadMap[m.conversation_id] = m.unread_count
+        memberFlagsMap[m.conversation_id] = { is_muted: !!m.is_muted, is_archived: !!m.is_archived, is_pinned: !!m.is_pinned }
+      })
 
       const { data: convos, error: convErr } = await supabase
         .from('cng_conversations')
@@ -590,6 +597,7 @@ export default function MessagesScreen({ onOpenChat }) {
         const isGroup = c.type === 'group'
         const finalName = isGroup ? c.name : (otherMember?.full_name || otherMember?.ref_code || 'Unknown')
 
+        const flags = memberFlagsMap[c.id] || {}
         return {
           id: c.id,
           type: c.type,
@@ -600,6 +608,9 @@ export default function MessagesScreen({ onOpenChat }) {
           time: c.last_message_at ? timeAgo(c.last_message_at) : '',
           unread: unreadMap[c.id] || 0,
           other_user_id: otherMemberUserId,
+          is_muted: flags.is_muted,
+          is_archived: flags.is_archived,
+          is_pinned: flags.is_pinned,
         }
       })
 
@@ -685,9 +696,39 @@ export default function MessagesScreen({ onOpenChat }) {
     if (onOpenChat) onOpenChat(convId)
   }
 
+  const handleUnarchive = async (e, convId) => {
+    e.stopPropagation()
+    setConversations(prev => prev.map(c =>
+      c.id === convId ? { ...c, is_archived: false } : c
+    ))
+    try {
+      const { error } = await supabase
+        .from('cng_conversation_members')
+        .update({ is_archived: false })
+        .eq('conversation_id', convId)
+        .eq('user_id', user.id)
+      if (error) throw error
+    } catch (e) {
+      console.error('Unarchive error:', e)
+      setConversations(prev => prev.map(c =>
+        c.id === convId ? { ...c, is_archived: true } : c
+      ))
+    }
+  }
+
+  // Split conversations: active (non-archived) vs archived
+  const activeConversations = conversations.filter(c => !c.is_archived)
+  const archivedConversations = conversations.filter(c => c.is_archived)
+
+  // Split active into pinned and unpinned
+  const pinnedConversations = activeConversations.filter(c => c.is_pinned)
+  const unpinnedConversations = activeConversations.filter(c => !c.is_pinned)
+
+  const displayConversations = showArchived ? archivedConversations : [...pinnedConversations, ...unpinnedConversations]
+
   const filtered = search
-    ? conversations.filter(c => c.name.toLowerCase().includes(search.toLowerCase()))
-    : conversations
+    ? displayConversations.filter(c => c.name.toLowerCase().includes(search.toLowerCase()))
+    : displayConversations
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', position: 'relative' }}>
@@ -770,41 +811,105 @@ export default function MessagesScreen({ onOpenChat }) {
 
         {/* Conversations list */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {filtered.map((c) => (
+
+          {/* Archived toggle */}
+          {showArchived && (
             <div
-              key={c.id}
-              onClick={() => handleSelectConversation(c.id)}
-              style={{ display: 'flex', alignItems: 'center', gap: 16, padding: 12, borderRadius: 16, background: c.unread ? 'rgba(24,28,34,0.4)' : 'transparent', cursor: 'pointer' }}
+              onClick={() => setShowArchived(false)}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', cursor: 'pointer', marginBottom: 4 }}
             >
-              <div style={{ width: 56, height: 56, borderRadius: 99, overflow: 'hidden', flexShrink: 0 }}>
-                {c.avatar_url ? (
-                  <img src={c.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                ) : (
-                  <div style={{ width: '100%', height: '100%', background: C.surfaceHigh, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 600, color: C.text, fontFamily: FONT.headline }}>
-                    {c.type === 'group' ? <Icon name="groups" size={24} style={{ color: C.textDim }} /> : c.initial}
-                  </div>
-                )}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 2 }}>
-                  <span style={{ fontSize: 14, fontWeight: c.unread ? 800 : 700, color: C.onSurface }}>{c.name}</span>
-                  <span style={{ fontSize: 10, color: c.unread ? C.primaryBright : C.textFaint, fontWeight: c.unread ? 700 : 400 }}>{c.time}</span>
-                </div>
-                <p style={{ fontSize: 12, color: c.unread ? 'rgba(223,226,235,0.9)' : C.textFaint, fontWeight: c.unread ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>{c.msg}</p>
-              </div>
-              {c.unread > 0 && (
-                <div style={{
-                  minWidth: 22, height: 22, padding: '0 6px',
-                  background: GRADIENT.primary, borderRadius: 99,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 11, fontWeight: 700, color: '#fff', flexShrink: 0,
-                  boxShadow: '0 2px 8px rgba(29,158,117,0.4)',
-                }}>
-                  {c.unread}
-                </div>
-              )}
+              <Icon name="arrow_back" size={18} style={{ color: C.primary }} />
+              <span style={{ fontSize: 13, fontWeight: 700, color: C.primary, fontFamily: FONT.headline }}>Volver a chats</span>
             </div>
-          ))}
+          )}
+
+          {/* Pinned section header */}
+          {!showArchived && !search && pinnedConversations.length > 0 && (
+            <h2 style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: C.secondaryDark || '#B8956A', fontWeight: 700, marginBottom: 4, marginTop: 4 }}>
+              Fijados
+            </h2>
+          )}
+
+          {filtered.map((c, idx) => {
+            // Insert "Todos los chats" header after pinned section
+            const showAllHeader = !showArchived && !search && pinnedConversations.length > 0 && idx === pinnedConversations.length
+
+            return (
+              <div key={c.id}>
+                {showAllHeader && (
+                  <>
+                    <div style={{ height: 1, background: 'rgba(255,255,255,0.04)', margin: '8px 0' }} />
+                    <h2 style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: C.secondaryDark || '#B8956A', fontWeight: 700, marginBottom: 4, marginTop: 4 }}>
+                      Todos los chats
+                    </h2>
+                  </>
+                )}
+                <div
+                  onClick={() => handleSelectConversation(c.id)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 16, padding: 12, borderRadius: 16, background: c.unread ? 'rgba(24,28,34,0.4)' : 'transparent', cursor: 'pointer' }}
+                >
+                  <div style={{ width: 56, height: 56, borderRadius: 99, overflow: 'hidden', flexShrink: 0 }}>
+                    {c.avatar_url ? (
+                      <img src={c.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      <div style={{ width: '100%', height: '100%', background: C.surfaceHigh, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 600, color: C.text, fontFamily: FONT.headline }}>
+                        {c.type === 'group' ? <Icon name="groups" size={24} style={{ color: C.textDim }} /> : c.initial}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 2 }}>
+                      <span style={{ fontSize: 14, fontWeight: c.unread ? 800 : 700, color: C.onSurface }}>{c.name}</span>
+                      <span style={{ fontSize: 10, color: c.unread ? C.primaryBright : C.textFaint, fontWeight: c.unread ? 700 : 400, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        {c.time}
+                        {c.is_muted && <Icon name="notifications_off" size={14} style={{ color: C.textFaint }} />}
+                      </span>
+                    </div>
+                    <p style={{ fontSize: 12, color: c.unread ? 'rgba(223,226,235,0.9)' : C.textFaint, fontWeight: c.unread ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>{c.msg}</p>
+                  </div>
+                  {showArchived && (
+                    <div
+                      onClick={(e) => handleUnarchive(e, c.id)}
+                      style={{ width: 36, height: 36, borderRadius: 99, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, background: 'rgba(255,255,255,0.05)' }}
+                    >
+                      <Icon name="unarchive" size={18} style={{ color: C.primary }} />
+                    </div>
+                  )}
+                  {!showArchived && c.unread > 0 && (
+                    <div style={{
+                      minWidth: 22, height: 22, padding: '0 6px',
+                      background: GRADIENT.primary, borderRadius: 99,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 11, fontWeight: 700, color: '#fff', flexShrink: 0,
+                      boxShadow: '0 2px 8px rgba(29,158,117,0.4)',
+                    }}>
+                      {c.unread}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+
+          {/* Archived chats button */}
+          {!showArchived && !search && archivedConversations.length > 0 && (
+            <div
+              onClick={() => setShowArchived(true)}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                padding: '14px 16px', marginTop: 8, borderRadius: 12,
+                background: 'rgba(255,255,255,0.03)', cursor: 'pointer',
+                border: '1px solid rgba(241,239,232,0.06)', transition: 'background 0.15s',
+              }}
+              onPointerEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)' }}
+              onPointerLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.03)' }}
+            >
+              <Icon name="archive" size={18} style={{ color: C.textDim }} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: C.textDim, fontFamily: FONT.body }}>
+                Chats archivados ({archivedConversations.length})
+              </span>
+            </div>
+          )}
 
           {/* Empty state */}
           {!loading && conversations.length === 0 && (

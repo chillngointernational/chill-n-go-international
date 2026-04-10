@@ -226,6 +226,18 @@ export default function ChatScreen({ conversationId, onBack }) {
   const [deleteConfirm, setDeleteConfirm] = useState(null)  // message to confirm delete
   const [contextMenu, setContextMenu] = useState(null)      // { msgId, x, y } for context menu position
 
+  // ─── HEADER MENU, MUTE, BLOCK, PIN, ARCHIVE, REPORT ────
+  const [showHeaderMenu, setShowHeaderMenu] = useState(false)
+  const [isMuted, setIsMuted] = useState(false)
+  const [isBlocked, setIsBlocked] = useState(false)
+  const [isPinned, setIsPinned] = useState(false)
+  const [showBlockConfirm, setShowBlockConfirm] = useState(false)
+  const [showReportModal, setShowReportModal] = useState(false)
+  const [reportTarget, setReportTarget] = useState(null)
+  const [reportReason, setReportReason] = useState('')
+  const [reportDetails, setReportDetails] = useState('')
+  const [toastMsg, setToastMsg] = useState('')
+
   useEffect(() => {
     if (!navigator.mediaDevices?.getUserMedia) setMicSupported(false)
   }, [])
@@ -326,6 +338,32 @@ export default function ChatScreen({ conversationId, onBack }) {
         if (convData?.type === 'dm' || convData?.type === 'direct') {
           const otherId = userIds.find(id => id !== user.id)
           if (otherId && pMap[otherId]) setOtherUser(pMap[otherId])
+        }
+      }
+
+      // Fetch muted/pinned status
+      const { data: myMembership } = await supabase
+        .from('cng_conversation_members')
+        .select('is_muted, is_pinned')
+        .eq('conversation_id', conversationId)
+        .eq('user_id', user.id)
+        .maybeSingle()
+      if (myMembership) {
+        setIsMuted(!!myMembership.is_muted)
+        setIsPinned(!!myMembership.is_pinned)
+      }
+
+      // Fetch blocked status (DMs only)
+      if ((convData?.type === 'dm' || convData?.type === 'direct') && userIds.length > 0) {
+        const otherId = userIds.find(id => id !== user.id)
+        if (otherId) {
+          const { data: blockRow } = await supabase
+            .from('cng_blocked_users')
+            .select('id')
+            .eq('blocker_id', user.id)
+            .eq('blocked_id', otherId)
+            .maybeSingle()
+          setIsBlocked(!!blockRow)
         }
       }
 
@@ -537,6 +575,14 @@ export default function ChatScreen({ conversationId, onBack }) {
     const timer = setTimeout(() => document.addEventListener('click', handler), 300)
     return () => { clearTimeout(timer); document.removeEventListener('click', handler) }
   }, [reactionPopup, showStickers, contextMenu])
+
+  /* ── Close header menu on outside click ──────────────────── */
+  useEffect(() => {
+    if (!showHeaderMenu) return
+    const handler = () => setShowHeaderMenu(false)
+    const timer = setTimeout(() => document.addEventListener('click', handler), 10)
+    return () => { clearTimeout(timer); document.removeEventListener('click', handler) }
+  }, [showHeaderMenu])
 
   /* ── Manejador de "Escribiendo" ────────────────────────────── */
   const handleTextChange = (e) => {
@@ -1096,6 +1142,126 @@ export default function ChatScreen({ conversationId, onBack }) {
     handleSend(emoji, 'text')
   }
 
+  /* ── Toast helper ────────────────────────────────────────────── */
+  const showToast = (msg) => {
+    setToastMsg(msg)
+    setTimeout(() => setToastMsg(''), 3000)
+  }
+
+  /* ── Mute / Unmute ───────────────────────────────────────────── */
+  const handleToggleMute = async () => {
+    setShowHeaderMenu(false)
+    const newVal = !isMuted
+    setIsMuted(newVal)
+    try {
+      const { error } = await supabase
+        .from('cng_conversation_members')
+        .update({ is_muted: newVal })
+        .eq('conversation_id', conversationId)
+        .eq('user_id', user.id)
+      if (error) throw error
+    } catch (e) {
+      console.error('Mute error:', e)
+      setIsMuted(!newVal)
+    }
+  }
+
+  /* ── Pin / Unpin ─────────────────────────────────────────────── */
+  const handleTogglePin = async () => {
+    setShowHeaderMenu(false)
+    const newVal = !isPinned
+    setIsPinned(newVal)
+    try {
+      const { error } = await supabase
+        .from('cng_conversation_members')
+        .update({ is_pinned: newVal })
+        .eq('conversation_id', conversationId)
+        .eq('user_id', user.id)
+      if (error) throw error
+    } catch (e) {
+      console.error('Pin error:', e)
+      setIsPinned(!newVal)
+    }
+  }
+
+  /* ── Archive ─────────────────────────────────────────────────── */
+  const handleArchive = async () => {
+    setShowHeaderMenu(false)
+    try {
+      const { error } = await supabase
+        .from('cng_conversation_members')
+        .update({ is_archived: true })
+        .eq('conversation_id', conversationId)
+        .eq('user_id', user.id)
+      if (error) throw error
+      onBack()
+    } catch (e) {
+      console.error('Archive error:', e)
+    }
+  }
+
+  /* ── Block / Unblock ─────────────────────────────────────────── */
+  const handleBlock = async () => {
+    setShowBlockConfirm(false)
+    const otherId = otherUser?.user_id
+    if (!otherId) return
+    try {
+      const { error } = await supabase
+        .from('cng_blocked_users')
+        .insert({ blocker_id: user.id, blocked_id: otherId })
+      if (error) throw error
+      setIsBlocked(true)
+    } catch (e) {
+      console.error('Block error:', e)
+    }
+  }
+
+  const handleUnblock = async () => {
+    const otherId = otherUser?.user_id
+    if (!otherId) return
+    try {
+      const { error } = await supabase
+        .from('cng_blocked_users')
+        .delete()
+        .eq('blocker_id', user.id)
+        .eq('blocked_id', otherId)
+      if (error) throw error
+      setIsBlocked(false)
+    } catch (e) {
+      console.error('Unblock error:', e)
+    }
+  }
+
+  /* ── Report ──────────────────────────────────────────────────── */
+  const openReport = (target) => {
+    setReportTarget(target)
+    setReportReason('')
+    setReportDetails('')
+    setShowReportModal(true)
+    setShowHeaderMenu(false)
+    closeReactionPopup()
+  }
+
+  const handleSendReport = async () => {
+    if (!reportReason || !reportTarget) return
+    try {
+      const row = {
+        reporter_id: user.id,
+        conversation_id: conversationId,
+        reason: reportReason,
+        details: reportDetails.trim() || null,
+      }
+      if (reportTarget.userId) row.reported_user_id = reportTarget.userId
+      if (reportTarget.messageId) row.message_id = reportTarget.messageId
+      const { error } = await supabase.from('cng_reports').insert(row)
+      if (error) throw error
+      setShowReportModal(false)
+      showToast('Reporte enviado. Gracias.')
+    } catch (e) {
+      console.error('Report error:', e)
+    }
+  }
+
   /* ── Cálculos de Interfaz Dinámica (DM vs Grupo) ───────────── */
   const isGroup = conversation?.type === 'group'
 
@@ -1240,11 +1406,99 @@ export default function ChatScreen({ conversationId, onBack }) {
           )}
         </div>
         <div style={{ flex: 1 }}>
-          <h1 style={{ fontFamily: FONT.headline, fontSize: 16, fontWeight: 700, color: C.text }}>{displayName}</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <h1 style={{ fontFamily: FONT.headline, fontSize: 16, fontWeight: 700, color: C.text }}>{displayName}</h1>
+            {isMuted && <Icon name="notifications_off" size={14} style={{ color: C.textDim }} />}
+          </div>
           <p style={{ fontSize: 11, color: isGroup ? C.textDim : C.primaryBright }}>{subTitle}</p>
         </div>
-        <Icon name="more_vert" size={24} style={{ color: C.textDim }} />
+        <div onClick={(e) => { e.stopPropagation(); setShowHeaderMenu(v => !v) }} style={{ cursor: 'pointer', padding: 8, borderRadius: 99, display: 'flex', position: 'relative' }}>
+          <Icon name="more_vert" size={24} style={{ color: C.textDim }} />
+        </div>
       </header>
+
+      {/* ── Header dropdown menu ─────────────────────────────── */}
+      {showHeaderMenu && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            ...POPUP_STYLE,
+            position: 'fixed',
+            top: 56,
+            right: 12,
+            zIndex: 200,
+            padding: 4,
+            minWidth: 220,
+          }}
+        >
+          {/* 1. Silenciar / Activar notificaciones */}
+          <div
+            onClick={handleToggleMute}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', cursor: 'pointer', borderRadius: 8, transition: 'background 0.15s' }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+          >
+            <Icon name={isMuted ? 'notifications_active' : 'notifications_off'} size={18} style={{ color: C.text }} />
+            <span style={{ fontSize: 14, color: C.text, fontFamily: FONT.body }}>{isMuted ? 'Activar notificaciones' : 'Silenciar'}</span>
+          </div>
+          {/* 2. Fijar / Desfijar */}
+          <div
+            onClick={handleTogglePin}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', cursor: 'pointer', borderRadius: 8, transition: 'background 0.15s' }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+          >
+            <Icon name="push_pin" size={18} style={{ color: C.text }} />
+            <span style={{ fontSize: 14, color: C.text, fontFamily: FONT.body }}>{isPinned ? 'Desfijar chat' : 'Fijar chat'}</span>
+          </div>
+          {/* 3. Archivar */}
+          <div
+            onClick={handleArchive}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', cursor: 'pointer', borderRadius: 8, transition: 'background 0.15s' }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+          >
+            <Icon name="archive" size={18} style={{ color: C.text }} />
+            <span style={{ fontSize: 14, color: C.text, fontFamily: FONT.body }}>Archivar chat</span>
+          </div>
+          {/* Separator */}
+          <div style={{ height: 1, background: 'rgba(241,239,232,0.08)', margin: '2px 12px' }} />
+          {/* 4. Reportar */}
+          <div
+            onClick={() => {
+              const targetUserId = isGroup ? null : otherUser?.user_id
+              openReport({ type: 'user', userId: targetUserId })
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', cursor: 'pointer', borderRadius: 8, transition: 'background 0.15s' }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+          >
+            <Icon name="flag" size={18} style={{ color: C.textDim }} />
+            <span style={{ fontSize: 14, color: C.textDim, fontFamily: FONT.body }}>Reportar</span>
+          </div>
+          {/* 5. Bloquear (solo DMs) */}
+          {!isGroup && otherUser && (
+            <>
+              <div style={{ height: 1, background: 'rgba(241,239,232,0.08)', margin: '2px 12px' }} />
+              <div
+                onClick={() => {
+                  setShowHeaderMenu(false)
+                  if (isBlocked) handleUnblock()
+                  else setShowBlockConfirm(true)
+                }}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', cursor: 'pointer', borderRadius: 8, transition: 'background 0.15s' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+              >
+                <Icon name={isBlocked ? 'check_circle' : 'block'} size={18} style={{ color: isBlocked ? C.primary : '#ff4444' }} />
+                <span style={{ fontSize: 14, color: isBlocked ? C.primary : '#ff4444', fontFamily: FONT.body }}>
+                  {isBlocked ? 'Desbloquear usuario' : 'Bloquear usuario'}
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Messages */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 16px 8px', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1476,6 +1730,17 @@ export default function ChatScreen({ conversationId, onBack }) {
                         <Icon name="shortcut" size={16} style={{ color: C.textDim }} />
                         <span style={{ fontSize: 13, color: C.text, fontFamily: FONT.body }}>Forward</span>
                       </div>
+                    </div>
+                    {/* Separator + Report */}
+                    <div style={{ height: 1, background: 'rgba(241,239,232,0.08)', margin: '0 12px' }} />
+                    <div
+                      onClick={() => openReport({ type: 'message', userId: msg.sender_id, messageId: msg.id })}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px 8px', cursor: 'pointer', borderRadius: '0 0 16px 16px', transition: 'background 0.15s' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)' }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                    >
+                      <Icon name="flag" size={16} style={{ color: C.textDim }} />
+                      <span style={{ fontSize: 13, color: C.textDim, fontFamily: FONT.body }}>Reportar</span>
                     </div>
                   </div>
                 )}
@@ -1891,8 +2156,19 @@ export default function ChatScreen({ conversationId, onBack }) {
         </div>
       )}
 
+      {/* Blocked banner */}
+      {isBlocked && (
+        <div style={{ padding: '14px 20px', background: 'rgba(255,68,68,0.06)', borderTop: '1px solid rgba(255,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+          <Icon name="block" size={16} style={{ color: '#ff4444' }} />
+          <span style={{ fontSize: 13, color: C.textDim, fontFamily: FONT.body }}>
+            Has bloqueado a {displayName}.{' '}
+            <span onClick={handleUnblock} style={{ color: C.primary, cursor: 'pointer', fontWeight: 600 }}>Desbloquear</span>
+          </span>
+        </div>
+      )}
+
       {/* Input bar */}
-      <div style={{ padding: '8px 16px 16px', ...GLASS_NAV, borderTop: '1px solid rgba(241,239,232,0.08)', display: 'flex', alignItems: 'center', gap: 8 }}>
+      {!isBlocked && <div style={{ padding: '8px 16px 16px', ...GLASS_NAV, borderTop: '1px solid rgba(241,239,232,0.08)', display: 'flex', alignItems: 'center', gap: 8 }}>
         {/* Attach — opens menu with normal + view once */}
         {!isEditing && (
           <div
@@ -2024,7 +2300,141 @@ export default function ChatScreen({ conversationId, onBack }) {
             <Icon name="send" size={20} style={{ color: C.textFaint }} />
           </div>
         )}
-      </div>
+      </div>}
+
+      {/* ── Block Confirmation Modal ─────────────────────────── */}
+      {showBlockConfirm && (
+        <div
+          onClick={() => setShowBlockConfirm(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%', maxWidth: 320,
+              background: 'rgba(13,17,23,0.97)', borderRadius: 20,
+              border: '1px solid rgba(241,239,232,0.1)',
+              backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+              padding: '28px 24px 20px', textAlign: 'center',
+            }}
+          >
+            <Icon name="block" size={40} style={{ color: '#ff4444', marginBottom: 12 }} />
+            <h3 style={{ fontFamily: FONT.headline, fontSize: 18, fontWeight: 700, color: C.text, marginBottom: 8 }}>
+              ¿Bloquear a {displayName}?
+            </h3>
+            <p style={{ fontSize: 13, color: C.textDim, fontFamily: FONT.body, marginBottom: 24, lineHeight: 1.5 }}>
+              No podrás recibir mensajes de esta persona.
+            </p>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <div
+                onClick={() => setShowBlockConfirm(false)}
+                style={{ flex: 1, padding: '12px 0', borderRadius: 12, background: 'rgba(255,255,255,0.05)', color: C.text, fontSize: 14, fontWeight: 600, fontFamily: FONT.body, cursor: 'pointer', textAlign: 'center', transition: 'background 0.15s' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+              >
+                Cancelar
+              </div>
+              <div
+                onClick={handleBlock}
+                style={{ flex: 1, padding: '12px 0', borderRadius: 12, background: '#ff4444', color: '#fff', fontSize: 14, fontWeight: 600, fontFamily: FONT.body, cursor: 'pointer', textAlign: 'center', transition: 'background 0.15s' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = '#e03030' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = '#ff4444' }}
+              >
+                Bloquear
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Report Modal ─────────────────────────────────────── */}
+      {showReportModal && (
+        <div
+          onClick={() => setShowReportModal(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%', maxWidth: 360,
+              background: 'rgba(13,17,23,0.97)', borderRadius: 20,
+              border: '1px solid rgba(241,239,232,0.1)',
+              backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+              padding: '24px', maxHeight: '80vh', overflowY: 'auto',
+            }}
+          >
+            <h3 style={{ fontFamily: FONT.headline, fontSize: 18, fontWeight: 700, color: C.text, marginBottom: 4 }}>
+              Reportar {reportTarget?.type === 'message' ? 'este mensaje' : displayName}
+            </h3>
+            <p style={{ fontSize: 12, color: C.textDim, fontFamily: FONT.body, marginBottom: 20 }}>
+              Selecciona una razón para el reporte
+            </p>
+            {['Spam', 'Acoso', 'Contenido inapropiado', 'Suplantación de identidad', 'Otro'].map(r => (
+              <div
+                key={r}
+                onClick={() => setReportReason(r)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 10, cursor: 'pointer', marginBottom: 4,
+                  background: reportReason === r ? 'rgba(104,219,174,0.1)' : 'transparent',
+                  border: reportReason === r ? `1px solid ${C.primary}` : '1px solid transparent',
+                  transition: 'all 0.15s',
+                }}
+              >
+                <div style={{
+                  width: 18, height: 18, borderRadius: 99,
+                  border: reportReason === r ? `5px solid ${C.primary}` : '2px solid rgba(241,239,232,0.2)',
+                  background: reportReason === r ? C.primary : 'transparent',
+                  flexShrink: 0, boxSizing: 'border-box',
+                }} />
+                <span style={{ fontSize: 14, color: C.text, fontFamily: FONT.body }}>{r}</span>
+              </div>
+            ))}
+            <textarea
+              placeholder="Detalles adicionales (opcional)"
+              value={reportDetails}
+              onChange={(e) => setReportDetails(e.target.value)}
+              style={{
+                width: '100%', marginTop: 12, background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(241,239,232,0.1)', borderRadius: 12,
+                padding: 12, color: C.text, fontSize: 13, fontFamily: FONT.body,
+                outline: 'none', resize: 'vertical', minHeight: 60, boxSizing: 'border-box',
+              }}
+            />
+            <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
+              <div
+                onClick={() => setShowReportModal(false)}
+                style={{ flex: 1, padding: '12px 0', borderRadius: 12, background: 'rgba(255,255,255,0.05)', color: C.text, fontSize: 14, fontWeight: 600, fontFamily: FONT.body, cursor: 'pointer', textAlign: 'center' }}
+              >
+                Cancelar
+              </div>
+              <div
+                onClick={handleSendReport}
+                style={{
+                  flex: 1, padding: '12px 0', borderRadius: 12,
+                  background: reportReason ? GRADIENT.primary : C.surfaceHigh,
+                  color: reportReason ? '#fff' : C.textFaint,
+                  fontSize: 14, fontWeight: 600, fontFamily: FONT.body,
+                  cursor: reportReason ? 'pointer' : 'default', textAlign: 'center',
+                }}
+              >
+                Enviar reporte
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Toast notification ────────────────────────────────── */}
+      {toastMsg && (
+        <div style={{
+          position: 'fixed', bottom: 100, left: '50%', transform: 'translateX(-50%)',
+          background: C.surfaceHigh, border: `1px solid ${C.primary}`,
+          borderRadius: 12, padding: '10px 20px', zIndex: 999,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+        }}>
+          <span style={{ fontSize: 13, color: C.text, fontFamily: FONT.body }}>{toastMsg}</span>
+        </div>
+      )}
     </div>
   )
 }
