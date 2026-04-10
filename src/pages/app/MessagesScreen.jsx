@@ -446,6 +446,180 @@ export default function MessagesScreen({ onOpenChat }) {
   // ═══ ARCHIVED STATE ═══
   const [showArchived, setShowArchived] = useState(false)
 
+  // ═══ CONTEXT MENU STATE ═══
+  const [contextMenu, setContextMenu] = useState(null) // { conv, x, y }
+  const longPressTimer = useRef(null)
+  const [blockedSet, setBlockedSet] = useState(new Set())
+  const [showBlockConfirm, setShowBlockConfirm] = useState(false)
+  const [blockTarget, setBlockTarget] = useState(null) // conv object
+  const [showReportModal, setShowReportModal] = useState(false)
+  const [reportTarget, setReportTarget] = useState(null) // conv object
+  const [reportReason, setReportReason] = useState('')
+  const [reportDetails, setReportDetails] = useState('')
+  const [toastMsg, setToastMsg] = useState('')
+
+  // ═══ FETCH BLOCKED USERS ═══
+  useEffect(() => {
+    if (!user) return
+    supabase
+      .from('cng_blocked_users')
+      .select('blocked_id')
+      .eq('blocker_id', user.id)
+      .then(({ data }) => {
+        if (data) setBlockedSet(new Set(data.map(d => d.blocked_id)))
+      })
+  }, [user])
+
+  // ═══ TOAST HELPER ═══
+  const showToast = useCallback((msg) => {
+    setToastMsg(msg)
+    setTimeout(() => setToastMsg(''), 3000)
+  }, [])
+
+  // ═══ CONTEXT MENU HANDLERS ═══
+  const openContextMenu = (conv, x, y) => {
+    setContextMenu({ conv, x, y })
+  }
+
+  const closeContextMenu = () => setContextMenu(null)
+
+  const handleLongPressStart = (conv, e) => {
+    const touch = e.touches?.[0] || e
+    const x = touch.clientX
+    const y = touch.clientY
+    longPressTimer.current = setTimeout(() => {
+      openContextMenu(conv, x, y)
+    }, 500)
+  }
+
+  const handleLongPressEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+  }
+
+  const handleContextMenuEvent = (conv, e) => {
+    e.preventDefault()
+    openContextMenu(conv, e.clientX, e.clientY)
+  }
+
+  // ── Context menu actions ──
+  const handleTogglePin = async (conv) => {
+    closeContextMenu()
+    const newVal = !conv.is_pinned
+    setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, is_pinned: newVal } : c))
+    try {
+      const { error } = await supabase
+        .from('cng_conversation_members')
+        .update({ is_pinned: newVal })
+        .eq('conversation_id', conv.id)
+        .eq('user_id', user.id)
+      if (error) throw error
+    } catch (e) {
+      console.error('Pin toggle error:', e)
+      setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, is_pinned: !newVal } : c))
+    }
+  }
+
+  const handleToggleMute = async (conv) => {
+    closeContextMenu()
+    const newVal = !conv.is_muted
+    setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, is_muted: newVal } : c))
+    try {
+      const { error } = await supabase
+        .from('cng_conversation_members')
+        .update({ is_muted: newVal })
+        .eq('conversation_id', conv.id)
+        .eq('user_id', user.id)
+      if (error) throw error
+    } catch (e) {
+      console.error('Mute toggle error:', e)
+      setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, is_muted: !newVal } : c))
+    }
+  }
+
+  const handleArchive = async (conv) => {
+    closeContextMenu()
+    setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, is_archived: true } : c))
+    try {
+      const { error } = await supabase
+        .from('cng_conversation_members')
+        .update({ is_archived: true })
+        .eq('conversation_id', conv.id)
+        .eq('user_id', user.id)
+      if (error) throw error
+    } catch (e) {
+      console.error('Archive error:', e)
+      setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, is_archived: false } : c))
+    }
+  }
+
+  const handleOpenReport = (conv) => {
+    closeContextMenu()
+    setReportTarget(conv)
+    setReportReason('')
+    setReportDetails('')
+    setShowReportModal(true)
+  }
+
+  const handleSendReport = async () => {
+    if (!reportReason || !reportTarget) return
+    try {
+      const row = {
+        reporter_id: user.id,
+        conversation_id: reportTarget.id,
+        reason: reportReason,
+        details: reportDetails.trim() || null,
+      }
+      if (reportTarget.other_user_id) row.reported_user_id = reportTarget.other_user_id
+      const { error } = await supabase.from('cng_reports').insert(row)
+      if (error) throw error
+      setShowReportModal(false)
+      showToast('Reporte enviado. Gracias.')
+    } catch (e) {
+      console.error('Report error:', e)
+    }
+  }
+
+  const handleOpenBlockConfirm = (conv) => {
+    closeContextMenu()
+    setBlockTarget(conv)
+    setShowBlockConfirm(true)
+  }
+
+  const handleBlock = async () => {
+    setShowBlockConfirm(false)
+    const otherId = blockTarget?.other_user_id
+    if (!otherId) return
+    try {
+      const { error } = await supabase
+        .from('cng_blocked_users')
+        .insert({ blocker_id: user.id, blocked_id: otherId })
+      if (error) throw error
+      setBlockedSet(prev => new Set([...prev, otherId]))
+    } catch (e) {
+      console.error('Block error:', e)
+    }
+  }
+
+  const handleUnblock = async (conv) => {
+    closeContextMenu()
+    const otherId = conv.other_user_id
+    if (!otherId) return
+    try {
+      const { error } = await supabase
+        .from('cng_blocked_users')
+        .delete()
+        .eq('blocker_id', user.id)
+        .eq('blocked_id', otherId)
+      if (error) throw error
+      setBlockedSet(prev => { const n = new Set(prev); n.delete(otherId); return n })
+    } catch (e) {
+      console.error('Unblock error:', e)
+    }
+  }
+
   /* ── Fetch Stories ── */
   const fetchStories = useCallback(async () => {
     if (!user) { setStoriesLoading(false); return }
@@ -846,7 +1020,11 @@ export default function MessagesScreen({ onOpenChat }) {
                 )}
                 <div
                   onClick={() => handleSelectConversation(c.id)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 16, padding: 12, borderRadius: 16, background: c.unread ? 'rgba(24,28,34,0.4)' : 'transparent', cursor: 'pointer' }}
+                  onPointerDown={(e) => { if (!showArchived) handleLongPressStart(c, e) }}
+                  onPointerUp={handleLongPressEnd}
+                  onPointerLeave={handleLongPressEnd}
+                  onContextMenu={(e) => { if (!showArchived) handleContextMenuEvent(c, e) }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 16, padding: 12, borderRadius: 16, background: c.unread ? 'rgba(24,28,34,0.4)' : 'transparent', cursor: 'pointer', userSelect: 'none', WebkitUserSelect: 'none' }}
                 >
                   <div style={{ width: 56, height: 56, borderRadius: 99, overflow: 'hidden', flexShrink: 0 }}>
                     {c.avatar_url ? (
@@ -1005,6 +1183,221 @@ export default function MessagesScreen({ onOpenChat }) {
           onPost={() => fetchStories()}
           currentUserId={user?.id}
         />
+      )}
+
+      {/* ═══ CONTEXT MENU POPUP ═══ */}
+      {contextMenu && (
+        <>
+          <div onClick={closeContextMenu} style={{ position: 'fixed', inset: 0, zIndex: 300 }} />
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: 'fixed',
+              left: Math.min(contextMenu.x, window.innerWidth - 220),
+              top: Math.min(contextMenu.y, window.innerHeight - 320),
+              zIndex: 301,
+              background: 'rgba(13,17,23,0.95)',
+              border: '1px solid rgba(241,239,232,0.1)',
+              borderRadius: 16,
+              backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+              boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
+              padding: '6px',
+              minWidth: 200,
+            }}
+          >
+            {/* Pin */}
+            <div
+              onClick={() => handleTogglePin(contextMenu.conv)}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', cursor: 'pointer', borderRadius: 8, transition: 'background 0.1s' }}
+              onPointerEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+              onPointerLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+            >
+              <Icon name="push_pin" size={18} style={{ color: C.text }} />
+              <span style={{ fontSize: 14, color: C.text, fontFamily: FONT.body }}>{contextMenu.conv.is_pinned ? 'Desfijar' : 'Fijar'}</span>
+            </div>
+            {/* Mute */}
+            <div
+              onClick={() => handleToggleMute(contextMenu.conv)}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', cursor: 'pointer', borderRadius: 8, transition: 'background 0.1s' }}
+              onPointerEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+              onPointerLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+            >
+              <Icon name={contextMenu.conv.is_muted ? 'notifications_active' : 'notifications_off'} size={18} style={{ color: C.text }} />
+              <span style={{ fontSize: 14, color: C.text, fontFamily: FONT.body }}>{contextMenu.conv.is_muted ? 'Activar' : 'Silenciar'}</span>
+            </div>
+            {/* Archive */}
+            <div
+              onClick={() => handleArchive(contextMenu.conv)}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', cursor: 'pointer', borderRadius: 8, transition: 'background 0.1s' }}
+              onPointerEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+              onPointerLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+            >
+              <Icon name="archive" size={18} style={{ color: C.text }} />
+              <span style={{ fontSize: 14, color: C.text, fontFamily: FONT.body }}>Archivar</span>
+            </div>
+            {/* Separator */}
+            <div style={{ height: 1, background: 'rgba(241,239,232,0.08)', margin: '4px 12px' }} />
+            {/* Report */}
+            <div
+              onClick={() => handleOpenReport(contextMenu.conv)}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', cursor: 'pointer', borderRadius: 8, transition: 'background 0.1s' }}
+              onPointerEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+              onPointerLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+            >
+              <Icon name="flag" size={18} style={{ color: C.textDim }} />
+              <span style={{ fontSize: 14, color: C.textDim, fontFamily: FONT.body }}>Reportar</span>
+            </div>
+            {/* Block/Unblock — only for direct conversations */}
+            {contextMenu.conv.type === 'direct' && (() => {
+              const isBlocked = blockedSet.has(contextMenu.conv.other_user_id)
+              return (
+                <div
+                  onClick={() => isBlocked ? handleUnblock(contextMenu.conv) : handleOpenBlockConfirm(contextMenu.conv)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', cursor: 'pointer', borderRadius: 8, transition: 'background 0.1s' }}
+                  onPointerEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+                  onPointerLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                >
+                  <Icon name={isBlocked ? 'check_circle' : 'block'} size={18} style={{ color: isBlocked ? C.primary : '#ff4444' }} />
+                  <span style={{ fontSize: 14, color: isBlocked ? C.primary : '#ff4444', fontFamily: FONT.body }}>{isBlocked ? 'Desbloquear' : 'Bloquear'}</span>
+                </div>
+              )
+            })()}
+          </div>
+        </>
+      )}
+
+      {/* ═══ BLOCK CONFIRMATION MODAL ═══ */}
+      {showBlockConfirm && blockTarget && (
+        <div
+          onClick={() => setShowBlockConfirm(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 400, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%', maxWidth: 320,
+              background: 'rgba(13,17,23,0.97)', borderRadius: 20,
+              border: '1px solid rgba(241,239,232,0.1)',
+              backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+              padding: '28px 24px 20px', textAlign: 'center',
+            }}
+          >
+            <Icon name="block" size={40} style={{ color: '#ff4444', marginBottom: 12 }} />
+            <h3 style={{ fontFamily: FONT.headline, fontSize: 18, fontWeight: 700, color: C.text, marginBottom: 8 }}>
+              ¿Bloquear a {blockTarget.name}?
+            </h3>
+            <p style={{ fontSize: 13, color: C.textDim, fontFamily: FONT.body, marginBottom: 24, lineHeight: 1.5 }}>
+              No podrás recibir mensajes de esta persona.
+            </p>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <div
+                onClick={() => setShowBlockConfirm(false)}
+                style={{ flex: 1, padding: '12px 0', borderRadius: 12, background: 'rgba(255,255,255,0.05)', color: C.text, fontSize: 14, fontWeight: 600, fontFamily: FONT.body, cursor: 'pointer', textAlign: 'center' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+              >
+                Cancelar
+              </div>
+              <div
+                onClick={handleBlock}
+                style={{ flex: 1, padding: '12px 0', borderRadius: 12, background: '#ff4444', color: '#fff', fontSize: 14, fontWeight: 600, fontFamily: FONT.body, cursor: 'pointer', textAlign: 'center' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = '#e03030' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = '#ff4444' }}
+              >
+                Bloquear
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ REPORT MODAL ═══ */}
+      {showReportModal && reportTarget && (
+        <div
+          onClick={() => setShowReportModal(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 400, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%', maxWidth: 360,
+              background: 'rgba(13,17,23,0.97)', borderRadius: 20,
+              border: '1px solid rgba(241,239,232,0.1)',
+              backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+              padding: '24px', maxHeight: '80vh', overflowY: 'auto',
+            }}
+          >
+            <h3 style={{ fontFamily: FONT.headline, fontSize: 18, fontWeight: 700, color: C.text, marginBottom: 4 }}>
+              Reportar {reportTarget.name}
+            </h3>
+            <p style={{ fontSize: 12, color: C.textDim, fontFamily: FONT.body, marginBottom: 20 }}>
+              Selecciona una razón para el reporte
+            </p>
+            {['Spam', 'Acoso', 'Contenido inapropiado', 'Suplantación de identidad', 'Otro'].map(r => (
+              <div
+                key={r}
+                onClick={() => setReportReason(r)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 10, cursor: 'pointer', marginBottom: 4,
+                  background: reportReason === r ? 'rgba(104,219,174,0.1)' : 'transparent',
+                  border: reportReason === r ? `1px solid ${C.primary}` : '1px solid transparent',
+                  transition: 'all 0.15s',
+                }}
+              >
+                <div style={{
+                  width: 18, height: 18, borderRadius: 99,
+                  border: reportReason === r ? `5px solid ${C.primary}` : '2px solid rgba(241,239,232,0.2)',
+                  background: reportReason === r ? C.primary : 'transparent',
+                  flexShrink: 0, boxSizing: 'border-box',
+                }} />
+                <span style={{ fontSize: 14, color: C.text, fontFamily: FONT.body }}>{r}</span>
+              </div>
+            ))}
+            <textarea
+              placeholder="Detalles adicionales (opcional)"
+              value={reportDetails}
+              onChange={(e) => setReportDetails(e.target.value)}
+              style={{
+                width: '100%', marginTop: 12, background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(241,239,232,0.1)', borderRadius: 12,
+                padding: 12, color: C.text, fontSize: 13, fontFamily: FONT.body,
+                outline: 'none', resize: 'vertical', minHeight: 60, boxSizing: 'border-box',
+              }}
+            />
+            <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
+              <div
+                onClick={() => setShowReportModal(false)}
+                style={{ flex: 1, padding: '12px 0', borderRadius: 12, background: 'rgba(255,255,255,0.05)', color: C.text, fontSize: 14, fontWeight: 600, fontFamily: FONT.body, cursor: 'pointer', textAlign: 'center' }}
+              >
+                Cancelar
+              </div>
+              <div
+                onClick={handleSendReport}
+                style={{
+                  flex: 1, padding: '12px 0', borderRadius: 12,
+                  background: reportReason ? GRADIENT.primary : C.surfaceHigh,
+                  color: reportReason ? '#fff' : C.textFaint,
+                  fontSize: 14, fontWeight: 600, fontFamily: FONT.body,
+                  cursor: reportReason ? 'pointer' : 'default', textAlign: 'center',
+                }}
+              >
+                Enviar reporte
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ TOAST ═══ */}
+      {toastMsg && (
+        <div style={{
+          position: 'fixed', bottom: 100, left: '50%', transform: 'translateX(-50%)',
+          background: C.surfaceHigh, border: `1px solid ${C.primary}`,
+          borderRadius: 12, padding: '10px 20px', zIndex: 999,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+        }}>
+          <span style={{ fontSize: 13, color: C.text, fontFamily: FONT.body }}>{toastMsg}</span>
+        </div>
       )}
 
       <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
