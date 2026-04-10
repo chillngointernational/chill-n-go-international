@@ -760,34 +760,6 @@ export default function MessagesScreen({ onOpenChat }) {
           />
         </div>
 
-        {/* Active Now */}
-        {!loading && conversations.length > 0 && (
-          <div style={{ marginBottom: 24 }}>
-            <h2 style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: C.secondaryDark, fontWeight: 700, marginBottom: 16 }}>Active Now</h2>
-            <div style={{ display: 'flex', gap: 20, overflowX: 'auto' }}>
-              {conversations.slice(0, 6).map((c) => (
-                <div
-                  key={c.id}
-                  onClick={() => handleSelectConversation(c.id)}
-                  style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, cursor: 'pointer' }}
-                >
-                  <div style={{ position: 'relative' }}>
-                    <div style={{ width: 64, height: 64, borderRadius: 99, padding: 2, background: 'linear-gradient(to tr, #1D9E75, #B8956A)' }}>
-                      {c.avatar_url ? (
-                        <img src={c.avatar_url} alt="" style={{ width: '100%', height: '100%', borderRadius: 99, objectFit: 'cover', border: '2px solid #080C14' }} />
-                      ) : (
-                        <div style={{ width: '100%', height: '100%', borderRadius: 99, background: C.surfaceHigh, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #080C14', fontSize: 18, fontWeight: 600, color: C.text, fontFamily: FONT.headline }}>{c.initial}</div>
-                      )}
-                    </div>
-                    <div style={{ position: 'absolute', bottom: 4, right: 4, width: 14, height: 14, background: C.primaryBright, borderRadius: 99, border: '2px solid #080C14' }} />
-                  </div>
-                  <span style={{ fontSize: 11, fontWeight: 500, color: 'rgba(223,226,235,0.8)' }}>{c.name.split(' ')[0]}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Loading */}
         {loading && (
           <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
