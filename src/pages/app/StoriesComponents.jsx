@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext'
 
 /* ═══════════════════════════════════════════════════════
    CHILL N GO — ESTADOS / STORIES COMPONENTS
+   v2 — Likes con animación + Comentarios sheet
    ═══════════════════════════════════════════════════════ */
 
 function timeAgo(dateStr) {
@@ -32,6 +33,332 @@ const ProgressSegment = ({ active, completed, progress }) => (
         }} />
     </div>
 )
+
+/* ══════════════════════════════════════════════════
+   FLOATING HEARTS ANIMATION
+   ══════════════════════════════════════════════════ */
+function FloatingHearts({ show }) {
+    if (!show) return null
+    const hearts = Array.from({ length: 6 }, (_, i) => ({
+        id: i,
+        left: 40 + Math.random() * 20,
+        delay: Math.random() * 0.3,
+        size: 18 + Math.random() * 16,
+        drift: -20 + Math.random() * 40,
+    }))
+
+    return (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 50, pointerEvents: 'none', overflow: 'hidden' }}>
+            {hearts.map(h => (
+                <div key={h.id} style={{
+                    position: 'absolute',
+                    bottom: '15%',
+                    left: `${h.left}%`,
+                    fontSize: h.size,
+                    animation: `floatHeart 1.2s ease-out ${h.delay}s forwards`,
+                    opacity: 0,
+                }}>
+                    ❤️
+                </div>
+            ))}
+            <style>{`
+        @keyframes floatHeart {
+          0% { opacity: 0; transform: translateY(0) translateX(0) scale(0.3); }
+          15% { opacity: 1; transform: translateY(-30px) scale(1.1); }
+          100% { opacity: 0; transform: translateY(-200px) translateX(20px) scale(0.6) rotate(15deg); }
+        }
+      `}</style>
+        </div>
+    )
+}
+
+/* ══════════════════════════════════════════════════
+   BIG HEART FLASH (double tap)
+   ══════════════════════════════════════════════════ */
+function BigHeartFlash({ show }) {
+    if (!show) return null
+    return (
+        <div style={{
+            position: 'absolute', inset: 0, zIndex: 45,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            pointerEvents: 'none',
+        }}>
+            <div style={{
+                fontSize: 80,
+                animation: 'bigHeartPop 0.8s ease-out forwards',
+            }}>
+                ❤️
+            </div>
+            <style>{`
+        @keyframes bigHeartPop {
+          0% { opacity: 0; transform: scale(0.2); }
+          15% { opacity: 1; transform: scale(1.3); }
+          30% { transform: scale(0.95); }
+          45% { transform: scale(1.1); }
+          100% { opacity: 0; transform: scale(1.4); }
+        }
+      `}</style>
+        </div>
+    )
+}
+
+/* ══════════════════════════════════════════════════
+   COMMENTS SHEET
+   ══════════════════════════════════════════════════ */
+function CommentsSheet({ open, onClose, storyId, currentUserId, setPaused }) {
+    const [comments, setComments] = useState([])
+    const [loading, setLoading] = useState(true)
+    const [newComment, setNewComment] = useState('')
+    const [sending, setSending] = useState(false)
+    const inputRef = useRef(null)
+    const listRef = useRef(null)
+
+    useEffect(() => {
+        if (!open || !storyId) return
+        setPaused(true)
+        setLoading(true)
+        const fetchComments = async () => {
+            try {
+                const { data: replies, error } = await supabase
+                    .from('cng_story_replies')
+                    .select('*')
+                    .eq('story_id', storyId)
+                    .order('created_at', { ascending: true })
+
+                if (error) throw error
+
+                const senderIds = [...new Set((replies || []).map(r => r.sender_id))]
+                let profileMap = {}
+                if (senderIds.length > 0) {
+                    const { data: profiles } = await supabase
+                        .from('cng_members')
+                        .select('user_id, full_name, ref_code, avatar_url')
+                        .in('user_id', senderIds)
+                        ; (profiles || []).forEach(p => { profileMap[p.user_id] = p })
+                }
+
+                const mapped = (replies || []).map(r => ({
+                    ...r,
+                    sender_name: profileMap[r.sender_id]?.full_name || profileMap[r.sender_id]?.ref_code || 'User',
+                    sender_avatar: profileMap[r.sender_id]?.avatar_url,
+                }))
+
+                setComments(mapped)
+            } catch (e) {
+                console.error('Error fetching comments:', e)
+            } finally {
+                setLoading(false)
+            }
+        }
+        fetchComments()
+        setTimeout(() => inputRef.current?.focus(), 300)
+    }, [open, storyId])
+
+    useEffect(() => {
+        if (listRef.current) {
+            listRef.current.scrollTop = listRef.current.scrollHeight
+        }
+    }, [comments])
+
+    const handleSend = async () => {
+        if (!newComment.trim() || sending) return
+        setSending(true)
+        try {
+            const { data, error } = await supabase
+                .from('cng_story_replies')
+                .insert({
+                    story_id: storyId,
+                    sender_id: currentUserId,
+                    content: newComment.trim(),
+                })
+                .select()
+                .single()
+
+            if (error) throw error
+
+            const { data: profile } = await supabase
+                .from('cng_members')
+                .select('full_name, ref_code, avatar_url')
+                .eq('user_id', currentUserId)
+                .maybeSingle()
+
+            setComments(prev => [...prev, {
+                ...data,
+                sender_name: profile?.full_name || profile?.ref_code || 'You',
+                sender_avatar: profile?.avatar_url,
+            }])
+            setNewComment('')
+        } catch (e) {
+            console.error('Error sending comment:', e)
+        } finally {
+            setSending(false)
+        }
+    }
+
+    const handleClose = () => {
+        setPaused(false)
+        onClose()
+    }
+
+    if (!open) return null
+
+    return (
+        <>
+            <div onClick={handleClose} style={{
+                position: 'absolute', inset: 0, zIndex: 35,
+                background: 'rgba(0,0,0,0.4)',
+            }} />
+
+            <div style={{
+                position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 40,
+                background: C.surface, borderRadius: '20px 20px 0 0',
+                maxHeight: '65vh', display: 'flex', flexDirection: 'column',
+                animation: 'sheetSlideUp 0.3s ease',
+                border: '1px solid rgba(255,255,255,0.06)',
+                borderBottom: 'none',
+            }} onClick={(e) => e.stopPropagation()}>
+
+                <div style={{ padding: '12px 0 4px', flexShrink: 0 }}>
+                    <div style={{
+                        width: 36, height: 4, borderRadius: 99, background: 'rgba(255,255,255,0.15)',
+                        margin: '0 auto',
+                    }} />
+                </div>
+
+                <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '8px 20px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)',
+                    flexShrink: 0,
+                }}>
+                    <h3 style={{
+                        fontSize: 16, fontWeight: 700, color: C.text, fontFamily: FONT.headline, margin: 0,
+                    }}>
+                        Comentarios
+                    </h3>
+                    <span style={{ fontSize: 13, color: C.textFaint, fontFamily: FONT.body }}>
+                        {comments.length} {comments.length === 1 ? 'comentario' : 'comentarios'}
+                    </span>
+                </div>
+
+                <div ref={listRef} style={{
+                    flex: 1, overflowY: 'auto', padding: '12px 20px',
+                    minHeight: 100,
+                }}>
+                    {loading && (
+                        <div style={{ display: 'flex', justifyContent: 'center', padding: 32 }}>
+                            <div style={{
+                                width: 24, height: 24,
+                                border: '3px solid rgba(104,219,174,0.3)', borderTopColor: C.primary,
+                                borderRadius: 99, animation: 'spin 0.8s linear infinite',
+                            }} />
+                        </div>
+                    )}
+
+                    {!loading && comments.length === 0 && (
+                        <div style={{ textAlign: 'center', padding: '32px 0' }}>
+                            <Icon name="chat_bubble_outline" size={40} style={{ color: C.textFaint, marginBottom: 8 }} />
+                            <p style={{ fontSize: 14, color: C.textFaint, fontFamily: FONT.body, margin: 0 }}>
+                                Sé el primero en comentar
+                            </p>
+                        </div>
+                    )}
+
+                    {comments.map((c, i) => (
+                        <div key={c.id || i} style={{
+                            display: 'flex', gap: 12, marginBottom: 16,
+                            animation: `fadeSlideIn 0.25s ease ${i * 0.05}s both`,
+                        }}>
+                            <div style={{
+                                width: 36, height: 36, borderRadius: 99, overflow: 'hidden', flexShrink: 0,
+                            }}>
+                                {c.sender_avatar ? (
+                                    <img src={c.sender_avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                ) : (
+                                    <div style={{
+                                        width: '100%', height: '100%', background: C.surfaceHigh,
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        fontSize: 14, fontWeight: 700, color: C.text, fontFamily: FONT.headline,
+                                    }}>
+                                        {(c.sender_name || 'U')[0].toUpperCase()}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 2 }}>
+                                    <span style={{
+                                        fontSize: 13, fontWeight: 700, color: C.text, fontFamily: FONT.headline,
+                                    }}>
+                                        {c.sender_name}
+                                    </span>
+                                    <span style={{ fontSize: 11, color: C.textFaint, fontFamily: FONT.body }}>
+                                        {timeAgo(c.created_at)}
+                                    </span>
+                                </div>
+                                <p style={{
+                                    fontSize: 14, color: C.textMuted, fontFamily: FONT.body,
+                                    lineHeight: 1.5, margin: 0, wordBreak: 'break-word',
+                                }}>
+                                    {c.content}
+                                </p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                <div style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '12px 16px 28px',
+                    borderTop: '1px solid rgba(255,255,255,0.06)',
+                    background: C.surface, flexShrink: 0,
+                }}>
+                    <div style={{
+                        flex: 1, display: 'flex', alignItems: 'center',
+                        background: 'rgba(255,255,255,0.06)', borderRadius: 99,
+                        padding: '10px 16px', border: '1px solid rgba(255,255,255,0.08)',
+                    }}>
+                        <input
+                            ref={inputRef}
+                            value={newComment}
+                            onChange={(e) => setNewComment(e.target.value)}
+                            placeholder="Escribe un comentario..."
+                            style={{
+                                flex: 1, background: 'none', border: 'none', outline: 'none',
+                                color: C.text, fontSize: 14, fontFamily: FONT.body,
+                            }}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleSend() }}
+                        />
+                    </div>
+                    <div
+                        onClick={handleSend}
+                        style={{
+                            width: 40, height: 40, borderRadius: 99,
+                            background: newComment.trim() ? GRADIENT.primary : 'rgba(255,255,255,0.06)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            cursor: newComment.trim() ? 'pointer' : 'default',
+                            transition: 'all 0.2s',
+                            opacity: sending ? 0.5 : 1,
+                        }}
+                    >
+                        <Icon name="send" size={18} style={{ color: newComment.trim() ? '#fff' : C.textFaint }} />
+                    </div>
+                </div>
+            </div>
+
+            <style>{`
+        @keyframes sheetSlideUp {
+          from { transform: translateY(100%); }
+          to { transform: translateY(0); }
+        }
+        @keyframes fadeSlideIn {
+          from { opacity: 0; transform: translateY(8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes spin { to { transform: rotate(360deg) } }
+      `}</style>
+        </>
+    )
+}
 
 /* ══════════════════════════════════════════════════
    STORY RING — Avatar with gradient ring
@@ -103,6 +430,7 @@ export function StoryRing({ user, size = 64, seen = false, onClick, isOwn = fals
 
 /* ══════════════════════════════════════════════════
    STORY VIEWER — Full screen experience
+   With Like animation + Comments sheet
    ══════════════════════════════════════════════════ */
 export function StoryViewer({ storyUsers, startUserIndex, onClose, currentUserId }) {
     const [userIndex, setUserIndex] = useState(startUserIndex)
@@ -119,13 +447,44 @@ export function StoryViewer({ storyUsers, startUserIndex, onClose, currentUserId
     const timerRef = useRef(null)
     const STORY_DURATION = 5000
 
+    // Like state
+    const [liked, setLiked] = useState(false)
+    const [showFloatingHearts, setShowFloatingHearts] = useState(false)
+    const [showBigHeart, setShowBigHeart] = useState(false)
+    const [localLikesCount, setLocalLikesCount] = useState(0)
+    const lastTapTime = useRef(0)
+
+    // Comments state
+    const [commentsOpen, setCommentsOpen] = useState(false)
+
     const currentStoryUser = storyUsers[userIndex]
     const currentStory = currentStoryUser?.stories?.[storyIndex]
+
+    // Check if already liked when story changes
+    useEffect(() => {
+        if (!currentStory || !currentUserId) return
+        setLocalLikesCount(currentStory.likes_count || 0)
+
+        const checkLike = async () => {
+            try {
+                const { data } = await supabase
+                    .from('cng_story_reactions')
+                    .select('id')
+                    .eq('story_id', currentStory.id)
+                    .eq('user_id', currentUserId)
+                    .maybeSingle()
+                setLiked(!!data)
+            } catch {
+                setLiked(false)
+            }
+        }
+        checkLike()
+    }, [currentStory?.id, currentUserId])
 
     // Register view
     useEffect(() => {
         if (!currentStory || !currentUserId) return
-        if (currentStoryUser.user_id === currentUserId) return // don't count own views
+        if (currentStoryUser.user_id === currentUserId) return
         supabase
             .from('cng_story_views')
             .upsert(
@@ -154,14 +513,9 @@ export function StoryViewer({ storyUsers, startUserIndex, onClose, currentUserId
     const goNext = useCallback(() => {
         if (!currentStoryUser) { onClose(); return }
         if (storyIndex < currentStoryUser.stories.length - 1) {
-            setStoryIndex(i => i + 1)
-            setProgress(0)
-            setImageLoaded(false)
+            setStoryIndex(i => i + 1); setProgress(0); setImageLoaded(false)
         } else if (userIndex < storyUsers.length - 1) {
-            setUserIndex(i => i + 1)
-            setStoryIndex(0)
-            setProgress(0)
-            setImageLoaded(false)
+            setUserIndex(i => i + 1); setStoryIndex(0); setProgress(0); setImageLoaded(false)
         } else {
             onClose()
         }
@@ -169,34 +523,91 @@ export function StoryViewer({ storyUsers, startUserIndex, onClose, currentUserId
 
     const goPrev = useCallback(() => {
         if (storyIndex > 0) {
-            setStoryIndex(i => i - 1)
-            setProgress(0)
-            setImageLoaded(false)
+            setStoryIndex(i => i - 1); setProgress(0); setImageLoaded(false)
         } else if (userIndex > 0) {
             setUserIndex(i => i - 1)
             const prevUser = storyUsers[userIndex - 1]
-            setStoryIndex(prevUser.stories.length - 1)
-            setProgress(0)
-            setImageLoaded(false)
+            setStoryIndex(prevUser.stories.length - 1); setProgress(0); setImageLoaded(false)
         }
     }, [storyIndex, userIndex, storyUsers])
 
+    // Like / Unlike
+    const toggleLike = async () => {
+        if (!currentStory || !currentUserId) return
+
+        if (liked) {
+            setLiked(false)
+            setLocalLikesCount(prev => Math.max(prev - 1, 0))
+            try {
+                await supabase
+                    .from('cng_story_reactions')
+                    .delete()
+                    .eq('story_id', currentStory.id)
+                    .eq('user_id', currentUserId)
+            } catch (e) {
+                console.error('Error unliking:', e)
+                setLiked(true)
+                setLocalLikesCount(prev => prev + 1)
+            }
+        } else {
+            setLiked(true)
+            setLocalLikesCount(prev => prev + 1)
+            setShowFloatingHearts(true)
+            setTimeout(() => setShowFloatingHearts(false), 1500)
+
+            try {
+                await supabase
+                    .from('cng_story_reactions')
+                    .upsert(
+                        { story_id: currentStory.id, user_id: currentUserId, reaction: 'like' },
+                        { onConflict: 'story_id,user_id' }
+                    )
+            } catch (e) {
+                console.error('Error liking:', e)
+                setLiked(false)
+                setLocalLikesCount(prev => Math.max(prev - 1, 0))
+            }
+        }
+    }
+
+    // Double tap to like
     const handleTap = (e) => {
-        if (showOptions) { setShowOptions(false); return }
+        if (showOptions || commentsOpen) {
+            setShowOptions(false)
+            return
+        }
+
+        const now = Date.now()
         const rect = e.currentTarget.getBoundingClientRect()
         const x = e.clientX - rect.left
-        const third = rect.width / 3
-        if (x < third) goPrev()
-        else if (x > third * 2) goNext()
+
+        if (now - lastTapTime.current < 300) {
+            if (!liked) toggleLike()
+            setShowBigHeart(true)
+            setTimeout(() => setShowBigHeart(false), 900)
+            lastTapTime.current = 0
+            return
+        }
+
+        lastTapTime.current = now
+
+        setTimeout(() => {
+            if (lastTapTime.current !== now) return
+            const third = rect.width / 3
+            if (x < third) goPrev()
+            else if (x > third * 2) goNext()
+        }, 310)
     }
 
     // Swipe
     const handleTouchStart = (e) => {
+        if (commentsOpen) return
         touchStartX.current = e.touches[0].clientX
         touchStartY.current = e.touches[0].clientY
         setPaused(true)
     }
     const handleTouchMove = (e) => {
+        if (commentsOpen) return
         const dx = e.touches[0].clientX - touchStartX.current
         const dy = e.touches[0].clientY - touchStartY.current
         if (Math.abs(dx) > Math.abs(dy)) {
@@ -205,6 +616,7 @@ export function StoryViewer({ storyUsers, startUserIndex, onClose, currentUserId
         }
     }
     const handleTouchEnd = () => {
+        if (commentsOpen) return
         setPaused(false)
         if (swiping) {
             if (swipeX < -60 && userIndex < storyUsers.length - 1) {
@@ -229,19 +641,7 @@ export function StoryViewer({ storyUsers, startUserIndex, onClose, currentUserId
             })
             setReplyText('')
         } catch (e) {
-            console.error('Error sending story reply:', e)
-        }
-    }
-
-    const handleLike = async () => {
-        if (!currentStory || !currentUserId) return
-        try {
-            await supabase.from('cng_story_reactions').upsert(
-                { story_id: currentStory.id, user_id: currentUserId, reaction: 'like' },
-                { onConflict: 'story_id,user_id' }
-            )
-        } catch (e) {
-            console.error('Error liking story:', e)
+            console.error('Error sending reply:', e)
         }
     }
 
@@ -283,13 +683,17 @@ export function StoryViewer({ storyUsers, startUserIndex, onClose, currentUserId
             {/* Tap zones */}
             <div style={{ position: 'absolute', inset: 0, zIndex: 10, display: 'flex' }}
                 onClick={handleTap}
-                onPointerDown={() => setPaused(true)}
-                onPointerUp={() => setPaused(false)}
+                onPointerDown={() => { if (!commentsOpen) setPaused(true) }}
+                onPointerUp={() => { if (!commentsOpen) setPaused(false) }}
             >
                 <div style={{ flex: 1 }} />
                 <div style={{ flex: 1 }} />
                 <div style={{ flex: 1 }} />
             </div>
+
+            {/* Animations */}
+            <FloatingHearts show={showFloatingHearts} />
+            <BigHeartFlash show={showBigHeart} />
 
             {/* Progress Bars */}
             <div style={{
@@ -352,7 +756,7 @@ export function StoryViewer({ storyUsers, startUserIndex, onClose, currentUserId
                 </div>
             </div>
 
-            {/* Caption + stats */}
+            {/* Caption + Stats */}
             <div style={{
                 position: 'absolute', bottom: 90, left: 0, right: 0, zIndex: 15,
                 padding: '0 20px',
@@ -371,16 +775,16 @@ export function StoryViewer({ storyUsers, startUserIndex, onClose, currentUserId
                         {currentStory.views_count || 0}
                     </span>
                     <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', fontFamily: FONT.body, display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <Icon name="favorite" size={14} style={{ color: 'rgba(255,255,255,0.4)' }} />
-                        {currentStory.likes_count || 0}
+                        <Icon name="favorite" size={14} style={{ color: liked ? '#E5484D' : 'rgba(255,255,255,0.4)' }} />
+                        {localLikesCount}
                     </span>
                 </div>
             </div>
 
-            {/* Reply Input */}
-            {currentStoryUser.user_id !== currentUserId && (
+            {/* Bottom Action Bar */}
+            {currentStoryUser.user_id !== currentUserId && !commentsOpen && (
                 <div style={{
-                    display: 'flex', alignItems: 'center', gap: 12, padding: '0 16px',
+                    display: 'flex', alignItems: 'center', gap: 10, padding: '0 16px',
                     position: 'absolute', bottom: 32, left: 0, right: 0, zIndex: 20,
                 }}>
                     <div style={{
@@ -403,16 +807,47 @@ export function StoryViewer({ storyUsers, startUserIndex, onClose, currentUserId
                             onKeyDown={(e) => { if (e.key === 'Enter') handleSendReply() }}
                         />
                     </div>
+
+                    {/* Send */}
                     <div style={{ cursor: 'pointer', padding: 4, zIndex: 25 }}
                         onClick={(e) => { e.stopPropagation(); handleSendReply() }}>
-                        <Icon name="send" size={24} style={{ color: C.primaryBright }} />
+                        <Icon name="send" size={22} style={{ color: replyText.trim() ? C.primaryBright : 'rgba(255,255,255,0.4)' }} />
                     </div>
+
+                    {/* Like */}
+                    <div style={{
+                        cursor: 'pointer', padding: 4, zIndex: 25,
+                        transition: 'transform 0.2s',
+                        transform: liked ? 'scale(1.15)' : 'scale(1)',
+                    }}
+                        onClick={(e) => { e.stopPropagation(); toggleLike() }}>
+                        <Icon
+                            name={liked ? 'favorite' : 'favorite_border'}
+                            size={24}
+                            style={{
+                                color: liked ? '#E5484D' : '#fff',
+                                transition: 'color 0.2s',
+                                ...(liked ? { fontVariationSettings: "'FILL' 1, 'wght' 400" } : {}),
+                            }}
+                        />
+                    </div>
+
+                    {/* Comments */}
                     <div style={{ cursor: 'pointer', padding: 4, zIndex: 25 }}
-                        onClick={(e) => { e.stopPropagation(); handleLike() }}>
-                        <Icon name="favorite" size={24} style={{ color: '#fff' }} />
+                        onClick={(e) => { e.stopPropagation(); setCommentsOpen(true) }}>
+                        <Icon name="chat_bubble_outline" size={22} style={{ color: '#fff' }} />
                     </div>
                 </div>
             )}
+
+            {/* Comments Sheet */}
+            <CommentsSheet
+                open={commentsOpen}
+                onClose={() => setCommentsOpen(false)}
+                storyId={currentStory?.id}
+                currentUserId={currentUserId}
+                setPaused={setPaused}
+            />
 
             {/* Options Sheet */}
             {showOptions && (
@@ -459,7 +894,7 @@ export function CreateStory({ onClose, onPost, currentUserId }) {
     const [previewUrl, setPreviewUrl] = useState(null)
     const [caption, setCaption] = useState('')
     const [category, setCategory] = useState(null)
-    const [step, setStep] = useState('capture') // capture | preview
+    const [step, setStep] = useState('capture')
     const [uploading, setUploading] = useState(false)
     const fileInputRef = useRef(null)
 
@@ -514,7 +949,6 @@ export function CreateStory({ onClose, onPost, currentUserId }) {
         }
     }
 
-    // Preview step
     if (step === 'preview' && previewUrl) {
         return (
             <div style={{
@@ -556,14 +990,11 @@ export function CreateStory({ onClose, onPost, currentUserId }) {
                     </div>
                 </div>
 
-                {/* Category Tags */}
                 <div style={{ padding: 16, flexShrink: 0 }}>
                     <p style={{
                         fontSize: 11, color: C.textFaint, fontFamily: FONT.body, marginBottom: 10,
                         textTransform: 'uppercase', letterSpacing: 1,
-                    }}>
-                        Categoría
-                    </p>
+                    }}>Categoría</p>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                         {categories.map((cat) => (
                             <div
@@ -577,14 +1008,11 @@ export function CreateStory({ onClose, onPost, currentUserId }) {
                                     color: category === cat.id ? '#fff' : C.textMuted,
                                     border: `1px solid ${category === cat.id ? cat.color : 'rgba(255,255,255,0.1)'}`,
                                 }}
-                            >
-                                {cat.label}
-                            </div>
+                            >{cat.label}</div>
                         ))}
                     </div>
                 </div>
 
-                {/* Publish Button */}
                 <div style={{ padding: '8px 16px 32px', flexShrink: 0 }}>
                     <div
                         onClick={handlePublish}
@@ -599,10 +1027,7 @@ export function CreateStory({ onClose, onPost, currentUserId }) {
                     >
                         {uploading ? (
                             <>
-                                <div style={{
-                                    width: 18, height: 18, border: '2px solid rgba(255,255,255,0.3)',
-                                    borderTopColor: '#fff', borderRadius: 99, animation: 'spin 0.8s linear infinite',
-                                }} />
+                                <div style={{ width: 18, height: 18, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: 99, animation: 'spin 0.8s linear infinite' }} />
                                 Publicando...
                             </>
                         ) : (
@@ -613,27 +1038,18 @@ export function CreateStory({ onClose, onPost, currentUserId }) {
                         )}
                     </div>
                 </div>
-
                 <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
             </div>
         )
     }
 
-    // Capture step
     return (
         <div style={{
             position: 'fixed', inset: 0, zIndex: 9999, background: C.bg,
             display: 'flex', flexDirection: 'column',
         }}>
-            <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*,video/*"
-                onChange={handleFileSelect}
-                style={{ display: 'none' }}
-            />
+            <input ref={fileInputRef} type="file" accept="image/*,video/*" onChange={handleFileSelect} style={{ display: 'none' }} />
 
-            {/* Header */}
             <div style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 padding: 16, flexShrink: 0,
@@ -645,7 +1061,6 @@ export function CreateStory({ onClose, onPost, currentUserId }) {
                 <div style={{ width: 32 }} />
             </div>
 
-            {/* Camera Preview Area */}
             <div
                 onClick={() => fileInputRef.current?.click()}
                 style={{
@@ -679,7 +1094,6 @@ export function CreateStory({ onClose, onPost, currentUserId }) {
                 </div>
             </div>
 
-            {/* Hint text */}
             <div style={{ padding: '24px 16px', textAlign: 'center' }}>
                 <p style={{ fontSize: 13, color: C.textFaint, fontFamily: FONT.body }}>
                     Los estados desaparecen después de 24 horas
