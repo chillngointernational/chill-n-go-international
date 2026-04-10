@@ -3,6 +3,7 @@ import { C, FONT, Icon, GRADIENT } from '../../stitch'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import TopBar from '../../components/TopBar'
+import { StoryRing, StoryViewer, CreateStory } from './StoriesComponents'
 
 function timeAgo(dateStr) {
   const diff = Date.now() - new Date(dateStr).getTime()
@@ -249,7 +250,6 @@ function NewGroupModal({ open, onClose, onSelectConversation, user }) {
     if (!groupName.trim() || selectedUsers.length === 0 || creating) return
     setCreating(true)
     try {
-      // 1. Crear el registro de la conversación tipo grupo
       const { data: newConv, error: convErr } = await supabase
         .from('cng_conversations')
         .insert({
@@ -262,13 +262,11 @@ function NewGroupModal({ open, onClose, onSelectConversation, user }) {
         .single()
       if (convErr) throw convErr
 
-      // 2. Preparar el array de miembros a insertar (El creador + los seleccionados)
       const membersToInsert = [
         { conversation_id: newConv.id, user_id: user.id, role: 'admin' },
         ...selectedUsers.map(u => ({ conversation_id: newConv.id, user_id: u.user_id, role: 'member' }))
       ]
 
-      // 3. Insertar todos los miembros de un jalón
       const { error: membErr } = await supabase.from('cng_conversation_members').insert(membersToInsert)
       if (membErr) throw membErr
 
@@ -322,7 +320,6 @@ function NewGroupModal({ open, onClose, onSelectConversation, user }) {
             }}
           />
 
-          {/* Selected Users horizontally */}
           {selectedUsers.length > 0 && (
             <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 8 }}>
               {selectedUsers.map(u => (
@@ -403,7 +400,6 @@ function NewGroupModal({ open, onClose, onSelectConversation, user }) {
           })}
         </div>
 
-        {/* Footer Create Button */}
         <div style={{ padding: 16, borderTop: '1px solid rgba(255,255,255,0.05)' }}>
           <button
             onClick={handleCreateGroup}
@@ -424,18 +420,122 @@ function NewGroupModal({ open, onClose, onSelectConversation, user }) {
   )
 }
 
-/* ── Main Messages Screen ── */
+/* ══════════════════════════════════════════════════════════
+   MAIN MESSAGES SCREEN — with Stories Tray
+   ══════════════════════════════════════════════════════════ */
 export default function MessagesScreen({ onOpenChat }) {
   const { user } = useAuth()
   const [conversations, setConversations] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
 
-  // States for Modals and Menus
+  // Modal states
   const [showMenu, setShowMenu] = useState(false)
   const [showNewMsg, setShowNewMsg] = useState(false)
   const [showNewGroup, setShowNewGroup] = useState(false)
 
+  // ═══ STORIES STATE ═══
+  const [storyUsers, setStoryUsers] = useState([])   // grouped by user
+  const [storiesLoading, setStoriesLoading] = useState(true)
+  const [viewedStoryIds, setViewedStoryIds] = useState(new Set())
+  const [viewerOpen, setViewerOpen] = useState(false)
+  const [viewerStartIndex, setViewerStartIndex] = useState(0)
+  const [createStoryOpen, setCreateStoryOpen] = useState(false)
+  const [myStories, setMyStories] = useState([])       // current user's own stories
+
+  /* ── Fetch Stories ── */
+  const fetchStories = useCallback(async () => {
+    if (!user) { setStoriesLoading(false); return }
+    try {
+      // 1. Get all active stories
+      const { data: stories, error: stErr } = await supabase
+        .from('cng_stories')
+        .select('*')
+        .gt('expires_at', new Date().toISOString())
+        .order('created_at', { ascending: true })
+
+      if (stErr) throw stErr
+      if (!stories || stories.length === 0) {
+        setStoryUsers([])
+        setMyStories([])
+        setStoriesLoading(false)
+        return
+      }
+
+      // 2. Get which stories current user has viewed
+      const storyIds = stories.map(s => s.id)
+      const { data: views } = await supabase
+        .from('cng_story_views')
+        .select('story_id')
+        .eq('viewer_id', user.id)
+        .in('story_id', storyIds)
+
+      const viewedIds = new Set((views || []).map(v => v.story_id))
+      setViewedStoryIds(viewedIds)
+
+      // 3. Get unique user_ids from stories
+      const userIds = [...new Set(stories.map(s => s.user_id))]
+
+      // 4. Fetch profiles for those users
+      const { data: profiles } = await supabase
+        .from('cng_members')
+        .select('user_id, full_name, ref_code, avatar_url')
+        .in('user_id', userIds)
+
+      const profileMap = {}
+        ; (profiles || []).forEach(p => { profileMap[p.user_id] = p })
+
+      // 5. Group stories by user
+      const grouped = {}
+      stories.forEach(s => {
+        if (!grouped[s.user_id]) {
+          const profile = profileMap[s.user_id] || {}
+          grouped[s.user_id] = {
+            user_id: s.user_id,
+            full_name: profile.full_name || profile.ref_code || 'User',
+            ref_code: profile.ref_code,
+            avatar_url: profile.avatar_url,
+            stories: [],
+          }
+        }
+        grouped[s.user_id].stories.push(s)
+      })
+
+      // 6. Separate own stories from others
+      const own = grouped[user.id]?.stories || []
+      setMyStories(own)
+
+      // 7. Build array for other users, unseen first
+      const otherUsers = Object.values(grouped).filter(u => u.user_id !== user.id)
+
+      // Sort: unseen users first, then seen
+      otherUsers.sort((a, b) => {
+        const aAllSeen = a.stories.every(s => viewedIds.has(s.id))
+        const bAllSeen = b.stories.every(s => viewedIds.has(s.id))
+        if (aAllSeen === bAllSeen) return 0
+        return aAllSeen ? 1 : -1
+      })
+
+      setStoryUsers(otherUsers)
+    } catch (e) {
+      console.error('Error fetching stories:', e)
+    } finally {
+      setStoriesLoading(false)
+    }
+  }, [user])
+
+  useEffect(() => { fetchStories() }, [fetchStories])
+
+  const openStoryViewer = (index) => {
+    setViewerStartIndex(index)
+    setViewerOpen(true)
+  }
+
+  const isUserAllSeen = (storyUser) => {
+    return storyUser.stories.every(s => viewedStoryIds.has(s.id))
+  }
+
+  /* ── Fetch Conversations ── */
   const fetchConversations = useCallback(async () => {
     if (!user) { setLoading(false); return }
     try {
@@ -513,7 +613,7 @@ export default function MessagesScreen({ onOpenChat }) {
 
   useEffect(() => { fetchConversations() }, [fetchConversations])
 
-  /* ── Realtime: listen for new messages to update list ────────── */
+  /* ── Realtime: listen for new messages ── */
   useEffect(() => {
     if (!user) return
 
@@ -591,12 +691,64 @@ export default function MessagesScreen({ onOpenChat }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', position: 'relative' }}>
-      <TopBar
-        title="Messages"
-        leftIcon="menu"
-      // rightContent removed as requested
-      />
+      <TopBar title="Messages" leftIcon="menu" />
+
       <div style={{ padding: '0 24px', paddingBottom: 100 }}>
+
+        {/* ═══ STORIES / ESTADOS TRAY ═══ */}
+        <div style={{ marginBottom: 20 }}>
+          <h2 style={{
+            fontSize: 10, letterSpacing: 3, textTransform: 'uppercase',
+            color: C.secondaryDark || '#B8956A', fontWeight: 700, marginBottom: 14,
+          }}>
+            Estados
+          </h2>
+
+          <div style={{
+            display: 'flex', gap: 14, overflowX: 'auto', paddingBottom: 4,
+            scrollbarWidth: 'none', msOverflowStyle: 'none',
+          }}>
+            {/* Own Story Ring */}
+            <StoryRing
+              user={{
+                full_name: 'Tu estado',
+                avatar_url: null,
+              }}
+              size={64}
+              isOwn={true}
+              seen={myStories.length > 0}
+              onClick={() => setCreateStoryOpen(true)}
+            />
+
+            {/* Other users' stories */}
+            {storyUsers.map((su, i) => (
+              <StoryRing
+                key={su.user_id}
+                user={su}
+                size={64}
+                seen={isUserAllSeen(su)}
+                onClick={() => openStoryViewer(i)}
+              />
+            ))}
+
+            {/* Loading placeholder */}
+            {storiesLoading && (
+              <div style={{
+                width: 80, height: 90, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <div style={{
+                  width: 20, height: 20,
+                  border: '2px solid rgba(104,219,174,0.3)', borderTopColor: C.primary,
+                  borderRadius: 99, animation: 'spin 0.8s linear infinite',
+                }} />
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Divider */}
+        <div style={{ height: 1, background: 'rgba(255,255,255,0.04)', marginBottom: 20 }} />
+
         {/* Search */}
         <div style={{ position: 'relative', marginBottom: 24 }}>
           <Icon name="search" size={20} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: C.textFaint }} />
@@ -713,17 +865,15 @@ export default function MessagesScreen({ onOpenChat }) {
         </div>
       </div>
 
-      {/* --- Floating Action Button (FAB) and Menu --- */}
+      {/* ── FAB and Menu ── */}
       <div style={{
         position: 'fixed', bottom: 90, right: 20, zIndex: 100,
         display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 16
       }}>
-
-        {/* Menu Options */}
         {showMenu && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-end' }}>
             <div
-              onClick={() => { setShowMenu(false); setShowNewGroup(true); }}
+              onClick={() => { setShowMenu(false); setShowNewGroup(true) }}
               style={{ display: 'flex', alignItems: 'center', gap: 12, background: C.surfaceHigh, padding: '10px 16px', borderRadius: 99, cursor: 'pointer', boxShadow: '0 8px 24px rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.05)' }}
             >
               <span style={{ fontSize: 14, fontWeight: 600, color: C.text, fontFamily: FONT.headline }}>New Group</span>
@@ -731,7 +881,7 @@ export default function MessagesScreen({ onOpenChat }) {
             </div>
 
             <div
-              onClick={() => { setShowMenu(false); setShowNewMsg(true); }}
+              onClick={() => { setShowMenu(false); setShowNewMsg(true) }}
               style={{ display: 'flex', alignItems: 'center', gap: 12, background: C.surfaceHigh, padding: '10px 16px', borderRadius: 99, cursor: 'pointer', boxShadow: '0 8px 24px rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.05)' }}
             >
               <span style={{ fontSize: 14, fontWeight: 600, color: C.text, fontFamily: FONT.headline }}>New Chat</span>
@@ -740,7 +890,6 @@ export default function MessagesScreen({ onOpenChat }) {
           </div>
         )}
 
-        {/* FAB Button */}
         <div
           onClick={() => setShowMenu(!showMenu)}
           style={{
@@ -754,29 +903,34 @@ export default function MessagesScreen({ onOpenChat }) {
         </div>
       </div>
 
-      {/* Background overlay to close menu when clicking outside */}
       {showMenu && (
-        <div
-          onClick={() => setShowMenu(false)}
-          style={{ position: 'fixed', inset: 0, zIndex: 90 }}
-        />
+        <div onClick={() => setShowMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 90 }} />
       )}
 
       {/* Modals */}
-      <NewMessageModal
-        open={showNewMsg}
-        onClose={() => setShowNewMsg(false)}
-        onSelectConversation={handleSelectConversation}
-        user={user}
-      />
+      <NewMessageModal open={showNewMsg} onClose={() => setShowNewMsg(false)} onSelectConversation={handleSelectConversation} user={user} />
+      <NewGroupModal open={showNewGroup} onClose={() => setShowNewGroup(false)} onSelectConversation={handleSelectConversation} user={user} />
 
-      <NewGroupModal
-        open={showNewGroup}
-        onClose={() => setShowNewGroup(false)}
-        onSelectConversation={handleSelectConversation}
-        user={user}
-      />
+      {/* ═══ Story Viewer ═══ */}
+      {viewerOpen && storyUsers.length > 0 && (
+        <StoryViewer
+          storyUsers={storyUsers}
+          startUserIndex={viewerStartIndex}
+          onClose={() => { setViewerOpen(false); fetchStories() }}
+          currentUserId={user?.id}
+        />
+      )}
 
+      {/* ═══ Create Story ═══ */}
+      {createStoryOpen && (
+        <CreateStory
+          onClose={() => setCreateStoryOpen(false)}
+          onPost={() => fetchStories()}
+          currentUserId={user?.id}
+        />
+      )}
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
     </div>
   )
 }
