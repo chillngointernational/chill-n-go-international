@@ -165,6 +165,100 @@ function StoryReplyBadge({ storyId, isMine }) {
   )
 }
 
+/* ── PollCard component ─────────────────────────────────── */
+function PollCard({ pollId, conversationId, userId, isMine, pollsCache, setPollsCache, pollVotesCache, setPollVotesCache }) {
+  const [poll, setPoll] = useState(pollsCache[pollId] || null)
+  const [votes, setVotes] = useState(pollVotesCache[pollId] || [])
+  const [loaded, setLoaded] = useState(!!pollsCache[pollId])
+
+  useEffect(() => {
+    if (pollsCache[pollId]) { setPoll(pollsCache[pollId]); setVotes(pollVotesCache[pollId] || []); setLoaded(true); return }
+    const load = async () => {
+      try {
+        const { data: p } = await supabase.from('cng_polls').select('*').eq('id', pollId).single()
+        const { data: v } = await supabase.from('cng_poll_votes').select('*').eq('poll_id', pollId)
+        setPoll(p)
+        setVotes(v || [])
+        setPollsCache(prev => ({ ...prev, [pollId]: p }))
+        setPollVotesCache(prev => ({ ...prev, [pollId]: v || [] }))
+      } catch (e) { console.error('Poll load error:', e) }
+      finally { setLoaded(true) }
+    }
+    load()
+  }, [pollId])
+
+  const handleVote = async (optionIndex) => {
+    if (!userId || !poll) return
+    const existing = votes.find(v => v.user_id === userId && v.option_index === optionIndex)
+    if (existing) {
+      // Toggle off
+      const newVotes = votes.filter(v => v.id !== existing.id)
+      setVotes(newVotes)
+      setPollVotesCache(prev => ({ ...prev, [pollId]: newVotes }))
+      await supabase.from('cng_poll_votes').delete().eq('id', existing.id)
+    } else {
+      // If not multiple choice, remove old vote first
+      let newVotes = votes
+      if (!poll.is_multiple_choice) {
+        const oldVote = votes.find(v => v.user_id === userId)
+        if (oldVote) {
+          newVotes = votes.filter(v => v.id !== oldVote.id)
+          await supabase.from('cng_poll_votes').delete().eq('id', oldVote.id)
+        }
+      }
+      const tempVote = { id: 'temp-' + Date.now(), poll_id: pollId, user_id: userId, option_index: optionIndex }
+      newVotes = [...newVotes, tempVote]
+      setVotes(newVotes)
+      setPollVotesCache(prev => ({ ...prev, [pollId]: newVotes }))
+      const { data } = await supabase.from('cng_poll_votes').insert({ poll_id: pollId, user_id: userId, option_index: optionIndex }).select().single()
+      if (data) {
+        const updated = newVotes.map(v => v.id === tempVote.id ? data : v)
+        setVotes(updated)
+        setPollVotesCache(prev => ({ ...prev, [pollId]: updated }))
+      }
+    }
+  }
+
+  if (!loaded) return <p style={{ fontSize: 13, color: C.textDim, fontFamily: FONT.body }}>Cargando encuesta...</p>
+  if (!poll) return <p style={{ fontSize: 13, color: C.textDim, fontFamily: FONT.body }}>Encuesta no disponible</p>
+
+  const totalVotes = votes.length
+  const options = poll.options || []
+
+  return (
+    <div style={{ minWidth: 220 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+        <Icon name="poll" size={16} style={{ color: '#64B5F6' }} />
+        <span style={{ fontSize: 11, color: isMine ? 'rgba(255,255,255,0.6)' : C.textDim, fontFamily: FONT.body, textTransform: 'uppercase', letterSpacing: 1, fontWeight: 600 }}>Encuesta</span>
+      </div>
+      <p style={{ fontSize: 15, fontWeight: 700, fontFamily: FONT.headline, marginBottom: 10, color: isMine ? '#fff' : C.text }}>{poll.question}</p>
+      {options.map((opt, idx) => {
+        const optVotes = votes.filter(v => v.option_index === idx).length
+        const pct = totalVotes > 0 ? Math.round((optVotes / totalVotes) * 100) : 0
+        const myVote = votes.some(v => v.user_id === userId && v.option_index === idx)
+        return (
+          <div
+            key={idx}
+            onClick={() => handleVote(idx)}
+            style={{
+              position: 'relative', padding: '10px 12px', borderRadius: 10, marginBottom: 6, cursor: 'pointer', overflow: 'hidden',
+              border: myVote ? '1px solid ' + C.primary : '1px solid rgba(241,239,232,0.1)',
+              background: myVote ? 'rgba(104,219,174,0.1)' : 'rgba(255,255,255,0.03)',
+            }}
+          >
+            <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pct}%`, background: isMine ? 'rgba(255,255,255,0.1)' : 'rgba(104,219,174,0.08)', borderRadius: 10, transition: 'width 0.3s' }} />
+            <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 13, fontFamily: FONT.body, color: isMine ? '#fff' : C.text }}>{opt}</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: isMine ? 'rgba(255,255,255,0.7)' : C.textDim, fontFamily: FONT.body }}>{pct}%</span>
+            </div>
+          </div>
+        )
+      })}
+      <p style={{ fontSize: 11, color: isMine ? 'rgba(255,255,255,0.5)' : C.textFaint, fontFamily: FONT.body, marginTop: 4 }}>{totalVotes} voto{totalVotes !== 1 ? 's' : ''}</p>
+    </div>
+  )
+}
+
 /* ════════════════════════════════════════════════════════════════ */
 export default function ChatScreen({ conversationId, onBack }) {
   const { user } = useAuth()
@@ -238,6 +332,41 @@ export default function ChatScreen({ conversationId, onBack }) {
   const [reportDetails, setReportDetails] = useState('')
   const [toastMsg, setToastMsg] = useState('')
 
+  // ─── FEATURE 1: SEARCH IN CHAT ──────────────────────────
+  const [showSearch, setShowSearch] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState([])
+  const [searchIndex, setSearchIndex] = useState(0)
+
+  // ─── FEATURE 2 & 3: GROUP INFO MODAL ────────────────────
+  const [showGroupInfo, setShowGroupInfo] = useState(false)
+  const [groupAvatarUploading, setGroupAvatarUploading] = useState(false)
+  const [editingDescription, setEditingDescription] = useState(false)
+  const [descriptionText, setDescriptionText] = useState('')
+  const groupAvatarInputRef = useRef(null)
+
+  // ─── FEATURE 4: STARRED MESSAGES ────────────────────────
+  const [starredSet, setStarredSet] = useState(new Set())
+  const [showStarredModal, setShowStarredModal] = useState(false)
+
+  // ─── FEATURE 6: GIF PICKER ──────────────────────────────
+  const [showGifPicker, setShowGifPicker] = useState(false)
+  const [gifSearch, setGifSearch] = useState('')
+  const [gifResults, setGifResults] = useState([])
+  const [gifLoading, setGifLoading] = useState(false)
+
+  // ─── FEATURE 7: QUICK REPLIES ───────────────────────────
+  const [inputFocused, setInputFocused] = useState(false)
+
+  // ─── FEATURE 8: POLLS ───────────────────────────────────
+  const [showPollModal, setShowPollModal] = useState(false)
+  const [pollQuestion, setPollQuestion] = useState('')
+  const [pollOptions, setPollOptions] = useState(['', ''])
+  const [pollMultiple, setPollMultiple] = useState(false)
+  const [pollCreating, setPollCreating] = useState(false)
+  const [pollsCache, setPollsCache] = useState({})
+  const [pollVotesCache, setPollVotesCache] = useState({})
+
   useEffect(() => {
     if (!navigator.mediaDevices?.getUserMedia) setMicSupported(false)
   }, [])
@@ -301,6 +430,21 @@ export default function ChatScreen({ conversationId, onBack }) {
   const scrollToBottom = () => {
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
   }
+
+  /* ── Feature 1: Search in chat (debounced) ────────────── */
+  useEffect(() => {
+    if (!searchQuery.trim()) { setSearchResults([]); setSearchIndex(0); return }
+    const timer = setTimeout(() => {
+      const q = searchQuery.toLowerCase()
+      const ids = messages
+        .filter(m => !m.is_deleted && m.message_type === 'text' && m.content?.toLowerCase().includes(q))
+        .map(m => m.id)
+      setSearchResults(ids)
+      setSearchIndex(0)
+      if (ids.length > 0) scrollToMessage(ids[0])
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [searchQuery, messages])
 
   /* ── Fetch messages and Group Data ─────────────────────────── */
   const fetchMessages = useCallback(async () => {
@@ -410,6 +554,159 @@ export default function ChatScreen({ conversationId, onBack }) {
   }, [conversationId, user])
 
   useEffect(() => { fetchMessages() }, [fetchMessages])
+
+  /* ── Feature 4: Fetch starred messages ─────────────────── */
+  useEffect(() => {
+    if (!conversationId || !user) return
+    supabase
+      .from('cng_starred_messages')
+      .select('message_id')
+      .eq('user_id', user.id)
+      .eq('conversation_id', conversationId)
+      .then(({ data }) => {
+        if (data) setStarredSet(new Set(data.map(d => d.message_id)))
+      })
+  }, [conversationId, user])
+
+  const handleToggleStar = async (msgId) => {
+    const isStarred = starredSet.has(msgId)
+    // Optimistic
+    setStarredSet(prev => {
+      const next = new Set(prev)
+      if (isStarred) next.delete(msgId)
+      else next.add(msgId)
+      return next
+    })
+    setContextMenu(null)
+    closeReactionPopup()
+    try {
+      if (isStarred) {
+        await supabase.from('cng_starred_messages').delete()
+          .eq('user_id', user.id).eq('message_id', msgId)
+      } else {
+        await supabase.from('cng_starred_messages').insert({
+          user_id: user.id, message_id: msgId, conversation_id: conversationId
+        })
+      }
+    } catch (e) {
+      console.error('Star toggle error:', e)
+      // Revert
+      setStarredSet(prev => {
+        const next = new Set(prev)
+        if (isStarred) next.add(msgId)
+        else next.delete(msgId)
+        return next
+      })
+    }
+  }
+
+  /* ── Feature 2: Group avatar upload ────────────────────── */
+  const handleGroupAvatarSelect = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file || !user || !conversation) return
+    e.target.value = ''
+    setGroupAvatarUploading(true)
+    try {
+      const ext = file.name.split('.').pop()
+      const path = `groups/${conversationId}/avatar-${Date.now()}.${ext}`
+      const { error: upErr } = await supabase.storage.from('cng-media').upload(path, file, { contentType: file.type })
+      if (upErr) throw upErr
+      const { data: urlData } = supabase.storage.from('cng-media').getPublicUrl(path)
+      const { error } = await supabase.from('cng_conversations').update({ avatar_url: urlData.publicUrl }).eq('id', conversationId)
+      if (error) throw error
+      setConversation(prev => ({ ...prev, avatar_url: urlData.publicUrl }))
+    } catch (e) { console.error('Group avatar error:', e) }
+    finally { setGroupAvatarUploading(false) }
+  }
+
+  /* ── Feature 3: Group description save ─────────────────── */
+  const handleSaveDescription = async () => {
+    if (!conversation) return
+    try {
+      const { error } = await supabase.from('cng_conversations')
+        .update({ description: descriptionText.trim() })
+        .eq('id', conversationId)
+      if (error) throw error
+      setConversation(prev => ({ ...prev, description: descriptionText.trim() }))
+      setEditingDescription(false)
+    } catch (e) { console.error('Description save error:', e) }
+  }
+
+  /* ── Feature 6: GIF fetch ──────────────────────────────── */
+  useEffect(() => {
+    if (!showGifPicker) return
+    setGifLoading(true)
+    fetch('https://api.giphy.com/v1/gifs/trending?api_key=dc6zaTOxFJmzC&limit=20&rating=g')
+      .then(r => r.json())
+      .then(d => setGifResults(d.data || []))
+      .catch(() => setGifResults([]))
+      .finally(() => setGifLoading(false))
+  }, [showGifPicker])
+
+  useEffect(() => {
+    if (!showGifPicker || !gifSearch.trim()) return
+    const timer = setTimeout(() => {
+      setGifLoading(true)
+      fetch(`https://api.giphy.com/v1/gifs/search?api_key=dc6zaTOxFJmzC&q=${encodeURIComponent(gifSearch)}&limit=20&rating=g`)
+        .then(r => r.json())
+        .then(d => setGifResults(d.data || []))
+        .catch(() => setGifResults([]))
+        .finally(() => setGifLoading(false))
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [gifSearch, showGifPicker])
+
+  const sendGif = async (gif) => {
+    setShowGifPicker(false)
+    setGifSearch('')
+    const url = gif.images?.original?.url
+    if (!url || !user) return
+    try {
+      const { data: newMsg, error } = await supabase.from('cng_messages').insert({
+        conversation_id: conversationId,
+        sender_id: user.id,
+        content: url,
+        message_type: 'image',
+        media_url: url,
+        delivery_status: 'sent',
+      }).select().single()
+      if (error) throw error
+      setMessages(prev => prev.some(m => m.id === newMsg.id) ? prev : [...prev, newMsg])
+      scrollToBottom()
+    } catch (e) { console.error('GIF send error:', e) }
+  }
+
+  /* ── Feature 8: Poll creation ──────────────────────────── */
+  const handleCreatePoll = async () => {
+    if (!pollQuestion.trim() || pollOptions.filter(o => o.trim()).length < 2 || pollCreating) return
+    setPollCreating(true)
+    try {
+      const validOptions = pollOptions.filter(o => o.trim()).map(o => o.trim())
+      const { data: poll, error: pollErr } = await supabase.from('cng_polls').insert({
+        conversation_id: conversationId,
+        created_by: user.id,
+        question: pollQuestion.trim(),
+        options: validOptions,
+        is_multiple_choice: pollMultiple,
+      }).select().single()
+      if (pollErr) throw pollErr
+      const { data: newMsg, error: msgErr } = await supabase.from('cng_messages').insert({
+        conversation_id: conversationId,
+        sender_id: user.id,
+        content: poll.id,
+        message_type: 'poll',
+        delivery_status: 'sent',
+      }).select().single()
+      if (msgErr) throw msgErr
+      setMessages(prev => prev.some(m => m.id === newMsg.id) ? prev : [...prev, newMsg])
+      setShowPollModal(false)
+      setPollQuestion('')
+      setPollOptions(['', ''])
+      setPollMultiple(false)
+      scrollToBottom()
+    } catch (e) { console.error('Poll creation error:', e) }
+    finally { setPollCreating(false) }
+  }
 
   /* ── Realtime ───────────────────────────────────────────────── */
   useEffect(() => {
@@ -570,8 +867,8 @@ export default function ChatScreen({ conversationId, onBack }) {
 
   /* ── Close popups on outside click ──────────────────────────── */
   useEffect(() => {
-    if (!reactionPopup && !showStickers && !contextMenu && !showAttachMenu) return
-    const handler = () => { closeReactionPopup(); setShowStickers(false); setContextMenu(null); setShowAttachMenu(false) }
+    if (!reactionPopup && !showStickers && !contextMenu && !showAttachMenu && !showGifPicker) return
+    const handler = () => { closeReactionPopup(); setShowStickers(false); setContextMenu(null); setShowAttachMenu(false); setShowGifPicker(false) }
     const timer = setTimeout(() => document.addEventListener('click', handler), 300)
     return () => { clearTimeout(timer); document.removeEventListener('click', handler) }
   }, [reactionPopup, showStickers, contextMenu])
@@ -1385,7 +1682,51 @@ export default function ChatScreen({ conversationId, onBack }) {
         </div>
       )
     }
-    return <p style={{ fontSize: 14, fontFamily: FONT.body, lineHeight: 1.5, wordBreak: 'break-word' }}>{msg.content}</p>
+    // Feature 8: Poll rendering
+    if (msg.message_type === 'poll') {
+      return <PollCard pollId={msg.content} conversationId={conversationId} userId={user?.id} isMine={isMine} pollsCache={pollsCache} setPollsCache={setPollsCache} pollVotesCache={pollVotesCache} setPollVotesCache={setPollVotesCache} />
+    }
+
+    // Feature 5: Link preview for text messages
+    const urlRegex = /(https?:\/\/[^\s]+)/g
+    const urls = msg.content?.match(urlRegex)
+    const renderTextWithLinks = (text) => {
+      if (!urls) return text
+      const parts = text.split(urlRegex)
+      return parts.map((part, i) => {
+        if (urlRegex.lastIndex = 0, urlRegex.test(part)) {
+          return <a key={i} href={part} target="_blank" rel="noopener noreferrer" style={{ color: isMine ? '#fff' : (C.primaryBright || '#68dbae'), textDecoration: 'underline' }}>{part}</a>
+        }
+        return part
+      })
+    }
+    return (
+      <div>
+        <p style={{ fontSize: 14, fontFamily: FONT.body, lineHeight: 1.5, wordBreak: 'break-word' }}>{renderTextWithLinks(msg.content)}</p>
+        {urls && urls.map((url, i) => {
+          let domain = ''
+          try { domain = new URL(url).hostname } catch { domain = url.substring(0, 30) }
+          return (
+            <div
+              key={i}
+              onClick={() => window.open(url, '_blank')}
+              style={{
+                background: 'rgba(255,255,255,0.05)', borderRadius: 12,
+                border: '1px solid rgba(241,239,232,0.08)',
+                padding: '10px 12px', marginTop: 8, cursor: 'pointer',
+              }}
+            >
+              <p style={{ fontSize: 12, fontWeight: 600, color: isMine ? 'rgba(255,255,255,0.8)' : C.textDim, fontFamily: FONT.body, marginBottom: 2 }}>{domain}</p>
+              <p style={{ fontSize: 11, color: isMine ? 'rgba(255,255,255,0.5)' : C.textFaint, fontFamily: FONT.body, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 4 }}>{url}</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <Icon name="open_in_new" size={12} style={{ color: isMine ? 'rgba(255,255,255,0.6)' : C.primaryBright }} />
+                <span style={{ fontSize: 11, color: isMine ? 'rgba(255,255,255,0.6)' : C.primaryBright, fontFamily: FONT.body }}>Abrir enlace</span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    )
   }
 
   /* ── Check if currently in edit mode ────────────────────────── */
@@ -1417,6 +1758,38 @@ export default function ChatScreen({ conversationId, onBack }) {
         </div>
       </header>
 
+      {/* ── Feature 1: Search bar ──────────────────────────── */}
+      {showSearch && (
+        <div style={{ position: 'sticky', top: 64, zIndex: 49, ...GLASS_NAV, padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid rgba(241,239,232,0.08)' }}>
+          <Icon name="search" size={20} style={{ color: C.textFaint, flexShrink: 0 }} />
+          <input
+            autoFocus
+            placeholder="Buscar mensajes..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{ flex: 1, background: 'transparent', border: 'none', color: C.text, fontSize: 14, fontFamily: FONT.body, outline: 'none' }}
+          />
+          {searchResults.length > 0 && (
+            <span style={{ fontSize: 11, color: C.textDim, fontFamily: FONT.body, flexShrink: 0 }}>
+              {searchIndex + 1} de {searchResults.length}
+            </span>
+          )}
+          {searchResults.length > 1 && (
+            <>
+              <div onClick={() => { const prev = (searchIndex - 1 + searchResults.length) % searchResults.length; setSearchIndex(prev); scrollToMessage(searchResults[prev]) }} style={{ cursor: 'pointer', padding: 4 }}>
+                <Icon name="keyboard_arrow_up" size={20} style={{ color: C.textDim }} />
+              </div>
+              <div onClick={() => { const next = (searchIndex + 1) % searchResults.length; setSearchIndex(next); scrollToMessage(searchResults[next]) }} style={{ cursor: 'pointer', padding: 4 }}>
+                <Icon name="keyboard_arrow_down" size={20} style={{ color: C.textDim }} />
+              </div>
+            </>
+          )}
+          <div onClick={() => { setShowSearch(false); setSearchQuery(''); setSearchResults([]) }} style={{ cursor: 'pointer', padding: 4 }}>
+            <Icon name="close" size={20} style={{ color: C.textDim }} />
+          </div>
+        </div>
+      )}
+
       {/* ── Header dropdown menu ─────────────────────────────── */}
       {showHeaderMenu && (
         <div
@@ -1431,7 +1804,41 @@ export default function ChatScreen({ conversationId, onBack }) {
             minWidth: 220,
           }}
         >
-          {/* 1. Silenciar / Activar notificaciones */}
+          {/* 1. Buscar en chat */}
+          <div
+            onClick={() => { setShowHeaderMenu(false); setShowSearch(true) }}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', cursor: 'pointer', borderRadius: 8, transition: 'background 0.15s' }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+          >
+            <Icon name="search" size={18} style={{ color: C.text }} />
+            <span style={{ fontSize: 14, color: C.text, fontFamily: FONT.body }}>Buscar en chat</span>
+          </div>
+          {/* 2. Mensajes destacados */}
+          <div
+            onClick={() => { setShowHeaderMenu(false); setShowStarredModal(true) }}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', cursor: 'pointer', borderRadius: 8, transition: 'background 0.15s' }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+          >
+            <Icon name="star" size={18} style={{ color: C.text }} />
+            <span style={{ fontSize: 14, color: C.text, fontFamily: FONT.body }}>Mensajes destacados</span>
+          </div>
+          {/* 3. Info del grupo (only groups) */}
+          {isGroup && (
+            <div
+              onClick={() => { setShowHeaderMenu(false); setDescriptionText(conversation?.description || ''); setShowGroupInfo(true) }}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', cursor: 'pointer', borderRadius: 8, transition: 'background 0.15s' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+            >
+              <Icon name="info" size={18} style={{ color: C.text }} />
+              <span style={{ fontSize: 14, color: C.text, fontFamily: FONT.body }}>Info del grupo</span>
+            </div>
+          )}
+          {/* Separator */}
+          <div style={{ height: 1, background: 'rgba(241,239,232,0.08)', margin: '2px 12px' }} />
+          {/* 4. Silenciar / Activar */}
           <div
             onClick={handleToggleMute}
             style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', cursor: 'pointer', borderRadius: 8, transition: 'background 0.15s' }}
@@ -1441,7 +1848,7 @@ export default function ChatScreen({ conversationId, onBack }) {
             <Icon name={isMuted ? 'notifications_active' : 'notifications_off'} size={18} style={{ color: C.text }} />
             <span style={{ fontSize: 14, color: C.text, fontFamily: FONT.body }}>{isMuted ? 'Activar notificaciones' : 'Silenciar'}</span>
           </div>
-          {/* 2. Fijar / Desfijar */}
+          {/* 5. Fijar / Desfijar */}
           <div
             onClick={handleTogglePin}
             style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', cursor: 'pointer', borderRadius: 8, transition: 'background 0.15s' }}
@@ -1451,7 +1858,7 @@ export default function ChatScreen({ conversationId, onBack }) {
             <Icon name="push_pin" size={18} style={{ color: C.text }} />
             <span style={{ fontSize: 14, color: C.text, fontFamily: FONT.body }}>{isPinned ? 'Desfijar chat' : 'Fijar chat'}</span>
           </div>
-          {/* 3. Archivar */}
+          {/* 6. Archivar */}
           <div
             onClick={handleArchive}
             style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', cursor: 'pointer', borderRadius: 8, transition: 'background 0.15s' }}
@@ -1463,7 +1870,7 @@ export default function ChatScreen({ conversationId, onBack }) {
           </div>
           {/* Separator */}
           <div style={{ height: 1, background: 'rgba(241,239,232,0.08)', margin: '2px 12px' }} />
-          {/* 4. Reportar */}
+          {/* 7. Reportar */}
           <div
             onClick={() => {
               const targetUserId = isGroup ? null : otherUser?.user_id
@@ -1476,26 +1883,23 @@ export default function ChatScreen({ conversationId, onBack }) {
             <Icon name="flag" size={18} style={{ color: C.textDim }} />
             <span style={{ fontSize: 14, color: C.textDim, fontFamily: FONT.body }}>Reportar</span>
           </div>
-          {/* 5. Bloquear (solo DMs) */}
+          {/* 8. Bloquear (solo DMs) */}
           {!isGroup && otherUser && (
-            <>
-              <div style={{ height: 1, background: 'rgba(241,239,232,0.08)', margin: '2px 12px' }} />
-              <div
-                onClick={() => {
-                  setShowHeaderMenu(false)
-                  if (isBlocked) handleUnblock()
-                  else setShowBlockConfirm(true)
-                }}
-                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', cursor: 'pointer', borderRadius: 8, transition: 'background 0.15s' }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
-              >
-                <Icon name={isBlocked ? 'check_circle' : 'block'} size={18} style={{ color: isBlocked ? C.primary : '#ff4444' }} />
-                <span style={{ fontSize: 14, color: isBlocked ? C.primary : '#ff4444', fontFamily: FONT.body }}>
-                  {isBlocked ? 'Desbloquear usuario' : 'Bloquear usuario'}
-                </span>
-              </div>
-            </>
+            <div
+              onClick={() => {
+                setShowHeaderMenu(false)
+                if (isBlocked) handleUnblock()
+                else setShowBlockConfirm(true)
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', cursor: 'pointer', borderRadius: 8, transition: 'background 0.15s' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+            >
+              <Icon name={isBlocked ? 'check_circle' : 'block'} size={18} style={{ color: isBlocked ? C.primary : '#ff4444' }} />
+              <span style={{ fontSize: 14, color: isBlocked ? C.primary : '#ff4444', fontFamily: FONT.body }}>
+                {isBlocked ? 'Desbloquear usuario' : 'Bloquear usuario'}
+              </span>
+            </div>
           )}
         </div>
       )}
@@ -1531,7 +1935,7 @@ export default function ChatScreen({ conversationId, onBack }) {
           const isDeleted = msg.is_deleted
 
           return (
-            <div key={msg.id} ref={el => { messageRefs.current[msg.id] = el }} style={{ display: 'flex', flexDirection: 'column', alignItems: isMine ? 'flex-end' : 'flex-start' }}>
+            <div key={msg.id} ref={el => { messageRefs.current[msg.id] = el }} style={{ display: 'flex', flexDirection: 'column', alignItems: isMine ? 'flex-end' : 'flex-start', ...(searchResults.includes(msg.id) ? { background: 'rgba(184,149,106,0.15)', borderLeft: '3px solid #B8956A', paddingLeft: 8, borderRadius: 4 } : {}) }}>
 
               {/* Etiqueta de remitente para grupos */}
               {isGroup && !isMine && !isDeleted && (
@@ -1601,6 +2005,7 @@ export default function ChatScreen({ conversationId, onBack }) {
                         {msg.edited_at && (
                           <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', fontStyle: 'italic', marginRight: 2 }}>editado</span>
                         )}
+                        {starredSet.has(msg.id) && <Icon name="star" size={10} style={{ color: '#B8956A' }} />}
                         <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)' }}>{timeFormat(msg.created_at)}</span>
                         <DeliveryStatus status={msg.delivery_status || 'sent'} />
                       </div>
@@ -1609,6 +2014,7 @@ export default function ChatScreen({ conversationId, onBack }) {
                         {msg.edited_at && (
                           <span style={{ fontSize: 10, color: 'rgba(223,226,235,0.35)', fontStyle: 'italic', marginRight: 2 }}>editado</span>
                         )}
+                        {starredSet.has(msg.id) && <Icon name="star" size={10} style={{ color: '#B8956A' }} />}
                         <span style={{ fontSize: 10, color: C.textFaint }}>{timeFormat(msg.created_at)}</span>
                       </div>
                     )
@@ -1660,6 +2066,16 @@ export default function ChatScreen({ conversationId, onBack }) {
                     >
                       <Icon name="shortcut" size={18} style={{ color: C.text }} />
                       <span style={{ fontSize: 14, color: C.text, fontFamily: FONT.body }}>Reenviar</span>
+                    </div>
+                    {/* Star option */}
+                    <div
+                      onClick={() => handleToggleStar(msg.id)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', cursor: 'pointer', borderRadius: 8, transition: 'background 0.15s' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                    >
+                      <Icon name={starredSet.has(msg.id) ? 'star' : 'star_border'} size={18} style={{ color: '#B8956A' }} />
+                      <span style={{ fontSize: 14, color: C.text, fontFamily: FONT.body }}>{starredSet.has(msg.id) ? 'Quitar destacado' : 'Destacar'}</span>
                     </div>
                     {/* Separator */}
                     <div style={{ height: 1, background: 'rgba(241,239,232,0.08)', margin: '2px 12px' }} />
@@ -1713,12 +2129,22 @@ export default function ChatScreen({ conversationId, onBack }) {
                     <div style={{ display: 'flex', gap: 0 }}>
                       <div
                         onClick={() => handleReply(msg)}
-                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px 8px', cursor: 'pointer', borderRadius: '0 0 0 16px', transition: 'background 0.15s' }}
+                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px 8px', cursor: 'pointer', borderRadius: '0 0 0 0', transition: 'background 0.15s' }}
                         onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)' }}
                         onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
                       >
                         <Icon name="reply" size={16} style={{ color: C.textDim }} />
                         <span style={{ fontSize: 13, color: C.text, fontFamily: FONT.body }}>Reply</span>
+                      </div>
+                      <div style={{ width: 1, background: 'rgba(241,239,232,0.08)', margin: '6px 0' }} />
+                      <div
+                        onClick={() => handleToggleStar(msg.id)}
+                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px 8px', cursor: 'pointer', transition: 'background 0.15s' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)' }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                      >
+                        <Icon name={starredSet.has(msg.id) ? 'star' : 'star_border'} size={16} style={{ color: '#B8956A' }} />
+                        <span style={{ fontSize: 13, color: C.text, fontFamily: FONT.body }}>{starredSet.has(msg.id) ? 'Quitar' : 'Star'}</span>
                       </div>
                       <div style={{ width: 1, background: 'rgba(241,239,232,0.08)', margin: '6px 0' }} />
                       <div
@@ -1906,6 +2332,57 @@ export default function ChatScreen({ conversationId, onBack }) {
         </div>
       )}
 
+      {/* ── Feature 6: GIF Picker ──────────────────────────── */}
+      {showGifPicker && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: 'fixed',
+            bottom: 90,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: 'calc(100% - 32px)',
+            maxWidth: 380,
+            maxHeight: 350,
+            background: 'rgba(13,17,23,0.97)',
+            border: '1px solid rgba(241,239,232,0.1)',
+            borderRadius: 16,
+            boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
+            zIndex: 300,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+          }}
+        >
+          <div style={{ padding: '12px 12px 8px' }}>
+            <input
+              autoFocus
+              placeholder="Buscar GIFs..."
+              value={gifSearch}
+              onChange={(e) => setGifSearch(e.target.value)}
+              style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(241,239,232,0.1)', borderRadius: 10, padding: '10px 12px', color: C.text, fontSize: 13, fontFamily: FONT.body, outline: 'none', boxSizing: 'border-box' }}
+            />
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '0 12px 8px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, alignContent: 'start' }}>
+            {gifLoading && (
+              <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'center', padding: 20 }}>
+                <div style={{ width: 20, height: 20, border: '2px solid rgba(104,219,174,0.3)', borderTopColor: C.primary, borderRadius: 99, animation: 'spin 0.8s linear infinite' }} />
+              </div>
+            )}
+            {!gifLoading && gifResults.map(gif => (
+              <img
+                key={gif.id}
+                src={gif.images?.fixed_width?.url}
+                alt=""
+                onClick={() => sendGif(gif)}
+                style={{ width: '100%', borderRadius: 8, cursor: 'pointer', display: 'block' }}
+              />
+            ))}
+          </div>
+          <p style={{ fontSize: 10, color: C.textFaint, textAlign: 'center', padding: '4px 0 8px', fontFamily: FONT.body }}>Powered by GIPHY</p>
+        </div>
+      )}
+
       {/* Hidden file input */}
       <input
         ref={fileInputRef}
@@ -1984,6 +2461,15 @@ export default function ChatScreen({ conversationId, onBack }) {
             <div style={{ width: 36, height: 36, borderRadius: 99, background: 'rgba(255,100,100,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="location_on" size={20} style={{ color: '#ff6b6b' }} /></div>
             <div><p style={{ fontSize: 14, fontWeight: 600, color: C.text, fontFamily: FONT.body }}>{locationLoading ? 'Obteniendo...' : 'Ubicación'}</p><p style={{ fontSize: 11, color: C.textDim, fontFamily: FONT.body }}>Comparte tu ubicación actual</p></div>
           </div>
+          {isGroup && (
+            <>
+              <div style={{ height: 1, background: 'rgba(241,239,232,0.06)', margin: '0 12px' }} />
+              <div onClick={() => { setShowAttachMenu(false); setShowPollModal(true) }} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer', borderRadius: 12, transition: 'background 0.15s' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
+                <div style={{ width: 36, height: 36, borderRadius: 99, background: 'rgba(100,181,246,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="poll" size={20} style={{ color: '#64B5F6' }} /></div>
+                <div><p style={{ fontSize: 14, fontWeight: 600, color: C.text, fontFamily: FONT.body }}>Crear encuesta</p><p style={{ fontSize: 11, color: C.textDim, fontFamily: FONT.body }}>Pregunta con opciones</p></div>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -2055,6 +2541,37 @@ export default function ChatScreen({ conversationId, onBack }) {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── Feature 7: Quick replies ───────────────────────── */}
+      {inputFocused && !text && !isEditing && !replyTo && (
+        <div style={{
+          padding: '6px 16px',
+          display: 'flex', gap: 8,
+          overflowX: 'auto',
+          scrollbarWidth: 'none', msOverflowStyle: 'none',
+        }}>
+          {['👍 OK', '¡Gracias!', 'Perfecto', '¿A qué hora?', 'Ya voy', 'Luego hablamos', 'Sí', 'No', '😂', 'Un momento'].map(chip => (
+            <div
+              key={chip}
+              onClick={() => handleSend(chip)}
+              style={{
+                display: 'inline-flex', flexShrink: 0,
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(241,239,232,0.1)',
+                borderRadius: 99,
+                padding: '6px 14px',
+                fontSize: 13,
+                color: C.text,
+                cursor: 'pointer',
+                fontFamily: FONT.body,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {chip}
+            </div>
+          ))}
         </div>
       )}
 
@@ -2189,6 +2706,16 @@ export default function ChatScreen({ conversationId, onBack }) {
           </div>
         )}
 
+        {/* GIF — hide during edit */}
+        {!isEditing && (
+          <div
+            onClick={(e) => { e.stopPropagation(); setShowGifPicker(v => !v); setShowStickers(false); setShowAttachMenu(false) }}
+            style={{ width: 36, height: 36, borderRadius: 99, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+          >
+            <span style={{ fontSize: 13, fontWeight: 700, fontFamily: FONT.headline, color: showGifPicker ? C.primary : C.textDim }}>GIF</span>
+          </div>
+        )}
+
         {/* Cancel edit button */}
         {isEditing && (
           <div
@@ -2205,6 +2732,8 @@ export default function ChatScreen({ conversationId, onBack }) {
             placeholder={isEditing ? 'Editar mensaje...' : 'Type a message...'}
             value={isEditing ? editText : text}
             onChange={isEditing ? (e) => setEditText(e.target.value) : handleTextChange}
+            onFocus={() => setInputFocused(true)}
+            onBlur={() => setTimeout(() => setInputFocused(false), 150)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()
@@ -2418,6 +2947,227 @@ export default function ChatScreen({ conversationId, onBack }) {
                 }}
               >
                 Enviar reporte
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Feature 2 & 3: Group Info Modal ────────────────── */}
+      {showGroupInfo && isGroup && (
+        <div
+          onClick={() => { setShowGroupInfo(false); setEditingDescription(false) }}
+          style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 60 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: '90%', maxWidth: 400, maxHeight: '80vh', background: 'rgba(13,17,23,0.97)', borderRadius: 20, border: '1px solid rgba(241,239,232,0.1)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+          >
+            <div style={{ padding: '20px 20px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h2 style={{ fontFamily: FONT.headline, fontSize: 18, fontWeight: 700, color: C.text }}>Info del grupo</h2>
+              <div onClick={() => { setShowGroupInfo(false); setEditingDescription(false) }} style={{ cursor: 'pointer', padding: 4 }}>
+                <Icon name="close" size={24} style={{ color: C.textDim }} />
+              </div>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
+              {/* Avatar */}
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
+                <div style={{ position: 'relative', width: 80, height: 80 }}>
+                  <div style={{ width: 80, height: 80, borderRadius: 99, overflow: 'hidden', background: C.surfaceHigh, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {conversation?.avatar_url ? (
+                      <img src={conversation.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      <Icon name="groups" size={36} style={{ color: C.textDim }} />
+                    )}
+                  </div>
+                  {(conversation?.admin_id === user?.id) && (
+                    <div
+                      onClick={() => groupAvatarInputRef.current?.click()}
+                      style={{ position: 'absolute', bottom: 0, right: 0, width: 28, height: 28, borderRadius: 99, background: GRADIENT.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: groupAvatarUploading ? 'wait' : 'pointer', border: '2px solid rgba(13,17,23,0.97)' }}
+                    >
+                      <Icon name="photo_camera" size={14} style={{ color: '#fff' }} />
+                    </div>
+                  )}
+                  <input ref={groupAvatarInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleGroupAvatarSelect} />
+                </div>
+              </div>
+              <h3 style={{ textAlign: 'center', fontFamily: FONT.headline, fontSize: 18, fontWeight: 700, color: C.text, marginBottom: 4 }}>{conversation?.name || 'Grupo'}</h3>
+              <p style={{ textAlign: 'center', fontSize: 12, color: C.textDim, fontFamily: FONT.body, marginBottom: 16 }}>{Object.keys(membersMap).length} miembros</p>
+              {/* Description */}
+              <div style={{ marginBottom: 20, padding: '12px 16px', background: 'rgba(255,255,255,0.03)', borderRadius: 12, border: '1px solid rgba(241,239,232,0.06)' }}>
+                <p style={{ fontSize: 11, color: C.textDim, fontFamily: FONT.body, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, fontWeight: 600 }}>Descripción</p>
+                {editingDescription ? (
+                  <div>
+                    <textarea
+                      autoFocus
+                      value={descriptionText}
+                      onChange={(e) => setDescriptionText(e.target.value)}
+                      style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(241,239,232,0.1)', borderRadius: 8, padding: 10, color: C.text, fontSize: 13, fontFamily: FONT.body, outline: 'none', resize: 'vertical', minHeight: 60, boxSizing: 'border-box' }}
+                    />
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8, justifyContent: 'flex-end' }}>
+                      <div onClick={() => setEditingDescription(false)} style={{ padding: '6px 14px', borderRadius: 8, fontSize: 13, color: C.textDim, cursor: 'pointer', fontFamily: FONT.body }}>Cancelar</div>
+                      <div onClick={handleSaveDescription} style={{ padding: '6px 14px', borderRadius: 8, fontSize: 13, color: '#fff', background: GRADIENT.primary, cursor: 'pointer', fontFamily: FONT.body, fontWeight: 600 }}>Guardar</div>
+                    </div>
+                  </div>
+                ) : (
+                  <p
+                    onClick={() => { if (conversation?.admin_id === user?.id) { setDescriptionText(conversation?.description || ''); setEditingDescription(true) } }}
+                    style={{ fontSize: 13, color: conversation?.description ? C.text : C.textFaint, fontFamily: FONT.body, fontStyle: conversation?.description ? 'normal' : 'italic', cursor: conversation?.admin_id === user?.id ? 'pointer' : 'default', lineHeight: 1.5 }}
+                  >
+                    {conversation?.description || 'Agregar descripción...'}
+                  </p>
+                )}
+              </div>
+              {/* Members list */}
+              <p style={{ fontSize: 11, color: C.textDim, fontFamily: FONT.body, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8, fontWeight: 600 }}>Miembros</p>
+              {Object.values(membersMap).map(m => (
+                <div key={m.user_id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0' }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 99, overflow: 'hidden', flexShrink: 0 }}>
+                    {m.avatar_url ? (
+                      <img src={m.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      <div style={{ width: '100%', height: '100%', background: C.surfaceHigh, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: C.text, fontFamily: FONT.headline }}>
+                        {(m.full_name || 'U')[0].toUpperCase()}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: C.text, fontFamily: FONT.body }}>{m.full_name || m.ref_code || 'Miembro'}</span>
+                  </div>
+                  {conversation?.admin_id === m.user_id && (
+                    <span style={{ fontSize: 10, fontWeight: 700, color: '#B8956A', fontFamily: FONT.headline, padding: '2px 8px', borderRadius: 99, background: 'rgba(184,149,106,0.15)', letterSpacing: 0.5 }}>Admin</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Feature 4: Starred Messages Modal ──────────────── */}
+      {showStarredModal && (
+        <div
+          onClick={() => setShowStarredModal(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 60 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: '90%', maxWidth: 400, maxHeight: '70vh', background: 'rgba(13,17,23,0.97)', borderRadius: 20, border: '1px solid rgba(241,239,232,0.1)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+          >
+            <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid rgba(241,239,232,0.08)', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Icon name="star" size={20} style={{ color: '#B8956A' }} />
+              <h2 style={{ fontFamily: FONT.headline, fontSize: 18, fontWeight: 700, color: C.text, flex: 1 }}>Mensajes destacados</h2>
+              <div onClick={() => setShowStarredModal(false)} style={{ cursor: 'pointer', padding: 4 }}>
+                <Icon name="close" size={20} style={{ color: C.textDim }} />
+              </div>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
+              {messages.filter(m => starredSet.has(m.id)).length === 0 && (
+                <div style={{ textAlign: 'center', padding: '40px 0' }}>
+                  <Icon name="star_border" size={40} style={{ color: C.textFaint, marginBottom: 12 }} />
+                  <p style={{ fontSize: 13, color: C.textDim, fontFamily: FONT.body }}>No hay mensajes destacados</p>
+                </div>
+              )}
+              {messages.filter(m => starredSet.has(m.id)).map(m => (
+                <div
+                  key={m.id}
+                  onClick={() => { setShowStarredModal(false); setTimeout(() => scrollToMessage(m.id), 200) }}
+                  style={{ display: 'flex', gap: 10, padding: '10px 8px', borderRadius: 10, cursor: 'pointer', marginBottom: 4, transition: 'background 0.15s' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                >
+                  <Icon name="star" size={16} style={{ color: '#B8956A', flexShrink: 0, marginTop: 2 }} />
+                  <div style={{ flex: 1, overflow: 'hidden' }}>
+                    <p style={{ fontSize: 12, fontWeight: 600, color: C.primary, fontFamily: FONT.headline, marginBottom: 2 }}>
+                      {m.sender_id === user?.id ? 'Tú' : (membersMap[m.sender_id]?.full_name || 'Usuario')}
+                    </p>
+                    <p style={{ fontSize: 13, color: C.text, fontFamily: FONT.body, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {m.message_type === 'image' ? '📷 Foto' : m.message_type === 'video' ? '🎬 Video' : m.message_type === 'voice' ? '🎙️ Audio' : m.content}
+                    </p>
+                    <span style={{ fontSize: 10, color: C.textFaint }}>{timeFormat(m.created_at)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Feature 8: Poll Creation Modal ─────────────────── */}
+      {showPollModal && (
+        <div
+          onClick={() => setShowPollModal(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: '100%', maxWidth: 380, background: 'rgba(13,17,23,0.97)', borderRadius: 20, border: '1px solid rgba(241,239,232,0.1)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', padding: 24, maxHeight: '80vh', overflowY: 'auto' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+              <Icon name="poll" size={22} style={{ color: '#64B5F6' }} />
+              <h3 style={{ fontFamily: FONT.headline, fontSize: 18, fontWeight: 700, color: C.text, flex: 1 }}>Crear encuesta</h3>
+              <div onClick={() => setShowPollModal(false)} style={{ cursor: 'pointer', padding: 4 }}>
+                <Icon name="close" size={20} style={{ color: C.textDim }} />
+              </div>
+            </div>
+            <input
+              placeholder="Pregunta de la encuesta"
+              value={pollQuestion}
+              onChange={(e) => setPollQuestion(e.target.value)}
+              style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(241,239,232,0.1)', borderRadius: 12, padding: '14px 16px', color: C.text, fontSize: 14, fontFamily: FONT.body, outline: 'none', marginBottom: 16, boxSizing: 'border-box' }}
+            />
+            {pollOptions.map((opt, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <input
+                  placeholder={`Opción ${i + 1}`}
+                  value={opt}
+                  onChange={(e) => { const next = [...pollOptions]; next[i] = e.target.value; setPollOptions(next) }}
+                  style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(241,239,232,0.1)', borderRadius: 10, padding: '10px 14px', color: C.text, fontSize: 13, fontFamily: FONT.body, outline: 'none', boxSizing: 'border-box' }}
+                />
+                {pollOptions.length > 2 && (
+                  <div onClick={() => setPollOptions(pollOptions.filter((_, j) => j !== i))} style={{ cursor: 'pointer', padding: 4 }}>
+                    <Icon name="close" size={16} style={{ color: C.textFaint }} />
+                  </div>
+                )}
+              </div>
+            ))}
+            {pollOptions.length < 6 && (
+              <div
+                onClick={() => setPollOptions([...pollOptions, ''])}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 0', cursor: 'pointer', marginBottom: 12 }}
+              >
+                <Icon name="add" size={16} style={{ color: C.primary }} />
+                <span style={{ fontSize: 13, color: C.primary, fontFamily: FONT.body }}>Agregar opción</span>
+              </div>
+            )}
+            <div
+              onClick={() => setPollMultiple(!pollMultiple)}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', marginBottom: 16, cursor: 'pointer' }}
+            >
+              <div style={{ width: 20, height: 20, borderRadius: 4, border: pollMultiple ? `2px solid ${C.primary}` : '2px solid rgba(241,239,232,0.2)', background: pollMultiple ? C.primary : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {pollMultiple && <Icon name="check" size={14} style={{ color: '#fff' }} />}
+              </div>
+              <span style={{ fontSize: 14, color: C.text, fontFamily: FONT.body }}>Respuesta múltiple</span>
+            </div>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <div
+                onClick={() => setShowPollModal(false)}
+                style={{ flex: 1, padding: '12px 0', borderRadius: 12, background: 'rgba(255,255,255,0.05)', color: C.text, fontSize: 14, fontWeight: 600, fontFamily: FONT.body, cursor: 'pointer', textAlign: 'center' }}
+              >
+                Cancelar
+              </div>
+              <div
+                onClick={handleCreatePoll}
+                style={{
+                  flex: 1, padding: '12px 0', borderRadius: 12,
+                  background: (pollQuestion.trim() && pollOptions.filter(o => o.trim()).length >= 2) ? GRADIENT.primary : C.surfaceHigh,
+                  color: (pollQuestion.trim() && pollOptions.filter(o => o.trim()).length >= 2) ? '#fff' : C.textFaint,
+                  fontSize: 14, fontWeight: 600, fontFamily: FONT.body,
+                  cursor: (pollQuestion.trim() && pollOptions.filter(o => o.trim()).length >= 2) ? 'pointer' : 'default',
+                  textAlign: 'center',
+                }}
+              >
+                {pollCreating ? 'Creando...' : 'Crear encuesta'}
               </div>
             </div>
           </div>
