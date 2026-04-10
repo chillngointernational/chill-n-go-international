@@ -833,6 +833,10 @@ export default function MessagesScreen({ onOpenChat }) {
             if (newMsg.message_type === 'image') conv.msg = '📷 Photo'
             else if (newMsg.message_type === 'video') conv.msg = '🎬 Video'
             else if (newMsg.message_type === 'voice') conv.msg = '🎙️ Voice message'
+            else if (newMsg.message_type === 'document') conv.msg = '📄 Document'
+            else if (newMsg.message_type === 'location') conv.msg = '📍 Location'
+            else if (newMsg.message_type === 'chilliums') conv.msg = '💰 Chilliums enviados'
+            else if (newMsg.message_type === 'poll') conv.msg = '📊 Encuesta'
             else conv.msg = newMsg.content?.substring(0, 100) || ''
 
             conv.time = 'now'
