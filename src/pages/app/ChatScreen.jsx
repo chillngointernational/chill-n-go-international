@@ -102,6 +102,69 @@ const DeliveryStatus = ({ status }) => {
   return null
 }
 
+/* ── Story Reply Badge ── */
+function StoryReplyBadge({ storyId, isMine }) {
+  const [story, setStory] = useState(null)
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    if (!storyId) return
+    supabase
+      .from('cng_stories')
+      .select('id, media_url, caption, media_type')
+      .eq('id', storyId)
+      .maybeSingle()
+      .then(({ data }) => { setStory(data || null); setLoaded(true) })
+      .catch(() => setLoaded(true))
+  }, [storyId])
+
+  if (!loaded) return null
+
+  if (!story) {
+    return (
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8,
+        padding: '6px 10px', borderRadius: 8,
+        background: isMine ? 'rgba(255,255,255,0.1)' : 'rgba(104,219,174,0.08)',
+        borderLeft: '3px solid #B8956A',
+      }}>
+        <Icon name="auto_stories" size={14} style={{ color: '#B8956A' }} />
+        <span style={{ fontSize: 11, color: isMine ? 'rgba(255,255,255,0.6)' : C.textDim, fontFamily: FONT.body, fontStyle: 'italic' }}>
+          Estado expirado
+        </span>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8,
+      padding: '6px 10px', borderRadius: 8,
+      background: isMine ? 'rgba(255,255,255,0.12)' : 'rgba(104,219,174,0.08)',
+      borderLeft: '3px solid #B8956A',
+    }}>
+      <div style={{
+        width: 36, height: 36, borderRadius: 8, overflow: 'hidden',
+        flexShrink: 0, border: '1px solid rgba(255,255,255,0.1)',
+      }}>
+        <img src={story.media_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      </div>
+      <div style={{ flex: 1, overflow: 'hidden' }}>
+        <p style={{ fontSize: 11, fontWeight: 700, fontFamily: FONT.headline, color: '#B8956A', marginBottom: 1 }}>
+          Respondió a un estado
+        </p>
+        <p style={{
+          fontSize: 11, fontFamily: FONT.body,
+          color: isMine ? 'rgba(255,255,255,0.5)' : C.textDim,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {story.caption || (story.media_type === 'video' ? '🎬 Video' : '📷 Foto')}
+        </p>
+      </div>
+    </div>
+  )
+}
+
 /* ════════════════════════════════════════════════════════════════ */
 export default function ChatScreen({ conversationId, onBack }) {
   const { user } = useAuth()
@@ -1241,6 +1304,10 @@ export default function ChatScreen({ conversationId, onBack }) {
                   color: isMine ? '#fff' : C.text,
                   border: isDeleted ? '1px solid rgba(241,239,232,0.06)' : 'none',
                 }}>
+                  {/* Story reply reference */}
+                  {msg.story_id && !isDeleted && (
+                    <StoryReplyBadge storyId={msg.story_id} isMine={isMine} />
+                  )}
                   {/* Forwarded label */}
                   {isForwarded && !isDeleted && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4, opacity: 0.7 }}>
