@@ -642,10 +642,10 @@ export default function ChatScreen({ conversationId, onBack }) {
   useEffect(() => {
     if (!showGifPicker) return
     setGifLoading(true)
-    fetch('https://api.giphy.com/v1/gifs/trending?api_key=dc6zaTOxFJmzC&limit=20&rating=g')
+    fetch('https://api.giphy.com/v1/gifs/trending?api_key=q8Rtsy1zkVHLimn85hhF1TQPNJvIqdoH&limit=20&rating=g')
       .then(r => r.json())
       .then(d => setGifResults(d.data || []))
-      .catch(() => setGifResults([]))
+      .catch((err) => { console.error('GIPHY fetch error:', err); setGifResults([]) })
       .finally(() => setGifLoading(false))
   }, [showGifPicker])
 
@@ -653,10 +653,10 @@ export default function ChatScreen({ conversationId, onBack }) {
     if (!showGifPicker || !gifSearch.trim()) return
     const timer = setTimeout(() => {
       setGifLoading(true)
-      fetch(`https://api.giphy.com/v1/gifs/search?api_key=dc6zaTOxFJmzC&q=${encodeURIComponent(gifSearch)}&limit=20&rating=g`)
+      fetch(`https://api.giphy.com/v1/gifs/search?api_key=q8Rtsy1zkVHLimn85hhF1TQPNJvIqdoH&q=${encodeURIComponent(gifSearch)}&limit=20&rating=g`)
         .then(r => r.json())
         .then(d => setGifResults(d.data || []))
-        .catch(() => setGifResults([]))
+        .catch((err) => { console.error('GIPHY fetch error:', err); setGifResults([]) })
         .finally(() => setGifLoading(false))
     }, 400)
     return () => clearTimeout(timer)
