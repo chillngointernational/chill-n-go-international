@@ -197,7 +197,6 @@ export default function AppShell() {
                     height: '100%',
                     overflowY: isFs ? 'hidden' : 'auto',
                     overflowX: 'hidden',
-                    paddingBottom: showNav ? 96 : 0,
                     paddingTop: isFs ? 0 : 8,
                 }}>
                     {renderContent()}

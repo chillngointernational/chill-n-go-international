@@ -599,7 +599,7 @@ export default function FeedScreen() {
 
   if (loading) {
     return (
-      <div style={{ position: 'relative', width: '100%', height: '100%', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', ...(isDesktop ? { maxWidth: 600, margin: '0 auto', height: '100dvh' } : {}) }}>
+      <div style={{ position: 'relative', width: '100%', height: '100%', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', ...(isDesktop ? { maxWidth: 600, margin: '0 auto' } : {}) }}>
         <div style={{ width: 32, height: 32, border: '3px solid rgba(104,219,174,0.3)', borderTopColor: C.primary, borderRadius: 99, animation: 'spin 0.8s linear infinite' }} />
         <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
       </div>
@@ -609,7 +609,7 @@ export default function FeedScreen() {
   // No posts — show demo
   if (posts.length === 0) {
     return (
-      <div style={{ position: 'relative', width: '100%', height: '100%', background: '#000', overflow: 'hidden', ...(isDesktop ? { maxWidth: 600, margin: '0 auto', height: '100dvh' } : {}) }}>
+      <div style={{ position: 'relative', width: '100%', height: '100%', background: '#000', overflow: 'hidden', ...(isDesktop ? { maxWidth: 600, margin: '0 auto' } : {}) }}>
         <DemoPost />
       </div>
     )
@@ -626,7 +626,7 @@ export default function FeedScreen() {
         overflow: 'hidden',
         overflowY: 'auto',
         scrollSnapType: 'y mandatory',
-        ...(isDesktop ? { maxWidth: 600, margin: '0 auto', height: '100dvh' } : {}),
+        ...(isDesktop ? { maxWidth: 600, margin: '0 auto' } : {}),
       }}
     >
       {posts.map((post) => (

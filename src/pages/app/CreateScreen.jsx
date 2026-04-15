@@ -211,7 +211,6 @@ export default function CreateScreen({ onDone }) {
         position: 'relative', minHeight: '100%',
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
         background: C.surface, padding: 24,
-        ...(desktop ? { height: '100dvh' } : {}),
       }}>
         {closeBtn}
         {fileInputs}
@@ -341,7 +340,6 @@ export default function CreateScreen({ onDone }) {
         position: 'relative', minHeight: '100%',
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
         background: C.surface, padding: 24,
-        ...(desktop ? { height: '100dvh' } : {}),
       }}>
         {closeBtn}
         {fileInputs}
@@ -447,7 +445,6 @@ export default function CreateScreen({ onDone }) {
       position: 'relative', minHeight: '100%',
       display: 'flex', flexDirection: 'column', alignItems: 'center',
       background: C.surface, overflowY: 'auto',
-      ...(desktop ? { height: '100dvh' } : {}),
     }}>
       {closeBtn}
       {fileInputs}
