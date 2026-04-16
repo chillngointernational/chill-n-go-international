@@ -10,3 +10,11 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
         detectSessionInUrl: true,
     },
 })
+
+// Public client — never sends auth token, always hits anon RLS policies
+export const supabasePublic = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+    },
+})

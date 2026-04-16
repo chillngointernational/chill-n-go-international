@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate, Link } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+import { supabase, supabasePublic } from '../lib/supabase'
 import RegistrationWizard from '../components/RegistrationWizard'
 import { C, FONT, GRADIENT } from '../stitch'
 
@@ -153,7 +153,7 @@ export default function Join() {
 
   async function fetchReferrer() {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await supabasePublic
         .from('identity_profiles')
         .select('full_name, email, ref_code, avatar_url, created_at')
         .eq('ref_code', refCode)
@@ -307,7 +307,7 @@ export default function Join() {
               <div style={{fontSize:15, color:C.errorBright, fontWeight:600, marginBottom:10, letterSpacing:1, textTransform:'uppercase'}}>{t.importantTitle}</div>
               <div style={{width:40, height:2, background:'rgba(224,49,49,0.3)', margin:'0 auto 12px', borderRadius:1}}></div>
               <div style={{fontSize: isMobile ? 12 : 14, color:C.error, lineHeight:1.7}}>
-                {t.acceptWarning(<strong style={{color:C.error}}>{referrerDisplayName}</strong>)}
+                {t.acceptWarning(referrerDisplayName)}
               </div>
             </div>
 
