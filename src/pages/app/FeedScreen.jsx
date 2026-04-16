@@ -259,13 +259,12 @@ function CaptionText({ text, maxLength = 80 }) {
   )
 }
 
-function PostCard({ post, currentUserId, onLike, onBookmark, onComment, onShare, onFollow, userInteracted }) {
+function PostCard({ post, currentUserId, onLike, onBookmark, onComment, onShare, onFollow, isMuted, onMuteToggle }) {
   const member = post.identity_profiles
   const displayName = member?.full_name || member?.ref_code || 'Member'
   const initial = displayName[0]?.toUpperCase() || 'M'
   const avatarUrl = member?.avatar_url
   const tag = TAG_COLORS[post.category] || TAG_COLORS.general
-  const [isMuted, setIsMuted] = useState(true)
 
   const videoRef = useRef(null)
   const cardRef = useRef(null)
@@ -294,15 +293,12 @@ function PostCard({ post, currentUserId, onLike, onBookmark, onComment, onShare,
     return () => observer.disconnect()
   }, [post.media_type])
 
-  // Auto-unmute after first user interaction
+  // Sync muted state from parent whenever it changes or video starts playing
   useEffect(() => {
     const video = videoRef.current
     if (!video || post.media_type !== 'video') return
-    if (userInteracted) {
-      video.muted = false
-      setIsMuted(false)
-    }
-  }, [userInteracted, post.media_type])
+    video.muted = isMuted
+  }, [isMuted, isPlaying, post.media_type])
 
   const handleVideoTap = () => {
     const video = videoRef.current
@@ -331,7 +327,7 @@ function PostCard({ post, currentUserId, onLike, onBookmark, onComment, onShare,
                 onClick={handleVideoTap}
               />
               <div
-                onClick={(e) => { e.stopPropagation(); const v = videoRef.current; if (v) { v.muted = !v.muted; setIsMuted(v.muted) } }}
+                onClick={(e) => { e.stopPropagation(); onMuteToggle() }}
                 style={{
                   position: 'absolute', top: 16, right: 16, zIndex: 15,
                   width: 36, height: 36, borderRadius: 99,
@@ -439,19 +435,7 @@ export default function FeedScreen() {
   const scrollRef = useRef(null)
   const [commentPost, setCommentPost] = useState(null)
   const [toast, setToast] = useState(null)
-  const [userInteracted, setUserInteracted] = useState(false)
-
-  // After first tap anywhere, unmute all videos
-  useEffect(() => {
-    if (userInteracted) return
-    const handler = () => setUserInteracted(true)
-    document.addEventListener('click', handler, { once: true })
-    document.addEventListener('touchstart', handler, { once: true })
-    return () => {
-      document.removeEventListener('click', handler)
-      document.removeEventListener('touchstart', handler)
-    }
-  }, [userInteracted])
+  const [isMuted, setIsMuted] = useState(true)
 
   const fetchPosts = useCallback(async () => {
     if (!user) { setLoading(false); return }
@@ -639,7 +623,8 @@ export default function FeedScreen() {
             onComment={handleComment}
             onShare={handleShare}
             onFollow={handleFollow}
-            userInteracted={userInteracted}
+            isMuted={isMuted}
+            onMuteToggle={() => setIsMuted(m => !m)}
           />
         </div>
       ))}
