@@ -301,14 +301,7 @@ function PostCard({ post, currentUserId, onLike, onBookmark, onComment, onShare,
   }, [isMuted, isPlaying, post.media_type])
 
   const handleVideoTap = () => {
-    const video = videoRef.current
-    if (!video) return
-    if (video.paused) {
-      video.play().then(() => setIsPlaying(true)).catch(() => { })
-    } else {
-      video.pause()
-      setIsPlaying(false)
-    }
+    onMuteToggle()
   }
   return (
     <div ref={cardRef} style={{ position: 'relative', width: '100%', height: '100%', flexShrink: 0, scrollSnapAlign: 'start' }}>
