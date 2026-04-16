@@ -19,27 +19,64 @@ export default function NetworkScreen({ onBack, isDesktop }) {
         : null
 
     useEffect(() => {
-        if (member?.id) {
+        if (user?.id) {
             fetchReferrals()
             fetchLedger()
         }
-    }, [member])
+    }, [user])
 
     async function fetchReferrals() {
         try {
-            const { data } = await supabase
-                .from('cng_referral_tree')
-                .select(`
-          *,
-          referred_member:referred_member_id (
-            id, email, full_name, ref_code, payment_status,
-            chilliums_balance, created_at, referrals_level1
-          )
-        `)
-                .eq('member_id', member.id)
+            // 1. Get referral tree entries where this user is the referrer
+            const { data: treeData } = await supabase
+                .from('referral_tree')
+                .select('*')
+                .eq('referred_by', user.id)
                 .order('created_at', { ascending: false })
 
-            setReferrals(data || [])
+            if (!treeData || treeData.length === 0) {
+                setReferrals([])
+                setLoading(false)
+                return
+            }
+
+            // 2. Collect all referred member IDs
+            const memberIds = treeData.map(r => r.member_id).filter(Boolean)
+
+            // 3. Fetch profiles for those members
+            const { data: profiles } = await supabase
+                .from('identity_profiles')
+                .select('user_id, email, full_name, ref_code, payment_status, chilliums_balance, created_at, direct_referrals_count')
+                .in('user_id', memberIds)
+
+            const profileMap = {}
+            ;(profiles || []).forEach(p => { profileMap[p.user_id] = p })
+
+            // 4. Also find L2 referrals (people referred by my direct referrals)
+            const { data: l2Data } = await supabase
+                .from('referral_tree')
+                .select('*')
+                .in('referred_by', memberIds)
+                .order('created_at', { ascending: false })
+
+            let allL2MemberIds = []
+            if (l2Data && l2Data.length > 0) {
+                allL2MemberIds = l2Data.map(r => r.member_id).filter(Boolean)
+                const { data: l2Profiles } = await supabase
+                    .from('identity_profiles')
+                    .select('user_id, email, full_name, ref_code, payment_status, chilliums_balance, created_at, direct_referrals_count')
+                    .in('user_id', allL2MemberIds)
+
+                ;(l2Profiles || []).forEach(p => { profileMap[p.user_id] = p })
+            }
+
+            // 5. Build combined list with level info
+            const combined = [
+                ...treeData.map(r => ({ ...r, level: 1, referred_member: profileMap[r.member_id] || null })),
+                ...(l2Data || []).map(r => ({ ...r, level: 2, referred_member: profileMap[r.member_id] || null })),
+            ]
+
+            setReferrals(combined)
         } catch (e) {
             console.error(e)
         } finally {
@@ -50,9 +87,9 @@ export default function NetworkScreen({ onBack, isDesktop }) {
     async function fetchLedger() {
         try {
             const { data } = await supabase
-                .from('cng_chilliums_ledger')
+                .from('chilliums_ledger')
                 .select('*')
-                .eq('member_id', member.id)
+                .eq('user_id', user.id)
                 .order('created_at', { ascending: false })
                 .limit(50)
 
@@ -74,31 +111,27 @@ export default function NetworkScreen({ onBack, isDesktop }) {
     const l2 = referrals.filter(r => r.level === 2)
 
     const earnings = {
-        cashback: ledger.filter(l => l.type === 'cashback').reduce((s, l) => s + Number(l.amount), 0),
-        referral_l1: ledger.filter(l => l.type === 'referral_l1' || l.type === 'membership_l1').reduce((s, l) => s + Number(l.amount), 0),
-        referral_l2: ledger.filter(l => l.type === 'referral_l2' || l.type === 'membership_l2').reduce((s, l) => s + Number(l.amount), 0),
+        cashback: ledger.filter(l => l.type === 'cashback_direct').reduce((s, l) => s + Number(l.amount), 0),
+        referral_l1: ledger.filter(l => l.type === 'cashback_network' && l.referral_level === 2).reduce((s, l) => s + Number(l.amount), 0),
+        referral_l2: ledger.filter(l => l.type === 'cashback_network' && l.referral_level === 3).reduce((s, l) => s + Number(l.amount), 0),
         bonus: ledger.filter(l => l.type === 'bonus').reduce((s, l) => s + Number(l.amount), 0),
-        redeemed: ledger.filter(l => l.type === 'redemption').reduce((s, l) => s + Math.abs(Number(l.amount)), 0),
+        redeemed: member?.chilliums_total_spent || 0,
     }
 
     const typeLabels = {
-        cashback: 'Cashback',
-        referral_l1: 'Referido N1',
-        referral_l2: 'Referido N2',
-        membership_l1: 'Membresía N1',
-        membership_l2: 'Membresía N2',
-        bonus: 'Bono mensual',
+        cashback_direct: 'Cashback',
+        cashback_network: 'Referido',
+        bonus: 'Bono',
         redemption: 'Redención',
+        adjustment: 'Ajuste',
     }
 
     const typeColors = {
-        cashback: C.primaryBright,
-        referral_l1: C.tertiaryContainer,
-        referral_l2: '#D85A30',
-        membership_l1: C.tertiaryContainer,
-        membership_l2: '#D85A30',
+        cashback_direct: C.primaryBright,
+        cashback_network: C.tertiaryContainer,
         bonus: '#EF9F27',
         redemption: C.errorBright,
+        adjustment: C.onSurfaceVariant,
     }
 
     return (
@@ -226,9 +259,9 @@ export default function NetworkScreen({ onBack, isDesktop }) {
                                                 <div style={s.treeNodeStatus(ref.referred_member?.payment_status)}>
                                                     {ref.referred_member?.payment_status === 'active' ? 'Activo' : 'Pendiente'}
                                                 </div>
-                                                {ref.referred_member?.referrals_level1 > 0 && (
+                                                {ref.referred_member?.direct_referrals_count > 0 && (
                                                     <div style={s.treeNodeSubs}>
-                                                        +{ref.referred_member.referrals_level1} referidos
+                                                        +{ref.referred_member.direct_referrals_count} referidos
                                                     </div>
                                                 )}
                                             </div>
@@ -292,23 +325,23 @@ export default function NetworkScreen({ onBack, isDesktop }) {
                                 <div style={s.summaryIcon(C.tertiaryContainer)}>
                                     <Icon name="group" size={20} style={{ color: C.tertiaryContainer }} />
                                 </div>
-                                <div style={s.summaryNumber}>{member?.referrals_level1 || 0}</div>
+                                <div style={s.summaryNumber}>{member?.direct_referrals_count || 0}</div>
                                 <div style={s.summaryLabel}>Referidos directos</div>
-                                <div style={s.summarySub}>$3.50/mes c/u</div>
+                                <div style={s.summarySub}>$3.00/mes c/u</div>
                             </div>
                             <div style={s.summaryCard}>
                                 <div style={s.summaryIcon('#D85A30')}>
                                     <Icon name="groups" size={20} style={{ color: '#D85A30' }} />
                                 </div>
-                                <div style={s.summaryNumber}>{member?.referrals_level2 || 0}</div>
+                                <div style={s.summaryNumber}>{l2.length}</div>
                                 <div style={s.summaryLabel}>Red extendida</div>
-                                <div style={s.summarySub}>$2.00/mes c/u</div>
+                                <div style={s.summarySub}>$2.10/mes c/u</div>
                             </div>
                             <div style={s.summaryCard}>
                                 <div style={s.summaryIcon('#EF9F27')}>
                                     <Icon name="paid" size={20} style={{ color: '#EF9F27' }} />
                                 </div>
-                                <div style={s.summaryNumber}>{member?.total_earnings?.toFixed(2) || '0.00'}</div>
+                                <div style={s.summaryNumber}>{member?.chilliums_total_earned?.toFixed(2) || '0.00'}</div>
                                 <div style={s.summaryLabel}>Ganado total</div>
                                 <div style={s.summarySub}>Chilliums</div>
                             </div>
@@ -316,7 +349,7 @@ export default function NetworkScreen({ onBack, isDesktop }) {
                                 <div style={s.summaryIcon(C.errorBright)}>
                                     <Icon name="redeem" size={20} style={{ color: C.errorBright }} />
                                 </div>
-                                <div style={s.summaryNumber}>{earnings.redeemed.toFixed(2)}</div>
+                                <div style={s.summaryNumber}>{(member?.chilliums_total_spent || 0).toFixed(2)}</div>
                                 <div style={s.summaryLabel}>Redimidos</div>
                                 <div style={s.summarySub}>Usados en compras</div>
                             </div>
