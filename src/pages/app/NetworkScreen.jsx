@@ -27,11 +27,12 @@ export default function NetworkScreen({ onBack, isDesktop }) {
 
     async function fetchReferrals() {
         try {
-            // 1. Get referral tree entries where this user is the referrer
+            // 1. Get referral tree entries where this user is the referrer (exclude self)
             const { data: treeData } = await supabase
                 .from('referral_tree')
                 .select('*')
                 .eq('referred_by', user.id)
+                .neq('member_id', user.id)
                 .order('created_at', { ascending: false })
 
             if (!treeData || treeData.length === 0) {

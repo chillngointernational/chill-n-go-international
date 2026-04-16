@@ -37,6 +37,7 @@ export default function Network() {
                 .from('referral_tree')
                 .select('*')
                 .eq('referred_by', user.id)
+                .neq('member_id', user.id)
                 .order('created_at', { ascending: false })
 
             if (!treeData || treeData.length === 0) {
