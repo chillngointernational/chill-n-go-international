@@ -62,7 +62,7 @@ export default function ProfileScreen({ onNavigate }) {
       const { data: urlData } = supabase.storage.from('cng-media').getPublicUrl(path)
       const newUrl = urlData.publicUrl
 
-      const { error: updateErr } = await supabase.from('cng_members').update({ avatar_url: newUrl }).eq('user_id', user.id)
+      const { error: updateErr } = await supabase.from('identity_profiles').update({ avatar_url: newUrl }).eq('user_id', user.id)
       if (updateErr) throw updateErr
 
       // Refresh member data

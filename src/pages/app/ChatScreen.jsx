@@ -477,7 +477,7 @@ export default function ChatScreen({ conversationId, onBack }) {
 
       if (userIds.length > 0) {
         const { data: profiles } = await supabase
-          .from('cng_members')
+          .from('identity_profiles')
           .select('user_id, full_name, ref_code, avatar_url')
           .in('user_id', userIds)
 
@@ -1232,7 +1232,7 @@ export default function ChatScreen({ conversationId, onBack }) {
     setChilliumsAmount('')
     setChilliumsSending(false)
     try {
-      const { data } = await supabase.from('cng_members').select('chilliums_balance').eq('user_id', user.id).single()
+      const { data } = await supabase.from('identity_profiles').select('chilliums_balance').eq('user_id', user.id).single()
       setMyChilliumsBalance(data?.chilliums_balance || 0)
     } catch { setMyChilliumsBalance(0) }
     setShowChilliumsModal(true)
@@ -1244,13 +1244,13 @@ export default function ChatScreen({ conversationId, onBack }) {
     setChilliumsSending(true)
     try {
       // a) Verify sender balance
-      const { data: senderData } = await supabase.from('cng_members').select('chilliums_balance').eq('user_id', user.id).single()
+      const { data: senderData } = await supabase.from('identity_profiles').select('chilliums_balance').eq('user_id', user.id).single()
       const senderBalance = senderData?.chilliums_balance || 0
       if (senderBalance < amount) { alert('Saldo insuficiente'); setChilliumsSending(false); return }
 
       // b) Debit sender
       const newSenderBalance = senderBalance - amount
-      const { error: e1 } = await supabase.from('cng_members').update({ chilliums_balance: newSenderBalance }).eq('user_id', user.id)
+      const { error: e1 } = await supabase.from('identity_profiles').update({ chilliums_balance: newSenderBalance }).eq('user_id', user.id)
       if (e1) throw e1
 
       // c) Ledger sender
@@ -1263,9 +1263,9 @@ export default function ChatScreen({ conversationId, onBack }) {
       if (e2) throw e2
 
       // d) Credit recipient
-      const { data: recData } = await supabase.from('cng_members').select('chilliums_balance').eq('user_id', otherUser.user_id).single()
+      const { data: recData } = await supabase.from('identity_profiles').select('chilliums_balance').eq('user_id', otherUser.user_id).single()
       const recNewBalance = (recData?.chilliums_balance || 0) + amount
-      const { error: e3 } = await supabase.from('cng_members').update({ chilliums_balance: recNewBalance }).eq('user_id', otherUser.user_id)
+      const { error: e3 } = await supabase.from('identity_profiles').update({ chilliums_balance: recNewBalance }).eq('user_id', otherUser.user_id)
       if (e3) throw e3
 
       // e) Ledger recipient
@@ -1440,7 +1440,7 @@ export default function ChatScreen({ conversationId, onBack }) {
     setFwdLoading(true)
     try {
       const { data } = await supabase
-        .from('cng_members')
+        .from('identity_profiles')
         .select('user_id, full_name, ref_code, avatar_url')
         .neq('user_id', user.id)
         .or(`full_name.ilike.%${q}%,ref_code.ilike.%${q}%`)

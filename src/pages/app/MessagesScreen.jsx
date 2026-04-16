@@ -38,7 +38,7 @@ function NewMessageModal({ open, onClose, onSelectConversation, user }) {
       setSearching(true)
       try {
         const { data } = await supabase
-          .from('cng_members')
+          .from('identity_profiles')
           .select('user_id, full_name, ref_code, avatar_url')
           .neq('user_id', user.id)
           .ilike('full_name', '%' + query.trim() + '%')
@@ -223,7 +223,7 @@ function NewGroupModal({ open, onClose, onSelectConversation, user }) {
       setSearching(true)
       try {
         const { data } = await supabase
-          .from('cng_members')
+          .from('identity_profiles')
           .select('user_id, full_name, ref_code, avatar_url')
           .neq('user_id', user.id)
           .ilike('full_name', '%' + query.trim() + '%')
@@ -655,7 +655,7 @@ export default function MessagesScreen({ onOpenChat }) {
 
       // 4. Fetch profiles for those users
       const { data: profiles } = await supabase
-        .from('cng_members')
+        .from('identity_profiles')
         .select('user_id, full_name, ref_code, avatar_url')
         .in('user_id', userIds)
 
@@ -756,7 +756,7 @@ export default function MessagesScreen({ onOpenChat }) {
       let memberMap = {}
       if (otherUserIds.size > 0) {
         const { data: members } = await supabase
-          .from('cng_members')
+          .from('identity_profiles')
           .select('user_id, full_name, ref_code, avatar_url')
           .in('user_id', [...otherUserIds])
         if (members) {

@@ -10,7 +10,7 @@
 CREATE TABLE IF NOT EXISTS cng_posts (
   id             uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id        uuid        NOT NULL REFERENCES auth.users (id) ON DELETE CASCADE,
-  member_id      uuid        REFERENCES cng_members (id) ON DELETE SET NULL,
+  member_id      uuid        REFERENCES identity_profiles (id) ON DELETE SET NULL,
   media_url      text,
   media_type     text        DEFAULT 'image'
                              CHECK (media_type IN ('image', 'video', 'story')),

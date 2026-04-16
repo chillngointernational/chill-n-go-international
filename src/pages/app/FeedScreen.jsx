@@ -26,14 +26,14 @@ function CommentsPanel({ post, userId, onClose, onCountUpdate }) {
 
     const userIds = [...new Set(rawComments.map(c => c.user_id))]
     const { data: members } = await supabase
-      .from('cng_members')
+      .from('identity_profiles')
       .select('user_id, full_name, ref_code, avatar_url')
       .in('user_id', userIds)
 
     const memberMap = {}
       ; (members || []).forEach(m => { memberMap[m.user_id] = m })
 
-    setComments(rawComments.map(c => ({ ...c, cng_members: memberMap[c.user_id] || {} })))
+    setComments(rawComments.map(c => ({ ...c, identity_profiles: memberMap[c.user_id] || {} })))
     setLoading(false)
   }, [post.id])
 
@@ -56,7 +56,7 @@ function CommentsPanel({ post, userId, onClose, onCountUpdate }) {
       user_id: userId,
       content,
       created_at: new Date().toISOString(),
-      cng_members: { full_name: 'You', ref_code: '', avatar_url: null },
+      identity_profiles: { full_name: 'You', ref_code: '', avatar_url: null },
     }
     setComments(prev => [...prev, optimistic])
     onCountUpdate(post.id, 1)
@@ -117,7 +117,7 @@ function CommentsPanel({ post, userId, onClose, onCountUpdate }) {
           ) : comments.length === 0 ? (
             <p style={{ textAlign: 'center', color: C.textDim, fontSize: 13, padding: 24, fontFamily: FONT.body }}>No comments yet. Be the first!</p>
           ) : comments.map(c => {
-            const m = c.cng_members || {}
+            const m = c.identity_profiles || {}
             const name = m.full_name || m.ref_code || 'Member'
             const ini = name[0]?.toUpperCase() || 'M'
             return (
@@ -260,7 +260,7 @@ function CaptionText({ text, maxLength = 80 }) {
 }
 
 function PostCard({ post, currentUserId, onLike, onBookmark, onComment, onShare, onFollow, userInteracted }) {
-  const member = post.cng_members
+  const member = post.identity_profiles
   const displayName = member?.full_name || member?.ref_code || 'Member'
   const initial = displayName[0]?.toUpperCase() || 'M'
   const avatarUrl = member?.avatar_url
@@ -375,7 +375,7 @@ function PostCard({ post, currentUserId, onLike, onBookmark, onComment, onShare,
               <div style={{ width: '100%', height: '100%', background: 'linear-gradient(135deg, #1D9E75, #0F6E56)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 700, color: '#fff', fontFamily: FONT.headline }}>{initial}</div>
             )}
           </div>
-          {post.cng_members?.user_id !== currentUserId && (
+          {post.identity_profiles?.user_id !== currentUserId && (
             <div
               onClick={(e) => { e.stopPropagation(); onFollow(post) }}
               style={{ position: 'absolute', bottom: -8, left: '50%', transform: 'translateX(-50%)', width: 20, height: 20, background: post._followed ? '#E24B4A' : 'linear-gradient(135deg, #1D9E75, #0F6E56)', borderRadius: 99, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #0D1117', cursor: 'pointer', transition: 'background 0.2s' }}>
@@ -458,7 +458,7 @@ export default function FeedScreen() {
     try {
       const { data: postsData, error } = await supabase
         .from('cng_posts')
-        .select('*, cng_members!cng_posts_member_id_fkey(user_id, full_name, ref_code, avatar_url)')
+        .select('*, identity_profiles!cng_posts_member_id_fkey(user_id, full_name, ref_code, avatar_url)')
         .eq('is_active', true)
         .order('created_at', { ascending: false })
         .limit(20)
@@ -468,7 +468,7 @@ export default function FeedScreen() {
 
       // Fetch user's likes, bookmarks, and follows
       const postIds = postsData.map(p => p.id)
-      const authorIds = [...new Set(postsData.map(p => p.cng_members?.user_id).filter(Boolean))]
+      const authorIds = [...new Set(postsData.map(p => p.identity_profiles?.user_id).filter(Boolean))]
       const [likesRes, bookmarksRes, followsRes] = await Promise.all([
         supabase.from('cng_post_likes').select('post_id').eq('user_id', user.id).in('post_id', postIds),
         supabase.from('cng_post_bookmarks').select('post_id').eq('user_id', user.id).in('post_id', postIds),
@@ -485,7 +485,7 @@ export default function FeedScreen() {
         ...p,
         _liked: likedSet.has(p.id),
         _bookmarked: bookmarkedSet.has(p.id),
-        _followed: followedSet.has(p.cng_members?.user_id),
+        _followed: followedSet.has(p.identity_profiles?.user_id),
       })))
     } catch (e) {
       console.error('Error fetching posts:', e)
@@ -546,12 +546,12 @@ export default function FeedScreen() {
 
   const handleFollow = async (post) => {
     if (!user) return
-    const authorId = post.cng_members?.user_id
+    const authorId = post.identity_profiles?.user_id
     if (!authorId || authorId === user.id) return
     const wasFollowed = post._followed
     // Optimistic update — toggle all posts by same author
     setPosts(prev => prev.map(p =>
-      p.cng_members?.user_id === authorId ? { ...p, _followed: !wasFollowed } : p
+      p.identity_profiles?.user_id === authorId ? { ...p, _followed: !wasFollowed } : p
     ))
     try {
       if (wasFollowed) {
@@ -565,7 +565,7 @@ export default function FeedScreen() {
       console.error('Follow error:', e)
       // Revert
       setPosts(prev => prev.map(p =>
-        p.cng_members?.user_id === authorId ? { ...p, _followed: wasFollowed } : p
+        p.identity_profiles?.user_id === authorId ? { ...p, _followed: wasFollowed } : p
       ))
     }
   }

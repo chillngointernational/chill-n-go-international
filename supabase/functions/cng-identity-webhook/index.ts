@@ -15,7 +15,7 @@ serve(async (req) => {
       const session = event.data.object;
       const email = session.metadata?.email;
       if (email) {
-        await supabase.from("cng_members").update({ identity_verification_status: "verified", stripe_verification_session_id: session.id, updated_at: new Date().toISOString() }).eq("email", email);
+        await supabase.from("identity_profiles").update({ identity_verification_status: "verified", stripe_verification_session_id: session.id, updated_at: new Date().toISOString() }).eq("email", email);
       }
       return new Response(JSON.stringify({ received: true, status: "verified" }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
@@ -24,7 +24,7 @@ serve(async (req) => {
       const session = event.data.object;
       const email = session.metadata?.email;
       if (email) {
-        await supabase.from("cng_members").update({ identity_verification_status: "failed", stripe_verification_session_id: session.id, updated_at: new Date().toISOString() }).eq("email", email);
+        await supabase.from("identity_profiles").update({ identity_verification_status: "failed", stripe_verification_session_id: session.id, updated_at: new Date().toISOString() }).eq("email", email);
       }
       return new Response(JSON.stringify({ received: true, status: "failed" }), { status: 200, headers: { "Content-Type": "application/json" } });
     }

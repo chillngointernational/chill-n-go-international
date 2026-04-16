@@ -154,7 +154,7 @@ export default function Join() {
   async function fetchReferrer() {
     try {
       const { data, error } = await supabase
-        .from('cng_members')
+        .from('identity_profiles')
         .select('full_name, email, ref_code, avatar_url, created_at')
         .eq('ref_code', refCode)
         .eq('payment_status', 'active')

@@ -30,7 +30,7 @@ export function AuthProvider({ children }) {
   async function fetchMember(userId) {
     try {
       const { data, error } = await supabase
-        .from('cng_members')
+        .from('identity_profiles')
         .select('*')
         .eq('user_id', userId)
         .single()

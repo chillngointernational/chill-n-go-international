@@ -403,7 +403,7 @@ export default function RegistrationWizard({ email, refCode, referrerName, onCom
         return
       }
 
-      // 2. Update cng_members with registration data (no document fields)
+      // 2. Update identity_profiles with registration data (no document fields)
       const updateData = {
         full_name: fullName,
         first_name: firstName,
@@ -433,7 +433,7 @@ export default function RegistrationWizard({ email, refCode, referrerName, onCom
       }
 
       const { error: updateError } = await supabase
-        .from('cng_members')
+        .from('identity_profiles')
         .update(updateData)
         .eq('email', email)
 
@@ -480,7 +480,7 @@ export default function RegistrationWizard({ email, refCode, referrerName, onCom
 
       // Update member record with session ID
       await supabase
-        .from('cng_members')
+        .from('identity_profiles')
         .update({
           stripe_verification_session_id: data.session_id,
           updated_at: new Date().toISOString(),
@@ -501,7 +501,7 @@ export default function RegistrationWizard({ email, refCode, referrerName, onCom
 
         // Update member status
         await supabase
-          .from('cng_members')
+          .from('identity_profiles')
           .update({
             identity_verification_status: 'processing',
             updated_at: new Date().toISOString(),
