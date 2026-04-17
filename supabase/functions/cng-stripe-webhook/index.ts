@@ -121,6 +121,16 @@ serve(async (req) => {
     const event = JSON.parse(body);
 
     if (event.type === "checkout.session.completed") {
+      // Idempotency: skip if this event was already processed
+      const { data: dupCheck } = await supabase
+        .from("transactions")
+        .select("id")
+        .eq("metadata->>stripe_event_id", event.id)
+        .maybeSingle();
+      if (dupCheck) {
+        return new Response(JSON.stringify({ received: true, duplicate: true }), { status: 200 });
+      }
+
       const session = event.data.object;
       const email = session.customer_email || session.customer_details?.email;
       const refCode = session.metadata?.ref_code || "";
@@ -176,6 +186,7 @@ serve(async (req) => {
             operating_cost: CNG_FEE,
             net_profit: DISTRIBUTABLE,
             status: "completed",
+            metadata: { stripe_event_id: event.id },
           })
           .select("id")
           .single();
@@ -284,6 +295,7 @@ serve(async (req) => {
               operating_cost: CNG_FEE,
               net_profit: DISTRIBUTABLE,
               status: "completed",
+              metadata: { stripe_event_id: event.id },
             })
             .select("id")
             .single();
@@ -322,6 +334,16 @@ serve(async (req) => {
     }
 
     if (event.type === "invoice.payment_succeeded") {
+      // Idempotency: skip if this event was already processed
+      const { data: dupCheck } = await supabase
+        .from("transactions")
+        .select("id")
+        .eq("metadata->>stripe_event_id", event.id)
+        .maybeSingle();
+      if (dupCheck) {
+        return new Response(JSON.stringify({ received: true, duplicate: true }), { status: 200 });
+      }
+
       const invoice = event.data.object;
       const customerId = invoice.customer;
 
@@ -352,6 +374,7 @@ serve(async (req) => {
             operating_cost: CNG_FEE,
             net_profit: DISTRIBUTABLE,
             status: "completed",
+            metadata: { stripe_event_id: event.id },
           })
           .select("id")
           .single();
