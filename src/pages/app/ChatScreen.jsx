@@ -1239,8 +1239,8 @@ export default function ChatScreen({ conversationId, onBack }) {
   }
 
   const handleSendChilliums = async () => {
-    const amount = parseInt(chilliumsAmount, 10)
-    if (!amount || amount < 1 || !otherUser || !user) return
+    const amount = Math.round(parseFloat(chilliumsAmount) * 100) / 100
+    if (!amount || amount < 0.01 || !otherUser || !user) return
     setChilliumsSending(true)
     try {
       // a) Verify sender balance
@@ -2610,7 +2610,8 @@ export default function ChatScreen({ conversationId, onBack }) {
             </div>
             <input
               type="number"
-              min="1"
+              min="0.01"
+              step="0.01"
               placeholder="Cantidad"
               value={chilliumsAmount}
               onChange={(e) => setChilliumsAmount(e.target.value)}
@@ -2627,15 +2628,15 @@ export default function ChatScreen({ conversationId, onBack }) {
                 </div>
               ))}
             </div>
-            {chilliumsAmount && parseInt(chilliumsAmount, 10) > myChilliumsBalance && (
+            {chilliumsAmount && parseFloat(chilliumsAmount) > myChilliumsBalance && (
               <p style={{ fontSize: 12, color: '#ff6b6b', textAlign: 'center', marginTop: 8, fontFamily: FONT.body }}>Saldo insuficiente</p>
             )}
             <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
               <button onClick={() => setShowChilliumsModal(false)} style={{ flex: 1, padding: '12px 0', borderRadius: 12, border: '1px solid rgba(241,239,232,0.1)', background: 'transparent', color: C.text, fontSize: 14, fontFamily: FONT.body, cursor: 'pointer' }}>Cancelar</button>
               <button
                 onClick={handleSendChilliums}
-                disabled={chilliumsSending || !chilliumsAmount || parseInt(chilliumsAmount, 10) < 1 || isNaN(parseInt(chilliumsAmount, 10)) || parseInt(chilliumsAmount, 10) > myChilliumsBalance}
-                style={{ flex: 1, padding: '12px 0', borderRadius: 12, border: 'none', background: (chilliumsSending || !chilliumsAmount || parseInt(chilliumsAmount, 10) < 1 || parseInt(chilliumsAmount, 10) > myChilliumsBalance) ? 'rgba(184,149,106,0.3)' : 'linear-gradient(135deg, #B8956A, #e7c092)', color: '#fff', fontSize: 14, fontFamily: FONT.body, fontWeight: 600, cursor: (chilliumsSending || !chilliumsAmount || parseInt(chilliumsAmount, 10) < 1 || parseInt(chilliumsAmount, 10) > myChilliumsBalance) ? 'not-allowed' : 'pointer', opacity: (chilliumsSending || !chilliumsAmount || parseInt(chilliumsAmount, 10) < 1 || parseInt(chilliumsAmount, 10) > myChilliumsBalance) ? 0.5 : 1 }}
+                disabled={chilliumsSending || !chilliumsAmount || parseFloat(chilliumsAmount) < 0.01 || isNaN(parseFloat(chilliumsAmount)) || parseFloat(chilliumsAmount) > myChilliumsBalance}
+                style={{ flex: 1, padding: '12px 0', borderRadius: 12, border: 'none', background: (chilliumsSending || !chilliumsAmount || parseFloat(chilliumsAmount) < 0.01 || parseFloat(chilliumsAmount) > myChilliumsBalance) ? 'rgba(184,149,106,0.3)' : 'linear-gradient(135deg, #B8956A, #e7c092)', color: '#fff', fontSize: 14, fontFamily: FONT.body, fontWeight: 600, cursor: (chilliumsSending || !chilliumsAmount || parseFloat(chilliumsAmount) < 0.01 || parseFloat(chilliumsAmount) > myChilliumsBalance) ? 'not-allowed' : 'pointer', opacity: (chilliumsSending || !chilliumsAmount || parseFloat(chilliumsAmount) < 0.01 || parseFloat(chilliumsAmount) > myChilliumsBalance) ? 0.5 : 1 }}
               >
                 {chilliumsSending ? 'Enviando...' : `Enviar ${chilliumsAmount || 0} Chilliums`}
               </button>
