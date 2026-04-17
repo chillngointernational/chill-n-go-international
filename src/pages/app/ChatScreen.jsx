@@ -1265,8 +1265,9 @@ export default function ChatScreen({ conversationId, onBack }) {
       // d) Credit recipient
       const { data: recData } = await supabase.from('identity_profiles').select('chilliums_balance').eq('user_id', otherUser.user_id).single()
       const recNewBalance = (recData?.chilliums_balance || 0) + amount
-      const { error: e3 } = await supabase.from('identity_profiles').update({ chilliums_balance: recNewBalance }).eq('user_id', otherUser.user_id)
-      if (e3) throw e3
+      const { data: recUpdate, error: e3 } = await supabase.from('identity_profiles').update({ chilliums_balance: recNewBalance }).eq('user_id', otherUser.user_id).select('user_id').single()
+      if (e3) { console.error('Recipient balance update error:', e3); throw e3 }
+      if (!recUpdate) console.error('Recipient balance update: 0 rows affected (RLS?). user_id:', otherUser.user_id)
 
       // e) Ledger recipient
       await supabase.from('chilliums_ledger').insert({
