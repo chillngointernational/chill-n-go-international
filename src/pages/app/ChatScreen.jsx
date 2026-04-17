@@ -1258,7 +1258,7 @@ export default function ChatScreen({ conversationId, onBack }) {
       const { error: e2 } = await supabase.from('chilliums_ledger').insert({
         user_id: user.id, amount: -amount, type: 'transfer_out',
         description: `Transferencia a ${otherUser.full_name}`,
-        reference_id: conversationId, balance_after: newSenderBalance
+        source_user_id: otherUser.user_id, balance_after: newSenderBalance
       })
       if (e2) throw e2
 
@@ -1272,7 +1272,7 @@ export default function ChatScreen({ conversationId, onBack }) {
       await supabase.from('chilliums_ledger').insert({
         user_id: otherUser.user_id, amount: amount, type: 'transfer_in',
         description: `Transferencia de ${senderName}`,
-        reference_id: conversationId, balance_after: recNewBalance
+        source_user_id: user.id, balance_after: recNewBalance
       })
 
       // f) Send message in chat
