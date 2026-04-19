@@ -2556,7 +2556,8 @@ export default function ChatScreen({ conversationId, onBack }) {
       )}
 
       {/* Messages */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 16px 8px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 16px 8px', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
         {loading && (
           <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
             <div style={{ width: 28, height: 28, border: '3px solid rgba(104,219,174,0.3)', borderTopColor: C.primary, borderRadius: 99, animation: 'spin 0.8s linear infinite' }} />
@@ -2984,6 +2985,7 @@ export default function ChatScreen({ conversationId, onBack }) {
         )}
 
         <div ref={bottomRef} />
+        </div>
       </div>
 
       {/* Upload indicator */}
