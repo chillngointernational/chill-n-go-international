@@ -389,6 +389,9 @@ export default function ChatScreen({ conversationId, onBack }) {
   const [otherUserPresence, setOtherUserPresence] = useState(null)
 
   const [text, setText] = useState('')
+  const [mentionQuery, setMentionQuery] = useState(null)
+  const [mentionIndex, setMentionIndex] = useState(0)
+  const [mentionStartPos, setMentionStartPos] = useState(-1)
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const bottomRef = useRef(null)
@@ -1195,6 +1198,36 @@ export default function ChatScreen({ conversationId, onBack }) {
   /* ── Manejador de "Escribiendo" ────────────────────────────── */
   const handleTextChange = (e) => {
     const val = e.target.value
+
+    if (conversation?.type === 'group') {
+      const cursorPos = e.target.selectionStart
+      const textBeforeCursor = val.substring(0, cursorPos)
+      const lastAtIndex = textBeforeCursor.lastIndexOf('@')
+
+      if (lastAtIndex !== -1) {
+        const charBeforeAt = lastAtIndex > 0 ? textBeforeCursor[lastAtIndex - 1] : ' '
+        const isValidStart = charBeforeAt === ' ' || lastAtIndex === 0
+
+        if (isValidStart) {
+          const queryAfterAt = textBeforeCursor.substring(lastAtIndex + 1)
+          if (!queryAfterAt.includes(' ')) {
+            setMentionQuery(queryAfterAt)
+            setMentionStartPos(lastAtIndex)
+            setMentionIndex(0)
+          } else {
+            setMentionQuery(null)
+            setMentionStartPos(-1)
+          }
+        } else {
+          setMentionQuery(null)
+          setMentionStartPos(-1)
+        }
+      } else {
+        setMentionQuery(null)
+        setMentionStartPos(-1)
+      }
+    }
+
     setText(val)
 
     if (channelRef.current && channelRef.current.state === 'joined' && user) {
@@ -1953,6 +1986,30 @@ export default function ChatScreen({ conversationId, onBack }) {
     return map
   }, [messages])
 
+  /* ── Mention autocomplete candidates ───────────────────────── */
+  const mentionCandidates = useMemo(() => {
+    if (mentionQuery === null || conversation?.type !== 'group') return []
+    const q = mentionQuery.toLowerCase().trim()
+    const others = Object.values(membersMap).filter(m => m.user_id !== user?.id)
+    if (!q) return others.slice(0, 8)
+    return others.filter(m => {
+      const name = (m.full_name || '').toLowerCase()
+      const ref = (m.ref_code || '').toLowerCase()
+      return name.includes(q) || ref.includes(q)
+    }).slice(0, 8)
+  }, [mentionQuery, membersMap, user, conversation?.type])
+
+  const insertMention = (member) => {
+    if (mentionStartPos === -1) return
+    const name = member.full_name?.split(' ')[0] || member.ref_code || 'user'
+    const before = text.substring(0, mentionStartPos)
+    const after = text.substring(mentionStartPos + (mentionQuery?.length || 0) + 1)
+    setText(`${before}@${name} ${after}`)
+    setMentionQuery(null)
+    setMentionStartPos(-1)
+    setMentionIndex(0)
+  }
+
   /* ── Sticker send ───────────────────────────────────────────── */
   const sendSticker = (emoji) => {
     setShowStickers(false)
@@ -2245,19 +2302,51 @@ export default function ChatScreen({ conversationId, onBack }) {
     // Feature 5: Link preview for text messages
     const urlRegex = /(https?:\/\/[^\s]+)/g
     const urls = msg.content?.match(urlRegex)
-    const renderTextWithLinks = (text) => {
-      if (!urls) return text
-      const parts = text.split(urlRegex)
-      return parts.map((part, i) => {
-        if (urlRegex.lastIndex = 0, urlRegex.test(part)) {
-          return <a key={i} href={part} target="_blank" rel="noopener noreferrer" style={{ color: isMine ? '#fff' : (C.primaryBright || '#68dbae'), textDecoration: 'underline' }}>{part}</a>
+    const renderTextWithMentionsAndLinks = (content) => {
+      const combined = /(@\w+)|(https?:\/\/[^\s]+)/g
+      const parts = []
+      let lastIndex = 0
+      let match
+      while ((match = combined.exec(content)) !== null) {
+        if (match.index > lastIndex) {
+          parts.push({ type: 'text', content: content.substring(lastIndex, match.index) })
         }
-        return part
+        if (match[0].startsWith('@')) {
+          parts.push({ type: 'mention', content: match[0] })
+        } else {
+          parts.push({ type: 'link', content: match[0] })
+        }
+        lastIndex = match.index + match[0].length
+      }
+      if (lastIndex < content.length) {
+        parts.push({ type: 'text', content: content.substring(lastIndex) })
+      }
+      return parts.map((part, i) => {
+        if (part.type === 'mention') {
+          return (
+            <span key={i} style={{
+              color: isMine ? '#fff' : C.primaryBright,
+              fontWeight: 600,
+              background: isMine ? 'rgba(255,255,255,0.15)' : 'rgba(104,219,174,0.15)',
+              padding: '1px 4px',
+              borderRadius: 4,
+            }}>{part.content}</span>
+          )
+        }
+        if (part.type === 'link') {
+          return (
+            <a key={i} href={part.content} target="_blank" rel="noopener noreferrer" style={{
+              color: isMine ? '#fff' : (C.primaryBright || '#68dbae'),
+              textDecoration: 'underline',
+            }}>{part.content}</a>
+          )
+        }
+        return part.content
       })
     }
     return (
       <div>
-        <p style={{ fontSize: 14, fontFamily: FONT.body, lineHeight: 1.5, wordBreak: 'break-word' }}>{renderTextWithLinks(msg.content)}</p>
+        <p style={{ fontSize: 14, fontFamily: FONT.body, lineHeight: 1.5, wordBreak: 'break-word' }}>{renderTextWithMentionsAndLinks(msg.content)}</p>
         {urls && urls.map((url, i) => {
           let domain = ''
           try { domain = new URL(url).hostname } catch { domain = url.substring(0, 30) }
@@ -3399,6 +3488,62 @@ export default function ChatScreen({ conversationId, onBack }) {
         </div>
       )}
 
+      {/* Mention autocomplete dropdown */}
+      {isGroup && mentionQuery !== null && mentionCandidates.length > 0 && (
+        <div style={{
+          background: 'rgba(13,17,23,0.97)',
+          border: '1px solid rgba(241,239,232,0.1)',
+          borderTop: `1px solid ${C.primary}`,
+          maxHeight: 200,
+          overflowY: 'auto',
+          padding: 4,
+        }}>
+          {mentionCandidates.map((m, idx) => (
+            <div
+              key={m.user_id}
+              onClick={() => insertMention(m)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '8px 12px',
+                borderRadius: 8,
+                cursor: 'pointer',
+                background: idx === mentionIndex ? 'rgba(104,219,174,0.1)' : 'transparent',
+                transition: 'background 0.1s',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = idx === mentionIndex ? 'rgba(104,219,174,0.1)' : 'transparent' }}
+            >
+              <div style={{ width: 32, height: 32, borderRadius: 99, overflow: 'hidden', flexShrink: 0 }}>
+                {m.avatar_url ? (
+                  <img src={m.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  <div style={{
+                    width: '100%', height: '100%',
+                    background: C.surfaceHigh, display: 'flex',
+                    alignItems: 'center', justifyContent: 'center',
+                    fontSize: 13, fontWeight: 700, color: C.text, fontFamily: FONT.headline,
+                  }}>
+                    {(m.full_name || m.ref_code || '?')[0].toUpperCase()}
+                  </div>
+                )}
+              </div>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 13, fontWeight: 600, color: C.text, fontFamily: FONT.body }}>
+                  {m.full_name || m.ref_code}
+                </p>
+                {m.ref_code && m.full_name && (
+                  <p style={{ fontSize: 11, color: C.textFaint, fontFamily: FONT.body }}>
+                    @{m.ref_code}
+                  </p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Input bar */}
       {!isBlocked && <div style={{ padding: '8px 16px 16px', ...GLASS_NAV, borderTop: '1px solid rgba(241,239,232,0.08)', display: 'flex', alignItems: 'center', gap: 8 }}>
         {/* Attach — opens menu with normal + view once */}
@@ -3450,6 +3595,29 @@ export default function ChatScreen({ conversationId, onBack }) {
             onFocus={() => setInputFocused(true)}
             onBlur={() => setTimeout(() => setInputFocused(false), 150)}
             onKeyDown={(e) => {
+              if (mentionQuery !== null && mentionCandidates.length > 0) {
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault()
+                  setMentionIndex(prev => (prev + 1) % mentionCandidates.length)
+                  return
+                }
+                if (e.key === 'ArrowUp') {
+                  e.preventDefault()
+                  setMentionIndex(prev => (prev - 1 + mentionCandidates.length) % mentionCandidates.length)
+                  return
+                }
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  insertMention(mentionCandidates[mentionIndex])
+                  return
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault()
+                  setMentionQuery(null)
+                  setMentionStartPos(-1)
+                  return
+                }
+              }
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()
                 if (isEditing) saveEdit()
