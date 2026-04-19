@@ -950,7 +950,7 @@ export default function ChatScreen({ conversationId, onBack }) {
   useEffect(() => {
     if (!showGifPicker) return
     setGifLoading(true)
-    fetch('https://api.giphy.com/v1/gifs/trending?api_key=q8Rtsy1zkVHLimn85hhF1TQPNJvIqdoH&limit=20&rating=g')
+    fetch(`https://api.giphy.com/v1/gifs/trending?api_key=${import.meta.env.VITE_GIPHY_KEY}&limit=20&rating=g`)
       .then(r => r.json())
       .then(d => setGifResults(d.data || []))
       .catch((err) => { console.error('GIPHY fetch error:', err); setGifResults([]) })
@@ -961,7 +961,7 @@ export default function ChatScreen({ conversationId, onBack }) {
     if (!showGifPicker || !gifSearch.trim()) return
     const timer = setTimeout(() => {
       setGifLoading(true)
-      fetch(`https://api.giphy.com/v1/gifs/search?api_key=q8Rtsy1zkVHLimn85hhF1TQPNJvIqdoH&q=${encodeURIComponent(gifSearch)}&limit=20&rating=g`)
+      fetch(`https://api.giphy.com/v1/gifs/search?api_key=${import.meta.env.VITE_GIPHY_KEY}&q=${encodeURIComponent(gifSearch)}&limit=20&rating=g`)
         .then(r => r.json())
         .then(d => setGifResults(d.data || []))
         .catch((err) => { console.error('GIPHY fetch error:', err); setGifResults([]) })
