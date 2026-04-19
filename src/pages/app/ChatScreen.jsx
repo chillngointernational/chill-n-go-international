@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import Picker from '@emoji-mart/react'
+import data from '@emoji-mart/data'
 import { C, FONT, Icon, GRADIENT, GLASS_NAV } from '../../stitch'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
@@ -406,6 +408,7 @@ export default function ChatScreen({ conversationId, onBack }) {
   // Reactions & Modals
   const [reactionPopup, setReactionPopup] = useState(null)
   const [reactionPopupAnim, setReactionPopupAnim] = useState(false)
+  const [showReactionPicker, setShowReactionPicker] = useState(null)
   const [reactions, setReactions] = useState({})
   const longPressTimer = useRef(null)
   const [replyTo, setReplyTo] = useState(null)
@@ -2697,6 +2700,27 @@ export default function ChatScreen({ conversationId, onBack }) {
                           {em}
                         </span>
                       ))}
+                      <span
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setShowReactionPicker(msg.id)
+                          closeReactionPopup()
+                        }}
+                        style={{
+                          fontSize: 20,
+                          cursor: 'pointer',
+                          transition: 'transform 0.15s',
+                          padding: '2px 6px',
+                          borderRadius: 8,
+                          color: C.textDim,
+                          display: 'flex',
+                          alignItems: 'center',
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                      >
+                        +
+                      </span>
                     </div>
                     {/* Separator */}
                     <div style={{ height: 1, background: 'rgba(241,239,232,0.08)', margin: '0 12px' }} />
@@ -2775,6 +2799,27 @@ export default function ChatScreen({ conversationId, onBack }) {
                           {em}
                         </span>
                       ))}
+                      <span
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setShowReactionPicker(msg.id)
+                          closeReactionPopup()
+                        }}
+                        style={{
+                          fontSize: 20,
+                          cursor: 'pointer',
+                          transition: 'transform 0.15s',
+                          padding: '2px 6px',
+                          borderRadius: 8,
+                          color: C.textDim,
+                          display: 'flex',
+                          alignItems: 'center',
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                      >
+                        +
+                      </span>
                     </div>
                     <div style={{ height: 1, background: 'rgba(241,239,232,0.08)', margin: '0 12px' }} />
                     <div style={{ display: 'flex', gap: 0 }}>
@@ -4033,6 +4078,41 @@ export default function ChatScreen({ conversationId, onBack }) {
                 {pollCreating ? 'Creando...' : 'Crear encuesta'}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Custom reaction emoji picker ─────────────────────── */}
+      {showReactionPicker && (
+        <div
+          onClick={() => setShowReactionPicker(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 300,
+            background: 'rgba(0,0,0,0.6)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 24,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'rgba(13,17,23,0.97)',
+              borderRadius: 20,
+              overflow: 'hidden',
+              boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
+            }}
+          >
+            <Picker
+              data={data}
+              theme="dark"
+              locale="es"
+              onEmojiSelect={(emoji) => {
+                handleReact(showReactionPicker, emoji.native)
+                setShowReactionPicker(null)
+              }}
+              previewPosition="none"
+              skinTonePosition="none"
+            />
           </div>
         </div>
       )}
