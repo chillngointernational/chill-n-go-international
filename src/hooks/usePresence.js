@@ -26,10 +26,11 @@ export function usePresence() {
       }
     }
 
-    updatePresence(true)
+    updatePresence(document.visibilityState === 'visible')
 
     intervalRef.current = setInterval(() => {
-      updatePresence(true)
+      const isVisible = document.visibilityState === 'visible'
+      updatePresence(isVisible)
     }, HEARTBEAT_INTERVAL_MS)
 
     const handleBeforeUnload = () => {
