@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Working temp files
+.claude/worktrees/
+supabase/.temp/
+auditoria-chilliums-2026-04-16/
