@@ -554,12 +554,6 @@ export default function ChatScreen({ conversationId, onBack }) {
   const [pollsCache, setPollsCache] = useState({})
   const [pollVotesCache, setPollVotesCache] = useState({})
 
-  // ─── CHILLIUMS TRANSFER ──────────────────────────────────
-  const [showChilliumsModal, setShowChilliumsModal] = useState(false)
-  const [chilliumsAmount, setChilliumsAmount] = useState('')
-  const [chilliumsSending, setChilliumsSending] = useState(false)
-  const [myChilliumsBalance, setMyChilliumsBalance] = useState(0)
-
   useEffect(() => {
     if (!navigator.mediaDevices?.getUserMedia) setMicSupported(false)
   }, [])
@@ -630,14 +624,14 @@ export default function ChatScreen({ conversationId, onBack }) {
     const timer = setTimeout(() => {
       const q = searchQuery.toLowerCase()
       const ids = messages
-        .filter(m => !m.is_deleted && m.message_type === 'text' && m.content?.toLowerCase().includes(q))
+        .filter(m => !m.is_deleted && !deletedForMeSet.has(m.id) && m.message_type === 'text' && m.content?.toLowerCase().includes(q))
         .map(m => m.id)
       setSearchResults(ids)
       setSearchIndex(0)
       if (ids.length > 0) scrollToMessage(ids[0])
     }, 300)
     return () => clearTimeout(timer)
-  }, [searchQuery, messages])
+  }, [searchQuery, messages, deletedForMeSet])
 
   /* ── Fetch messages and Group Data ─────────────────────────── */
   const fetchMessages = useCallback(async () => {
@@ -1731,90 +1725,6 @@ export default function ChatScreen({ conversationId, onBack }) {
     )
   }
 
-  /* ── Send Chilliums ──────────────────────────────────────────── */
-  const openChilliumsModal = async () => {
-    setShowAttachMenu(false)
-    setChilliumsAmount('')
-    setChilliumsSending(false)
-    try {
-      const { data } = await supabase.from('identity_profiles').select('chilliums_balance').eq('user_id', user.id).single()
-      setMyChilliumsBalance(data?.chilliums_balance || 0)
-    } catch { setMyChilliumsBalance(0) }
-    setShowChilliumsModal(true)
-  }
-
-  const handleSendChilliums = async () => {
-    const amount = Math.round(parseFloat(chilliumsAmount) * 100) / 100
-    if (!amount || amount < 0.01 || !otherUser || !user) return
-    setChilliumsSending(true)
-    try {
-      // a) Verify sender balance
-      const { data: senderData } = await supabase.from('identity_profiles').select('chilliums_balance').eq('user_id', user.id).single()
-      const senderBalance = senderData?.chilliums_balance || 0
-      if (senderBalance < amount) { alert('Saldo insuficiente'); setChilliumsSending(false); return }
-
-      // b) Debit sender
-      const newSenderBalance = senderBalance - amount
-      const { error: e1 } = await supabase.from('identity_profiles').update({ chilliums_balance: newSenderBalance }).eq('user_id', user.id)
-      if (e1) throw e1
-
-      // c) Ledger sender
-      const senderName = membersMap[user.id]?.full_name || 'Usuario'
-      const { error: e2 } = await supabase.from('chilliums_ledger').insert({
-        user_id: user.id, amount: -amount, type: 'transfer_out',
-        description: `Transferencia a ${otherUser.full_name}`,
-        source_user_id: otherUser.user_id, balance_after: newSenderBalance
-      })
-      if (e2) throw e2
-
-      // d) Credit recipient
-      const { data: recData } = await supabase.from('identity_profiles').select('chilliums_balance').eq('user_id', otherUser.user_id).single()
-      const recNewBalance = (recData?.chilliums_balance || 0) + amount
-      const { data: recUpdate, error: e3 } = await supabase.from('identity_profiles').update({ chilliums_balance: recNewBalance }).eq('user_id', otherUser.user_id).select('user_id').single()
-      if (e3) { console.error('Recipient balance update error:', e3); throw e3 }
-      if (!recUpdate) console.error('Recipient balance update: 0 rows affected (RLS?). user_id:', otherUser.user_id)
-
-      // e) Ledger recipient
-      await supabase.from('chilliums_ledger').insert({
-        user_id: otherUser.user_id, amount: amount, type: 'transfer_in',
-        description: `Transferencia de ${senderName}`,
-        source_user_id: user.id, balance_after: recNewBalance
-      })
-
-      // f) Send message in chat
-      const msgContent = JSON.stringify({ amount, sender_name: senderName, recipient_name: otherUser.full_name })
-      const tempId = 'temp-chilliums-' + Date.now()
-      const optimistic = {
-        id: tempId, conversation_id: conversationId, sender_id: user.id,
-        content: msgContent, message_type: 'chilliums',
-        created_at: new Date().toISOString(), delivery_status: 'sending',
-      }
-      setMessages(prev => [...prev, optimistic])
-      scrollToBottom()
-
-      const { data: msgData, error: msgErr } = await supabase.from('cng_messages').insert({
-        conversation_id: conversationId, sender_id: user.id,
-        content: msgContent, message_type: 'chilliums', delivery_status: 'sent'
-      }).select().single()
-      if (msgErr) throw msgErr
-
-      setMessages(prev => {
-        const hasReal = prev.some(m => m.id === msgData.id)
-        if (hasReal) return prev.filter(m => m.id !== tempId)
-        return prev.map(m => m.id === tempId ? msgData : m)
-      })
-
-      // Refresh balance
-      setMyChilliumsBalance(newSenderBalance)
-      setShowChilliumsModal(false)
-    } catch (e) {
-      console.error('Chilliums send error:', e)
-      alert('Error al enviar Chilliums: ' + (e.message || e))
-    } finally {
-      setChilliumsSending(false)
-    }
-  }
-
   /* ── Reaction popup helpers ──────────────────────────────────── */
   const openReactionPopup = (msgId) => {
     setReactionPopup(msgId)
@@ -1856,6 +1766,8 @@ export default function ChatScreen({ conversationId, onBack }) {
   /* ── EDIT message handlers ─────────────────────────────────── */
   const isMessageEditable = (msg) => {
     if (!msg || msg.message_type !== 'text') return false
+    if (msg.delivery_status === 'sending' || msg.delivery_status === 'failed') return false
+    if (typeof msg.id === 'string' && msg.id.startsWith('temp-')) return false
     if (msg.is_deleted) return false
     const createdAt = new Date(msg.created_at).getTime()
     return (Date.now() - createdAt) < EDIT_TIME_LIMIT_MS
@@ -2355,28 +2267,6 @@ export default function ChatScreen({ conversationId, onBack }) {
       return <PollCard pollId={msg.content} conversationId={conversationId} userId={user?.id} isMine={isMine} pollsCache={pollsCache} setPollsCache={setPollsCache} pollVotesCache={pollVotesCache} setPollVotesCache={setPollVotesCache} />
     }
 
-    // ── Chilliums transfer message ──
-    if (msg.message_type === 'chilliums') {
-      let cData = {}
-      try { cData = JSON.parse(msg.content) } catch { cData = {} }
-      const cAmount = cData.amount || 0
-      const cSender = cData.sender_name || ''
-      const cRecipient = cData.recipient_name || ''
-      return (
-        <div style={{
-          background: 'linear-gradient(135deg, rgba(184,149,106,0.15), rgba(231,192,146,0.08))',
-          border: '1px solid rgba(184,149,106,0.25)',
-          borderRadius: 16, padding: 16, textAlign: 'center', minWidth: 180,
-        }}>
-          <span className="material-symbols-outlined" style={{ fontSize: 36, color: '#B8956A', display: 'block', marginBottom: 6 }}>monetization_on</span>
-          <p style={{ fontSize: 22, fontWeight: 700, fontFamily: FONT.headline, color: '#e7c092', margin: '4px 0' }}>{cAmount} Chilliums</p>
-          <p style={{ fontSize: 12, color: isMine ? 'rgba(255,255,255,0.5)' : C.textDim, fontFamily: FONT.body }}>
-            {isMine ? `Enviaste a ${cRecipient}` : `${cSender} te envió`}
-          </p>
-        </div>
-      )
-    }
-
     // Feature 5: Link preview for text messages
     const urlRegex = /(https?:\/\/[^\s]+)/g
     const urls = msg.content?.match(urlRegex)
@@ -2683,7 +2573,7 @@ export default function ChatScreen({ conversationId, onBack }) {
                 onContextMenu={(e) => { if (msg.delivery_status === 'failed') { e.preventDefault(); return } handleContextMenuEvent(e, msg.id, isMine && !isDeleted) }}
               >
                 <div style={{
-                  padding: !isDeleted && (msg.message_type === 'image' || msg.message_type === 'video' || msg.message_type === 'chilliums') ? 4 : '12px 16px',
+                  padding: !isDeleted && (msg.message_type === 'image' || msg.message_type === 'video') ? 4 : '12px 16px',
                   borderRadius: 16,
                   borderBottomRightRadius: isMine ? 4 : 16,
                   borderBottomLeftRadius: isMine ? 16 : 4,
@@ -3245,15 +3135,6 @@ export default function ChatScreen({ conversationId, onBack }) {
             <div style={{ width: 36, height: 36, borderRadius: 99, background: 'rgba(140,132,235,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="description" size={20} style={{ color: '#c5c0ff' }} /></div>
             <div><p style={{ fontSize: 14, fontWeight: 600, color: C.text, fontFamily: FONT.body }}>Documento</p><p style={{ fontSize: 11, color: C.textDim, fontFamily: FONT.body }}>PDF, Word, Excel, etc.</p></div>
           </div>
-          {!isGroup && (
-            <>
-              <div style={{ height: 1, background: 'rgba(241,239,232,0.06)', margin: '0 12px' }} />
-              <div onClick={openChilliumsModal} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer', borderRadius: 12, transition: 'background 0.15s' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
-                <div style={{ width: 36, height: 36, borderRadius: 99, background: 'rgba(184,149,106,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="monetization_on" size={20} style={{ color: '#B8956A' }} /></div>
-                <div><p style={{ fontSize: 14, fontWeight: 600, color: C.text, fontFamily: FONT.body }}>Enviar Chilliums</p><p style={{ fontSize: 11, color: C.textDim, fontFamily: FONT.body }}>Transfiere Chilliums a este chat</p></div>
-              </div>
-            </>
-          )}
           <div style={{ height: 1, background: 'rgba(241,239,232,0.06)', margin: '0 12px' }} />
           <div onClick={handleSendLocation} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: locationLoading ? 'wait' : 'pointer', borderRadius: 12, transition: 'background 0.15s' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
             <div style={{ width: 36, height: 36, borderRadius: 99, background: 'rgba(255,100,100,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="location_on" size={20} style={{ color: '#ff6b6b' }} /></div>
@@ -3268,58 +3149,6 @@ export default function ChatScreen({ conversationId, onBack }) {
               </div>
             </>
           )}
-        </div>
-      )}
-
-      {/* ── Chilliums Transfer Modal ────────────────────────── */}
-      {showChilliumsModal && (
-        <div
-          onClick={() => setShowChilliumsModal(false)}
-          style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{ background: 'rgba(13,17,23,0.97)', border: '1px solid rgba(241,239,232,0.1)', borderRadius: 20, backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', boxShadow: '0 12px 40px rgba(0,0,0,0.6)', padding: 24, width: '100%', maxWidth: 340 }}
-          >
-            <div style={{ textAlign: 'center', marginBottom: 16 }}>
-              <span className="material-symbols-outlined" style={{ fontSize: 40, color: '#B8956A' }}>monetization_on</span>
-              <p style={{ fontSize: 18, fontWeight: 700, fontFamily: FONT.headline, color: C.text, marginTop: 8 }}>Enviar Chilliums</p>
-              <p style={{ fontSize: 13, color: C.textDim, fontFamily: FONT.body, marginTop: 4 }}>Tu balance: {myChilliumsBalance} Chilliums</p>
-            </div>
-            <input
-              type="number"
-              min="0.01"
-              step="0.01"
-              placeholder="Cantidad"
-              value={chilliumsAmount}
-              onChange={(e) => setChilliumsAmount(e.target.value)}
-              style={{ width: '100%', padding: '12px 16px', borderRadius: 12, border: '1px solid rgba(241,239,232,0.1)', background: 'rgba(255,255,255,0.05)', color: C.text, fontSize: 16, fontFamily: FONT.body, outline: 'none', boxSizing: 'border-box', textAlign: 'center' }}
-            />
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', marginTop: 12 }}>
-              {[5, 10, 25, 50, 100].map(v => (
-                <div
-                  key={v}
-                  onClick={() => setChilliumsAmount(String(v))}
-                  style={{ background: 'rgba(184,149,106,0.1)', border: '1px solid rgba(184,149,106,0.3)', borderRadius: 99, padding: '6px 16px', fontSize: 13, color: '#B8956A', cursor: 'pointer', fontFamily: FONT.body }}
-                >
-                  {v}
-                </div>
-              ))}
-            </div>
-            {chilliumsAmount && parseFloat(chilliumsAmount) > myChilliumsBalance && (
-              <p style={{ fontSize: 12, color: '#ff6b6b', textAlign: 'center', marginTop: 8, fontFamily: FONT.body }}>Saldo insuficiente</p>
-            )}
-            <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-              <button onClick={() => setShowChilliumsModal(false)} style={{ flex: 1, padding: '12px 0', borderRadius: 12, border: '1px solid rgba(241,239,232,0.1)', background: 'transparent', color: C.text, fontSize: 14, fontFamily: FONT.body, cursor: 'pointer' }}>Cancelar</button>
-              <button
-                onClick={handleSendChilliums}
-                disabled={chilliumsSending || !chilliumsAmount || parseFloat(chilliumsAmount) < 0.01 || isNaN(parseFloat(chilliumsAmount)) || parseFloat(chilliumsAmount) > myChilliumsBalance}
-                style={{ flex: 1, padding: '12px 0', borderRadius: 12, border: 'none', background: (chilliumsSending || !chilliumsAmount || parseFloat(chilliumsAmount) < 0.01 || parseFloat(chilliumsAmount) > myChilliumsBalance) ? 'rgba(184,149,106,0.3)' : 'linear-gradient(135deg, #B8956A, #e7c092)', color: '#fff', fontSize: 14, fontFamily: FONT.body, fontWeight: 600, cursor: (chilliumsSending || !chilliumsAmount || parseFloat(chilliumsAmount) < 0.01 || parseFloat(chilliumsAmount) > myChilliumsBalance) ? 'not-allowed' : 'pointer', opacity: (chilliumsSending || !chilliumsAmount || parseFloat(chilliumsAmount) < 0.01 || parseFloat(chilliumsAmount) > myChilliumsBalance) ? 0.5 : 1 }}
-              >
-                {chilliumsSending ? 'Enviando...' : `Enviar ${chilliumsAmount || 0} Chilliums`}
-              </button>
-            </div>
-          </div>
         </div>
       )}
 
@@ -4218,13 +4047,13 @@ export default function ChatScreen({ conversationId, onBack }) {
               </div>
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
-              {messages.filter(m => starredSet.has(m.id)).length === 0 && (
+              {messages.filter(m => starredSet.has(m.id) && !deletedForMeSet.has(m.id)).length === 0 && (
                 <div style={{ textAlign: 'center', padding: '40px 0' }}>
                   <Icon name="star_border" size={40} style={{ color: C.textFaint, marginBottom: 12 }} />
                   <p style={{ fontSize: 13, color: C.textDim, fontFamily: FONT.body }}>No hay mensajes destacados</p>
                 </div>
               )}
-              {messages.filter(m => starredSet.has(m.id)).map(m => (
+              {messages.filter(m => starredSet.has(m.id) && !deletedForMeSet.has(m.id)).map(m => (
                 <div
                   key={m.id}
                   onClick={() => { setShowStarredModal(false); setTimeout(() => scrollToMessage(m.id), 200) }}
