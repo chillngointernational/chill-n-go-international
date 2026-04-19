@@ -11,6 +11,8 @@ function timeFormat(dateStr) {
 /* ── Reactions localStorage helper ────────────────────────────── */
 const REACTION_EMOJIS = ['❤️', '😂', '😮', '😢', '🔥', '👍']
 
+const EDIT_TIME_LIMIT_MS = 15 * 60 * 1000 // 15 min (WhatsApp standard)
+
 /* ── Sticker grid ─────────────────────────────────────────────── */
 const STICKER_EMOJIS = [
   '😀', '😂', '🥰', '😎', '🔥', '❤️', '👍', '👏', '🎉', '💯',
@@ -1580,7 +1582,19 @@ export default function ChatScreen({ conversationId, onBack }) {
   }
 
   /* ── EDIT message handlers ─────────────────────────────────── */
+  const isMessageEditable = (msg) => {
+    if (!msg || msg.message_type !== 'text') return false
+    if (msg.is_deleted) return false
+    const createdAt = new Date(msg.created_at).getTime()
+    return (Date.now() - createdAt) < EDIT_TIME_LIMIT_MS
+  }
+
   const startEdit = (msg) => {
+    if (!isMessageEditable(msg)) {
+      showToast('Ya no puedes editar este mensaje (límite: 15 min)')
+      setContextMenu(null)
+      return
+    }
     setEditingMsg(msg)
     setEditText(msg.content)
     setContextMenu(null)
@@ -2418,8 +2432,8 @@ export default function ChatScreen({ conversationId, onBack }) {
                       borderRadius: 12,
                     }}
                   >
-                    {/* Edit option — only for text messages */}
-                    {msg.message_type === 'text' && (
+                    {/* Edit option — only for text messages within 15-min window */}
+                    {isMessageEditable(msg) && (
                       <div
                         onClick={() => startEdit(msg)}
                         style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', cursor: 'pointer', borderRadius: 8, transition: 'background 0.15s' }}
