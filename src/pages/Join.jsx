@@ -663,7 +663,7 @@ export default function Join() {
                   {t.kycSubmittedNote}
                 </div>
 
-                <Link to="/login" style={{ ...styles.button, display: 'block', textAlign: 'center', textDecoration: 'none' }}>
+                <Link to="/dashboard" style={{ ...styles.button, display: 'block', textAlign: 'center', textDecoration: 'none' }}>
                   {t.goToAccountBtn}
                 </Link>
               </>

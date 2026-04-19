@@ -51,6 +51,7 @@ serve(async (req) => {
             stripe_verification_session_id: session.id,
             verified_at: new Date().toISOString(),
             last_kyc_error: null,
+            registration_completed: true,
             updated_at: new Date().toISOString(),
           })
           .eq("email", email);

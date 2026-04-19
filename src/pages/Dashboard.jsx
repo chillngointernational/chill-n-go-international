@@ -1,14 +1,17 @@
+import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useNavigate, Link } from 'react-router-dom'
 import { C, FONT, Icon, GRADIENT } from '../stitch'
+import { getMemberState } from '../utils/memberStatus'
 
 export default function Dashboard() {
   const { user, member, signOut } = useAuth()
   const navigate = useNavigate()
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
-  const memberStatus = member?.payment_status || 'pending'
-  const isVerified = user?.email_confirmed_at != null
-  const isPaid = memberStatus === 'active'
+  const state = getMemberState(member)
+  const displayName = member?.first_name || user?.email?.split('@')[0] || ''
   const refLink = member?.ref_code
     ? `${window.location.origin}/join?ref=${member.ref_code}`
     : null
@@ -32,6 +35,67 @@ export default function Dashboard() {
     }
   }
 
+  async function handlePaymentRetry() {
+    setLoading(true)
+    setError('')
+    try {
+      const response = await fetch('https://jahnlhzbjcbmjnuzxsvj.supabase.co/functions/v1/cng-create-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: user.email,
+          ref_code: '',
+          success_url: window.location.origin + '/dashboard',
+          cancel_url: window.location.origin + '/dashboard',
+        }),
+      })
+      const data = await response.json()
+      if (data.error) {
+        setError(data.error)
+      } else if (data.url) {
+        window.location.href = data.url
+      }
+    } catch (err) {
+      setError('Error al procesar el pago: ' + err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleStartVerification() {
+    setLoading(true)
+    setError('')
+    try {
+      const response = await fetch('https://jahnlhzbjcbmjnuzxsvj.supabase.co/functions/v1/cng-create-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: user.email,
+          return_url: window.location.origin + '/dashboard',
+        }),
+      })
+      const data = await response.json()
+      if (data.error) {
+        setError(data.error)
+        setLoading(false)
+        return
+      }
+      const stripe = window.Stripe('pk_test_51Rvx4iClWFP3vllVGpXmK95SXNw6SGUhcObbEZIIG1Sl1hlh6iszofr1Xl2FLTpXWpz6yL1Pvt9Dma1OHhv6VVE800RZSbAarS')
+      const result = await stripe.verifyIdentity(data.client_secret)
+      if (result.error) {
+        setError(result.error.message)
+      } else {
+        // User submitted docs. The webhook will flip status when Stripe finishes processing.
+        // Reload to pick up the new state.
+        window.location.reload()
+      }
+    } catch (err) {
+      setError('Error iniciando verificación: ' + err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   async function handleSignOut() {
     await signOut()
     navigate('/')
@@ -52,37 +116,71 @@ export default function Dashboard() {
 
       <div style={styles.content}>
         <h1 style={styles.greeting}>
-          Bienvenido a CNG+
+          {displayName ? `Bienvenido, ${displayName}` : 'Bienvenido a CNG+'}
         </h1>
         <p style={styles.email}>{user?.email}</p>
 
-        {/* Status cards */}
-        <div style={styles.statusGrid}>
-          <div style={{ ...styles.statusCard, borderColor: isPaid ? 'rgba(29,158,117,0.3)' : 'rgba(239,159,39,0.3)' }}>
-            <div style={{ ...styles.statusDot, background: isPaid ? C.primaryBright : '#EF9F27' }} />
-            <div>
-              <div style={styles.statusLabel}>Membresia</div>
-              <div style={{ ...styles.statusValue, color: isPaid ? C.primary : '#FAC775' }}>
-                {isPaid ? 'Activa' : 'Pago pendiente'}
-              </div>
+        {/* Intermediate-state recovery cards */}
+        {state === 'payment_pending' && (
+          <div style={{ ...styles.pendingCard, borderColor: 'rgba(239,159,39,0.3)' }}>
+            <div style={{ ...styles.pendingBadge, background: 'rgba(239,159,39,0.15)', color: '#FAC775' }}>
+              Pago pendiente
             </div>
-            <button onClick={handleManageBilling} style={{ background: GRADIENT.primary, border: 'none', borderRadius: 8, padding: '10px 20px', fontSize: 13, fontWeight: 600, color: 'white', cursor: 'pointer', fontFamily: 'inherit', marginTop: 12, width: '100%' }}>
-              {isPaid ? 'Gestionar membresia' : 'Reactivar membresia'}
+            <h2 style={styles.pendingTitle}>Completa tu pago para activar tu cuenta</h2>
+            <p style={styles.pendingDesc}>
+              Tu información está guardada, pero aún no hemos recibido el pago de $10 para activar tu membresía.
+            </p>
+            {error && <div style={styles.errorBox}>{error}</div>}
+            <button onClick={handlePaymentRetry} disabled={loading} style={styles.primaryBtn}>
+              {loading ? 'Procesando...' : 'Completar pago — $10'}
             </button>
           </div>
+        )}
 
-          <div style={{ ...styles.statusCard, borderColor: isVerified ? 'rgba(29,158,117,0.3)' : 'rgba(239,159,39,0.3)' }}>
-            <div style={{ ...styles.statusDot, background: isVerified ? C.primaryBright : '#EF9F27' }} />
-            <div>
-              <div style={styles.statusLabel}>Verificacion</div>
-              <div style={{ ...styles.statusValue, color: isVerified ? C.primary : '#FAC775' }}>
-                {isVerified ? 'Verificado' : 'Pendiente'}
-              </div>
+        {(state === 'kyc_not_started' || state === 'kyc_pending') && (
+          <div style={{ ...styles.pendingCard, borderColor: 'rgba(127,119,221,0.3)' }}>
+            <div style={{ ...styles.pendingBadge, background: 'rgba(127,119,221,0.15)', color: '#A095E5' }}>
+              Último paso
             </div>
+            <h2 style={styles.pendingTitle}>Verifica tu identidad</h2>
+            <p style={styles.pendingDesc}>
+              Ya pagaste tu membresía. Solo falta verificar tu identidad con Stripe para tener acceso completo al ecosistema.
+            </p>
+            {error && <div style={styles.errorBox}>{error}</div>}
+            <button onClick={handleStartVerification} disabled={loading} style={styles.primaryBtn}>
+              {loading ? 'Iniciando...' : 'Iniciar verificación'}
+            </button>
           </div>
-        </div>
+        )}
 
-        {/* Chilliums balance */}
+        {state === 'kyc_failed' && (
+          <div style={{ ...styles.pendingCard, borderColor: 'rgba(224,49,49,0.35)' }}>
+            <div style={{ ...styles.pendingBadge, background: 'rgba(224,49,49,0.15)', color: '#F28886' }}>
+              Verificación fallida
+            </div>
+            <h2 style={styles.pendingTitle}>Tu verificación no se completó</h2>
+            <p style={styles.pendingDesc}>
+              La verificación de identidad falló.
+              {member?.last_kyc_error && (
+                <span style={{ display: 'block', color: C.textFaint, fontSize: 12, marginTop: 8 }}>
+                  Código Stripe: {member.last_kyc_error}
+                </span>
+              )}
+            </p>
+            {error && <div style={styles.errorBox}>{error}</div>}
+            <button onClick={handleStartVerification} disabled={loading} style={styles.primaryBtn}>
+              {loading ? 'Iniciando...' : 'Reintentar verificación'}
+            </button>
+            <p style={styles.supportLink}>
+              Si no puedes verificarte, contacta{' '}
+              <a href="mailto:soporte@chillngointernational.com" style={{ color: C.primary }}>
+                soporte@chillngointernational.com
+              </a>
+            </p>
+          </div>
+        )}
+
+        {/* Chilliums balance — visible in all states */}
         <div style={styles.balanceCard}>
           <div style={styles.balanceHeader}>
             <svg width="24" height="24" viewBox="0 0 30 30" style={{ flexShrink: 0 }}>
@@ -98,69 +196,116 @@ export default function Dashboard() {
           <div style={styles.balanceSub}>1 Chillium = 1 USD</div>
         </div>
 
-        {/* Referral link */}
-        <div style={styles.refCard}>
-          <h3 style={styles.refTitle}>Tu link de referido</h3>
-          <p style={styles.refDesc}>
-            Comparte este link para invitar personas a CNG+. Ganas $3.50/mes + 35% de sus compras en Chilliums.
-          </p>
-          {refLink ? (
-            <div style={styles.refLinkBox}>
-              <span style={styles.refLinkText}>{refLink}</span>
-              <button
-                onClick={() => navigator.clipboard.writeText(refLink)}
-                style={styles.copyBtn}
-              >
-                Copiar
-              </button>
+        {/* Fully-active features */}
+        {state === 'fully_active' && (
+          <>
+            {/* Status grid */}
+            <div style={styles.statusGrid}>
+              <div style={{ ...styles.statusCard, borderColor: 'rgba(29,158,117,0.3)' }}>
+                <div style={{ ...styles.statusDot, background: C.primaryBright }} />
+                <div>
+                  <div style={styles.statusLabel}>Membresia</div>
+                  <div style={{ ...styles.statusValue, color: C.primary }}>Activa</div>
+                </div>
+                <button onClick={handleManageBilling} style={styles.manageBtn}>
+                  Gestionar membresia
+                </button>
+              </div>
+
+              <div style={{ ...styles.statusCard, borderColor: 'rgba(29,158,117,0.3)' }}>
+                <div style={{ ...styles.statusDot, background: C.primaryBright }} />
+                <div>
+                  <div style={styles.statusLabel}>Verificacion</div>
+                  <div style={{ ...styles.statusValue, color: C.primary }}>Verificado</div>
+                </div>
+              </div>
             </div>
-          ) : (
-            <div style={styles.refPending}>
-              Tu link se generara cuando tu membresia este activa
+
+            {/* Referral link */}
+            <div style={styles.refCard}>
+              <h3 style={styles.refTitle}>Tu link de referido</h3>
+              <p style={styles.refDesc}>
+                Comparte este link para invitar personas a CNG+. Ganas $3.50/mes + 35% de sus compras en Chilliums.
+              </p>
+              {refLink ? (
+                <div style={styles.refLinkBox}>
+                  <span style={styles.refLinkText}>{refLink}</span>
+                  <button onClick={() => navigator.clipboard.writeText(refLink)} style={styles.copyBtn}>
+                    Copiar
+                  </button>
+                </div>
+              ) : (
+                <div style={styles.refPending}>
+                  Tu link se generara cuando tu membresia este activa
+                </div>
+              )}
             </div>
-          )}
-        </div>
 
-        <Link to="/network" style={{ display: 'block', background: GRADIENT.primary, border: 'none', borderRadius: 8, padding: '14px', fontSize: 14, fontWeight: 600, color: 'white', textDecoration: 'none', textAlign: 'center', marginBottom: 24 }}>Ver mi red completa</Link>
+            <Link
+              to="/network"
+              style={{
+                display: 'block',
+                background: GRADIENT.primary,
+                border: 'none',
+                borderRadius: 8,
+                padding: '14px',
+                fontSize: 14,
+                fontWeight: 600,
+                color: 'white',
+                textDecoration: 'none',
+                textAlign: 'center',
+                marginBottom: 24,
+              }}
+            >
+              Ver mi red completa
+            </Link>
 
-        {/* Network stats */}
-        <div style={styles.networkGrid}>
-          <div style={styles.networkCard}>
-            <div style={styles.networkNumber}>{member?.referrals_level1 || 0}</div>
-            <div style={styles.networkLabel}>Referidos directos</div>
-            <div style={styles.networkSub}>Nivel 1</div>
-          </div>
-          <div style={styles.networkCard}>
-            <div style={styles.networkNumber}>{member?.referrals_level2 || 0}</div>
-            <div style={styles.networkLabel}>Red extendida</div>
-            <div style={styles.networkSub}>Nivel 2</div>
-          </div>
-          <div style={styles.networkCard}>
-            <div style={styles.networkNumber}>{member?.total_earnings?.toFixed(2) || '0.00'}</div>
-            <div style={styles.networkLabel}>Ganado total</div>
-            <div style={styles.networkSub}>Chilliums</div>
-          </div>
-        </div>
+            {/* Network stats */}
+            <div style={styles.networkGrid}>
+              <div style={styles.networkCard}>
+                <div style={styles.networkNumber}>{member?.referrals_level1 || 0}</div>
+                <div style={styles.networkLabel}>Referidos directos</div>
+                <div style={styles.networkSub}>Nivel 1</div>
+              </div>
+              <div style={styles.networkCard}>
+                <div style={styles.networkNumber}>{member?.referrals_level2 || 0}</div>
+                <div style={styles.networkLabel}>Red extendida</div>
+                <div style={styles.networkSub}>Nivel 2</div>
+              </div>
+              <div style={styles.networkCard}>
+                <div style={styles.networkNumber}>{member?.total_earnings?.toFixed(2) || '0.00'}</div>
+                <div style={styles.networkLabel}>Ganado total</div>
+                <div style={styles.networkSub}>Chilliums</div>
+              </div>
+            </div>
 
-        {/* LOBs access */}
-        <div style={styles.lobsSection}>
-          <h3 style={styles.lobsTitle}>Tu ecosistema</h3>
-          <div style={styles.lobsGrid}>
-            {[
-              { name: 'Travel', icon: 'flight_takeoff', color: '#1D9E75', url: 'https://chillngotravel.com' },
-              { name: 'Nutrition', icon: 'restaurant', color: '#639922', url: 'https://chillngonutrition.com' },
-              { name: 'Real Estate', icon: 'domain', color: '#378ADD', url: 'https://chillngorealestate.com' },
-              { name: 'Store', icon: 'shopping_bag', color: '#D85A30', url: 'https://chillngostore.com' },
-              { name: 'Online', icon: 'language', color: '#7F77DD', url: 'https://chillngoonline.com' },
-              { name: 'CandyStakes', icon: 'military_tech', color: '#D4537E', url: 'https://candystakes.com' },
-            ].map((lob) => (
-              <a key={lob.name} href={lob.url} target="_blank" rel="noopener noreferrer" style={{ ...styles.lobChip, borderColor: lob.color + '30', textDecoration: 'none' }}>
-                <Icon name={lob.icon} size={16} style={{ color: lob.color }} />
-                <span style={{ fontSize: 12, color: lob.color, fontWeight: 500 }}>{lob.name}</span>
-              </a>
-            ))}
-          </div>
-        </div>
+            {/* LOBs */}
+            <div style={styles.lobsSection}>
+              <h3 style={styles.lobsTitle}>Tu ecosistema</h3>
+              <div style={styles.lobsGrid}>
+                {[
+                  { name: 'Travel', icon: 'flight_takeoff', color: '#1D9E75', url: 'https://chillngotravel.com' },
+                  { name: 'Nutrition', icon: 'restaurant', color: '#639922', url: 'https://chillngonutrition.com' },
+                  { name: 'Real Estate', icon: 'domain', color: '#378ADD', url: 'https://chillngorealestate.com' },
+                  { name: 'Store', icon: 'shopping_bag', color: '#D85A30', url: 'https://chillngostore.com' },
+                  { name: 'Online', icon: 'language', color: '#7F77DD', url: 'https://chillngoonline.com' },
+                  { name: 'CandyStakes', icon: 'military_tech', color: '#D4537E', url: 'https://candystakes.com' },
+                ].map((lob) => (
+                  <a
+                    key={lob.name}
+                    href={lob.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ ...styles.lobChip, borderColor: lob.color + '30', textDecoration: 'none' }}
+                  >
+                    <Icon name={lob.icon} size={16} style={{ color: lob.color }} />
+                    <span style={{ fontSize: 12, color: lob.color, fontWeight: 500 }}>{lob.name}</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
@@ -230,6 +375,68 @@ const styles = {
     color: C.onSurfaceVariant,
     marginBottom: 32,
   },
+
+  // Intermediate-state recovery cards
+  pendingCard: {
+    background: 'rgba(255,255,255,0.02)',
+    border: '1px solid',
+    borderRadius: 16,
+    padding: '24px',
+    marginBottom: 24,
+  },
+  pendingBadge: {
+    display: 'inline-block',
+    padding: '4px 12px',
+    borderRadius: 20,
+    fontSize: 11,
+    fontWeight: 600,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    marginBottom: 16,
+  },
+  pendingTitle: {
+    fontSize: 20,
+    fontWeight: 600,
+    color: C.text,
+    marginBottom: 8,
+  },
+  pendingDesc: {
+    fontSize: 14,
+    color: C.onSurfaceVariant,
+    lineHeight: 1.5,
+    marginBottom: 20,
+  },
+  primaryBtn: {
+    background: GRADIENT.primary,
+    border: 'none',
+    borderRadius: 8,
+    padding: '14px',
+    fontSize: 14,
+    fontWeight: 600,
+    color: 'white',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    width: '100%',
+    boxSizing: 'border-box',
+  },
+  errorBox: {
+    background: 'rgba(224,49,49,0.1)',
+    border: '1px solid rgba(224,49,49,0.3)',
+    borderRadius: 8,
+    padding: '10px 14px',
+    fontSize: 13,
+    color: C.error,
+    marginBottom: 16,
+  },
+  supportLink: {
+    fontSize: 12,
+    color: C.textFaint,
+    textAlign: 'center',
+    marginTop: 16,
+    lineHeight: 1.5,
+  },
+
+  // Status cards (fully_active)
   statusGrid: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
@@ -259,6 +466,21 @@ const styles = {
     fontSize: 15,
     fontWeight: 600,
   },
+  manageBtn: {
+    background: GRADIENT.primary,
+    border: 'none',
+    borderRadius: 8,
+    padding: '10px 20px',
+    fontSize: 13,
+    fontWeight: 600,
+    color: 'white',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    marginTop: 12,
+    width: '100%',
+  },
+
+  // Balance
   balanceCard: {
     background: 'rgba(239,159,39,0.05)',
     border: '1px solid rgba(239,159,39,0.15)',
@@ -289,6 +511,8 @@ const styles = {
     color: '#854F0B',
     marginTop: 4,
   },
+
+  // Referral (fully_active)
   refCard: {
     background: 'rgba(255,255,255,0.02)',
     border: '1px solid rgba(255,255,255,0.06)',
@@ -341,6 +565,8 @@ const styles = {
     color: C.textFaint,
     fontStyle: 'italic',
   },
+
+  // Network stats (fully_active)
   networkGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(3, 1fr)',
@@ -369,6 +595,8 @@ const styles = {
     color: C.textFaint,
     marginTop: 2,
   },
+
+  // LOBs (fully_active)
   lobsSection: {
     marginBottom: 32,
   },
