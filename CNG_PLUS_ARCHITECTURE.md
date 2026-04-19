@@ -11,6 +11,8 @@
 
 CNG+ es una red social verificada con membresía de pago. Los miembros pagan $10 el primer mes (que cubre verificación de identidad vía Stripe Identity) y luego $7/mes recurrente. La app incluye feed tipo TikTok, mensajería directa, stories, y un programa de referidos de 2 niveles. La economía interna corre sobre **Chilliums** (programa de lealtad, no dinero). El sistema está construido sobre Supabase + Stripe, desplegado en Vercel.
 
+👉 **Empieza por la Sección 3 (Journey Map) para entender el sistema en el idioma del usuario. Las demás secciones son referencia técnica de apoyo.**
+
 ---
 
 ## 2. Stack Técnico
@@ -31,7 +33,189 @@ CNG+ es una red social verificada con membresía de pago. Los miembros pagan $10
 
 ---
 
-## 3. Mapa del Sistema (Vista de Pájaro)
+## 3. Mapas del Usuario (Journey Maps) — VISTA PRINCIPAL
+
+CNG App tiene dos tipos de usuarios que viven journeys distintos: el miembro nuevo durante su onboarding (Sección 3.1), y el miembro activo que ya usa la app dia con dia (Sección 3.2). Ambos mapas están conectados — el final del primero es el inicio del segundo.
+
+### 3.1 Journey del Miembro Nuevo (Onboarding)
+
+Este es el mapa más importante del sistema. Arriba se muestra qué vive el usuario en cada momento, y abajo qué pieza del código está trabajando. Los colores indican el estado de salud de cada componente técnico. Si un usuario reporta un problema, localiza el momento en el mapa y verás inmediatamente qué revisar.
+
+```mermaid
+flowchart TD
+    subgraph M1["Momento 1 · Descubrimiento"]
+        U1["Vanessa le comparte link por WhatsApp"]
+        S1["Sistema: solo un link, nada mas"]
+    end
+
+    subgraph M2["Momento 2 · Interes"]
+        U2["Abre el link y ve que Vanessa lo invita"]
+        S2["Join.jsx captura ref_code del URL"]
+    end
+
+    subgraph M3["Momento 3 · Registro"]
+        U3["Llena sus datos y paga 10 USD"]
+        S3["Supabase Auth + Stripe Checkout + cng-stripe-webhook"]
+    end
+
+    subgraph M4["Momento 4 · Verificacion"]
+        U4["Sube INE y selfie"]
+        S4["Stripe Identity + cng-identity-webhook"]
+    end
+
+    subgraph M5["Momento 5 · Primer uso"]
+        U5["Entra al feed tipo TikTok"]
+        S5["FeedScreen + cng_posts + cng_follows"]
+    end
+
+    subgraph M6["Momento 6 · Interaccion social"]
+        U6["Le escribe mensaje a alguien"]
+        S6["MessagesScreen · BUG falta policy INSERT"]
+    end
+
+    subgraph M7["Momento 7 · Recompensa"]
+        U7["Invita amigo y gana Chilliums"]
+        S7["referral_tree + chilliums_ledger"]
+    end
+
+    U1 --> S1 --> U2
+    U2 --> S2 --> U3
+    U3 --> S3 --> U4
+    U4 --> S4 --> U5
+    U5 --> S5 --> U6
+    U6 --> S6 --> U7
+    U7 --> S7
+
+    style U1 fill:#EEEDFE,stroke:#534AB7
+    style U2 fill:#EEEDFE,stroke:#534AB7
+    style U3 fill:#EEEDFE,stroke:#534AB7
+    style U4 fill:#EEEDFE,stroke:#534AB7
+    style U5 fill:#E1F5EE,stroke:#1D9E75
+    style U6 fill:#E1F5EE,stroke:#1D9E75
+    style U7 fill:#E1F5EE,stroke:#1D9E75
+    style S1 fill:#F1EFE8,stroke:#888780
+    style S2 fill:#F1EFE8,stroke:#888780
+    style S3 fill:#F1EFE8,stroke:#888780
+    style S4 fill:#E1F5EE,stroke:#1D9E75
+    style S5 fill:#F1EFE8,stroke:#888780
+    style S6 fill:#FCEBEB,stroke:#E24B4A
+    style S7 fill:#F1EFE8,stroke:#888780
+```
+
+### Leyenda de colores
+
+- 🟣 Morado: usuario en onboarding (aún no es miembro activo)
+- 🟢 Verde: usuario activo usando la app
+- ⚪ Gris: sistema funcionando normal
+- 🟢 Verde en sistema: recién auditado y confirmado OK
+- 🟡 Amarillo: riesgo conocido pendiente de arreglar
+- 🔴 Rojo: bug confirmado que afecta al usuario
+
+### Momentos que necesitan atención
+
+| Momento | Qué vive el usuario | Bug técnico | Referencia |
+|---------|---------------------|-------------|------------|
+| Momento 1 · 2 · 3 | Pierde atribución de referido si cierra pestaña en Stripe | `ref_code` solo persistido en URL, sin localStorage/cookie | Ver Sección 5.2 |
+| Momento 3 | Paga pero el webhook crashea al reintentar el mismo email | `cng-stripe-webhook` usa `.insert()` sin upsert en `identity_profiles` | Ver Sección 5.1 |
+| Momento 3 | Un agente del Matrix no puede suscribirse a CNG+ | `auth.signUp()` rechaza el email si ya existe en `auth.users` | Ver Sección 5.1 |
+| Momento 6 | No encuentra a un usuario que sabe que existe | Búsqueda solo filtra por `full_name` (no email, username, first_name) | Ver Sección 5.4 |
+| Momento 6 | Usuarios con `full_name` NULL no aparecen en resultados | Caso Mónica — registros incompletos | Ver Sección 5.4 |
+| Momento 6 | No puede enviar mensaje nuevo a alguien sin conversación previa | Falta policy INSERT en `cng_conversation_members` → RLS deny silencioso | Ver Sección 5.4 |
+| Momento 6 | El clic "no hace nada" cuando la creación falla | `handleSelect` hace `console.error` sin toast al usuario | Ver Sección 5.4 |
+| Momento 7 | Race condition potencial al transferir Chilliums | Transferencia hace UPDATE directo en cliente, no atómica | Ver Sección 5.6 |
+
+<!-- DUDA: el bug "botón Ir a mi cuenta no navega" no está localizado con certeza aún. Podría afectar Momento 3 (después de pagar) o Momento 5 (primer uso). -->
+
+### 3.2 Journey del Miembro Activo (Uso diario)
+
+Una vez que el miembro pasó el onboarding, su relación con la app se vuelve diaria. Este mapa cubre los 7 momentos clave de uso recurrente, incluyendo la renovación mensual de membresía.
+
+```mermaid
+flowchart TD
+    subgraph M8["Momento 8 · Regreso a la app"]
+        U8["Abre la app y hace login"]
+        S8["Supabase Auth + carga de identity_profile"]
+    end
+    subgraph M9["Momento 9 · Consumo de contenido"]
+        U9["Scrollea feed y ve videos"]
+        S9["FeedScreen + cng_posts + cng_likes"]
+    end
+    subgraph M10["Momento 10 · Creación de contenido"]
+        U10["Sube una foto o video propio"]
+        S10["CreatePostScreen + Supabase Storage + cng_posts"]
+    end
+    subgraph M11["Momento 11 · Mantiene relaciones"]
+        U11["Chatea con amigos y sigue gente nueva"]
+        S11["MessagesScreen + cng_conversations + cng_follows"]
+    end
+    subgraph M12["Momento 12 · Gasta Chilliums"]
+        U12["Canjea Chilliums por beneficios"]
+        S12["WalletScreen + chilliums_ledger + transactions"]
+    end
+    subgraph M13["Momento 13 · Acumula comisiones"]
+        U13["Ve su red crecer y gana dinero"]
+        S13["NetworkScreen + referral_tree + chilliums_ledger"]
+    end
+    subgraph M14["Momento 14 · Renovación mensual"]
+        U14["Se le cobran 7 USD automáticamente"]
+        S14["Stripe Subscriptions + cng-stripe-webhook"]
+    end
+    U8 --> S8 --> U9
+    U9 --> S9 --> U10
+    U10 --> S10 --> U11
+    U11 --> S11 --> U12
+    U12 --> S12 --> U13
+    U13 --> S13 --> U14
+    U14 --> S14
+    style U8 fill:#E1F5EE,stroke:#1D9E75
+    style U9 fill:#E1F5EE,stroke:#1D9E75
+    style U10 fill:#E1F5EE,stroke:#1D9E75
+    style U11 fill:#E1F5EE,stroke:#1D9E75
+    style U12 fill:#E1F5EE,stroke:#1D9E75
+    style U13 fill:#E1F5EE,stroke:#1D9E75
+    style U14 fill:#E1F5EE,stroke:#1D9E75
+    style S8 fill:#F1EFE8,stroke:#888780
+    style S9 fill:#F1EFE8,stroke:#888780
+    style S10 fill:#F1EFE8,stroke:#888780
+    style S11 fill:#FCEBEB,stroke:#E24B4A
+    style S12 fill:#F1EFE8,stroke:#888780
+    style S13 fill:#F1EFE8,stroke:#888780
+    style S14 fill:#FAEEDA,stroke:#EF9F27
+```
+
+<!-- DUDA: el diagrama menciona "CreatePostScreen" y "WalletScreen" — en el código git actual solo existe CreateScreen.jsx (no "Post" en el nombre); WalletScreen NO existe como archivo — la UI para gastar/canjear Chilliums no está implementada todavía. La funcionalidad de transferir Chilliums está embebida dentro de ChatScreen.jsx. Los labels del diagrama se preservan como los diste porque reflejan la intención de producto, pero la tabla siguiente marca las brechas reales contra el código. -->
+
+### Momentos que necesitan atención
+
+| Momento | Qué vive el usuario | Bug o riesgo | Referencia |
+|---------|---------------------|--------------|------------|
+| Momento 9 | Ve el feed pero los perfiles que aparecen no coinciden con los que encuentra en búsqueda | Feed filtra por `cng_posts.is_active=true` y hace JOIN con `identity_profiles`; búsqueda lee `identity_profiles` directo — mismatch entre ambos caminos | Ver Sección 5.5 |
+| Momento 10 | Sube un post y el archivo se guarda pero el post no aparece | Upload a `cng-media` y INSERT a `cng_posts` no son transaccionales — si falla el INSERT queda archivo huérfano en bucket | [CreateScreen.jsx:128-145](src/pages/app/CreateScreen.jsx:128) |
+| Momento 10 | Sube video muy largo y pasa la validación | Límite de 3 min validado solo en cliente; sin enforcement server-side ni constraint en DB | [CreateScreen.jsx:103](src/pages/app/CreateScreen.jsx:103) |
+| Momento 11 | No puede iniciar chat nuevo ni encontrar gente por su email | Hereda TODOS los bugs del Momento 6: falta policy INSERT en `cng_conversation_members`, búsqueda solo por `full_name`, `handleSelect` sin toast de error | Ver Sección 5.4 |
+| Momento 12 | No tiene dónde canjear Chilliums | ❌ No existe `WalletScreen` en el código — feature no implementada | <!-- pendiente de diseño/implementación --> |
+| Momento 12 | Transfiere Chilliums a un amigo por chat y se producen dobles débitos | Transferencia hace UPDATE directo en cliente — no atómica, expuesta a race condition | Ver Sección 5.6 |
+| Momento 13 | Ve su red pero no le llegan las comisiones mensuales de $3.50 / $2.00 | Lógica de comisiones recurrentes no está en código git — posiblemente en pg_cron o fuera del repo | Ver Sección 5.2 (DUDA pendiente) |
+| Momento 14 | Le cobran el mes y su membresía se renueva | ✅ Idempotencia PRESENTE: webhook chequea `stripe_event_id` en `transactions.metadata` antes de procesar | [cng-stripe-webhook/index.ts:359-400](supabase/functions/cng-stripe-webhook/index.ts:359) |
+| Momento 14 | Stripe reenvía el mismo evento en ventana apretada | ⚠️ Riesgo residual: la idempotencia chequea con `.eq().maybeSingle()` antes del `.insert()` — sin lock transaccional, dos invocaciones concurrentes podrían ambas pasar el check | [cng-stripe-webhook/index.ts:364-400](supabase/functions/cng-stripe-webhook/index.ts:364) |
+
+### Conexión entre journeys
+
+```mermaid
+flowchart LR
+    J1["Journey 1 · Miembro Nuevo - 7 momentos"] --> Transition["Se vuelve miembro activo"]
+    Transition --> J2["Journey 2 · Miembro Activo - 7 momentos recurrentes"]
+    J2 -.->|"Cada mes renueva"| J2
+    style J1 fill:#EEEDFE,stroke:#534AB7
+    style J2 fill:#E1F5EE,stroke:#1D9E75
+    style Transition fill:#FAC775,stroke:#BA7517
+```
+
+---
+
+## 4. Mapa Técnico del Sistema (Vista de Pájaro)
+
+> Esta sección es complementaria al Journey Map. Úsala cuando necesites entender la topología técnica de las piezas.
 
 ```mermaid
 flowchart LR
@@ -66,9 +250,9 @@ flowchart LR
 
 ---
 
-## 4. Flujos Críticos
+## 5. Flujos Críticos
 
-### 4.1 Registro de miembro nuevo
+### 5.1 Registro de miembro nuevo
 
 **Descripción:** El usuario llega a `/join`, ingresa email, es redirigido a Stripe Checkout ($10), vuelve, completa el wizard de registro, pasa por Stripe Identity (KYC), y queda activo. Todo sin intervención humana.
 
@@ -113,7 +297,7 @@ flowchart TD
 
 ---
 
-### 4.2 Sistema de referidos (2 niveles)
+### 5.2 Sistema de referidos (2 niveles)
 
 **Descripción:** Cada miembro tiene un `ref_code` corto (`CNG-XXXXXX`). Al registrar a alguien con ese code, el referido queda vinculado en `referral_tree` con su depth. Comisiones: nivel 1 = $3.50/mes + 35%; nivel 2 = $2.00/mes + 15%.
 
@@ -152,7 +336,7 @@ flowchart TD
 
 ---
 
-### 4.3 Suscripción recurrente
+### 5.3 Suscripción recurrente
 
 **Descripción:** Tras el primer mes de $10, Stripe facturará $7/mes automáticamente. El webhook recibe eventos `invoice.payment_succeeded` para mantener el estado activo, y `customer.subscription.deleted` para cancelaciones.
 
@@ -191,7 +375,7 @@ flowchart TD
 
 ---
 
-### 4.4 Mensajería social
+### 5.4 Mensajería social
 
 **Descripción:** Usuario busca a otro miembro, abre chat nuevo, se crean filas en `cng_conversations` + `cng_conversation_members`, y se envían mensajes vía `cng_messages`. Soporta texto, media, polls, reactions, starred, blocked users, reports.
 
@@ -233,7 +417,7 @@ flowchart TD
 
 ---
 
-### 4.5 Feed social
+### 5.5 Feed social
 
 **Descripción:** Usuarios crean posts (video + caption), aparecen en feed vertical tipo TikTok con likes, bookmarks, comments, follows.
 
@@ -268,7 +452,7 @@ flowchart TD
 
 ---
 
-### 4.6 Chilliums (economía interna)
+### 5.6 Chilliums (economía interna)
 
 **Descripción:** Chilliums son un programa de lealtad (NO dinero). Valor interno 1:1 USD para contabilidad, pero NUNCA se muestra así al usuario. Se ganan por referidos y suscripciones; se gastan o transfieren vía chat.
 
@@ -302,7 +486,7 @@ flowchart TD
 
 ---
 
-## 5. Tablas de Base de Datos
+## 6. Tablas de Base de Datos
 
 > Lista derivada de `.from()` en código. El schema real vive en Supabase dashboard; este repo no tiene `supabase/migrations/`.
 
@@ -354,7 +538,7 @@ flowchart TD
 
 ---
 
-## 6. Edge Functions
+## 7. Edge Functions
 
 | Función | Estado | Propósito |
 |---|---|---|
@@ -368,7 +552,7 @@ flowchart TD
 
 ---
 
-## 7. Rutas del Frontend
+## 8. Rutas del Frontend
 
 Desde [src/App.jsx](src/App.jsx):
 
@@ -393,7 +577,7 @@ Desde [src/App.jsx](src/App.jsx):
 
 ---
 
-## 8. Bugs Conocidos y Deuda Técnica
+## 9. Bugs Conocidos y Deuda Técnica
 
 | # | Bug | Severidad | Ubicación | Estado |
 |---|---|---|---|---|
@@ -412,7 +596,7 @@ Desde [src/App.jsx](src/App.jsx):
 
 ---
 
-## 9. Checklist de Salud del Sistema
+## 10. Checklist de Salud del Sistema
 
 | Componente | Estado | Última revisión | Notas |
 |---|---|---|---|
@@ -436,7 +620,7 @@ Desde [src/App.jsx](src/App.jsx):
 
 ---
 
-## 10. Decisiones de Arquitectura Importantes (ADRs)
+## 11. Decisiones de Arquitectura Importantes (ADRs)
 
 ### ADR-01 — Uso de `identity_profiles` (no `cng_members`)
 `cng_members` fue la tabla original. Se migró a `identity_profiles` para alinear el nombre con Stripe Identity y permitir un modelo de perfil más rico. `cng_members_compat` es una vista de compatibilidad que aún se consulta desde código legacy. **Estado:** migración en progreso; nueva lógica debe escribir en `identity_profiles` directamente.
@@ -486,3 +670,11 @@ npx supabase functions download cng-create-portal --project-ref jahnlhzbjcbmjnuz
 5. ¿Existe algoritmo de ranking del feed o solo orden cronológico?
 6. Caso "Mónica": ¿por qué su `full_name` es NULL? ¿es un signup que no completó wizard?
 7. El botón "Ir a mi cuenta" que no navega — ¿dónde vive exactamente?
+
+---
+
+## Última modificación
+
+**18 de abril de 2026** — Sección 3 expandida a dos Journey Maps: 3.1 Miembro Nuevo (onboarding) y 3.2 Miembro Activo (uso diario, 7 momentos recurrentes incl. renovación mensual). Agregado diagrama de conexión entre ambos journeys. Auditado código para identificar bugs/riesgos de los momentos 8–14 contra el código real.
+
+**18 de abril de 2026** — Añadido Journey Map como vista principal (Sección 3). Renumeradas secciones técnicas subsiguientes (antigua 3 → 4, 4 → 5, etc.). Agregado pointer en Sección 1 para guiar al lector hacia el Journey Map primero.
