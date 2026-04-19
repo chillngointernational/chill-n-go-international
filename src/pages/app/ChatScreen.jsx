@@ -375,6 +375,7 @@ export default function ChatScreen({ conversationId, onBack }) {
 
   // ─── FEATURE 4: STARRED MESSAGES ────────────────────────
   const [starredSet, setStarredSet] = useState(new Set())
+  const [deletedForMeSet, setDeletedForMeSet] = useState(new Set())
   const [showStarredModal, setShowStarredModal] = useState(false)
 
   // ─── FEATURE 6: GIF PICKER ──────────────────────────────
@@ -603,6 +604,18 @@ export default function ChatScreen({ conversationId, onBack }) {
       .eq('conversation_id', conversationId)
       .then(({ data }) => {
         if (data) setStarredSet(new Set(data.map(d => d.message_id)))
+      })
+  }, [conversationId, user])
+
+  /* ── Fetch messages deleted "only for me" ─────────────── */
+  useEffect(() => {
+    if (!conversationId || !user) return
+    supabase
+      .from('cng_deleted_messages')
+      .select('message_id')
+      .eq('user_id', user.id)
+      .then(({ data }) => {
+        if (data) setDeletedForMeSet(new Set(data.map(d => d.message_id)))
       })
   }, [conversationId, user])
 
@@ -1526,6 +1539,30 @@ export default function ChatScreen({ conversationId, onBack }) {
     }
   }
 
+  const executeDeleteForMe = async () => {
+    if (!deleteConfirm) return
+    const msgId = deleteConfirm.id
+
+    // Optimistic
+    setDeletedForMeSet(prev => new Set([...prev, msgId]))
+    setDeleteConfirm(null)
+
+    try {
+      const { error } = await supabase
+        .from('cng_deleted_messages')
+        .insert({ message_id: msgId, user_id: user.id })
+      if (error) throw error
+    } catch (e) {
+      console.error('Delete for me error:', e)
+      setDeletedForMeSet(prev => {
+        const next = new Set(prev)
+        next.delete(msgId)
+        return next
+      })
+      showToast('Error al eliminar')
+    }
+  }
+
   /* ── Reply handler ─────────────────────────────────────────── */
   const handleReply = (msg) => {
     setReplyTo(msg)
@@ -2140,6 +2177,7 @@ export default function ChatScreen({ conversationId, onBack }) {
         )}
 
         {messages.map((msg) => {
+          if (deletedForMeSet.has(msg.id)) return null
           const isMine = msg.sender_id === user?.id
           const msgReactions = reactions[msg.id] || []
           const reactionCounts = {}
@@ -2789,13 +2827,67 @@ export default function ChatScreen({ conversationId, onBack }) {
             <Icon name="delete" size={40} style={{ color: '#ff4444', marginBottom: 12 }} />
             <h3 style={{ fontFamily: FONT.headline, fontSize: 18, fontWeight: 700, color: C.text, marginBottom: 8 }}>¿Eliminar mensaje?</h3>
             <p style={{ fontSize: 13, color: C.textDim, fontFamily: FONT.body, marginBottom: 24, lineHeight: 1.5 }}>
-              Este mensaje será eliminado para todos los participantes de la conversación.
+              {deleteConfirm.sender_id === user?.id
+                ? 'Elige cómo eliminar este mensaje.'
+                : 'Este mensaje se ocultará solo para ti.'}
             </p>
-            <div style={{ display: 'flex', gap: 12 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {deleteConfirm.sender_id === user?.id && (
+                <div
+                  onClick={executeDelete}
+                  style={{
+                    padding: '12px 0',
+                    borderRadius: 12,
+                    background: '#ff4444',
+                    color: '#fff',
+                    fontSize: 14,
+                    fontWeight: 600,
+                    fontFamily: FONT.body,
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    transition: 'background 0.15s',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#e03030' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = '#ff4444' }}
+                >
+                  Eliminar para todos
+                </div>
+              )}
+              <div
+                onClick={executeDeleteForMe}
+                style={{
+                  padding: '12px 0',
+                  borderRadius: 12,
+                  background: deleteConfirm.sender_id === user?.id ? 'transparent' : '#ff4444',
+                  color: deleteConfirm.sender_id === user?.id ? '#ff4444' : '#fff',
+                  border: deleteConfirm.sender_id === user?.id ? '1px solid #ff4444' : 'none',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  fontFamily: FONT.body,
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                  transition: 'background 0.15s',
+                }}
+                onMouseEnter={(e) => {
+                  if (deleteConfirm.sender_id === user?.id) {
+                    e.currentTarget.style.background = 'rgba(255,68,68,0.1)'
+                  } else {
+                    e.currentTarget.style.background = '#e03030'
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (deleteConfirm.sender_id === user?.id) {
+                    e.currentTarget.style.background = 'transparent'
+                  } else {
+                    e.currentTarget.style.background = '#ff4444'
+                  }
+                }}
+              >
+                Eliminar para mí
+              </div>
               <div
                 onClick={() => setDeleteConfirm(null)}
                 style={{
-                  flex: 1,
                   padding: '12px 0',
                   borderRadius: 12,
                   background: 'rgba(255,255,255,0.05)',
@@ -2811,26 +2903,6 @@ export default function ChatScreen({ conversationId, onBack }) {
                 onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
               >
                 Cancelar
-              </div>
-              <div
-                onClick={executeDelete}
-                style={{
-                  flex: 1,
-                  padding: '12px 0',
-                  borderRadius: 12,
-                  background: '#ff4444',
-                  color: '#fff',
-                  fontSize: 14,
-                  fontWeight: 600,
-                  fontFamily: FONT.body,
-                  cursor: 'pointer',
-                  textAlign: 'center',
-                  transition: 'background 0.15s',
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = '#e03030' }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = '#ff4444' }}
-              >
-                Eliminar
               </div>
             </div>
           </div>
