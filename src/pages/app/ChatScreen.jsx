@@ -8,6 +8,26 @@ function timeFormat(dateStr) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
+function formatLastSeen(lastSeenAt, isOnline) {
+  if (isOnline) return 'En línea'
+  if (!lastSeenAt) return ''
+
+  const now = Date.now()
+  const then = new Date(lastSeenAt).getTime()
+  const diffMs = now - then
+  const diffMin = Math.floor(diffMs / 60000)
+  const diffHours = Math.floor(diffMin / 60)
+  const diffDays = Math.floor(diffHours / 24)
+
+  if (diffMs < 60 * 1000) return 'En línea'
+  if (diffMin < 60) return `Última vez hace ${diffMin} min`
+  if (diffHours < 24) return `Última vez hace ${diffHours}h`
+  if (diffDays < 7) return `Última vez hace ${diffDays}d`
+
+  const date = new Date(lastSeenAt)
+  return `Última vez el ${date.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })}`
+}
+
 /* ── Reactions localStorage helper ────────────────────────────── */
 const REACTION_EMOJIS = ['❤️', '😂', '😮', '😢', '🔥', '👍']
 
@@ -362,6 +382,7 @@ export default function ChatScreen({ conversationId, onBack }) {
   const [conversation, setConversation] = useState(null)
   const [membersMap, setMembersMap] = useState({})
   const [otherUser, setOtherUser] = useState(null)
+  const [otherUserPresence, setOtherUserPresence] = useState(null)
 
   const [text, setText] = useState('')
   const [loading, setLoading] = useState(true)
@@ -669,6 +690,44 @@ export default function ChatScreen({ conversationId, onBack }) {
   }, [conversationId, user])
 
   useEffect(() => { fetchMessages() }, [fetchMessages])
+
+  /* ── Presence: fetch + realtime for 1:1 chats ──────────── */
+  useEffect(() => {
+    const isGroupChat = conversation?.type === 'group'
+    if (!otherUser?.user_id || isGroupChat) {
+      setOtherUserPresence(null)
+      return
+    }
+
+    const fetchPresence = async () => {
+      const { data } = await supabase
+        .from('user_presence')
+        .select('last_seen_at, is_online')
+        .eq('user_id', otherUser.user_id)
+        .maybeSingle()
+      setOtherUserPresence(data)
+    }
+    fetchPresence()
+
+    const channel = supabase
+      .channel('presence-' + otherUser.user_id)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'user_presence',
+        filter: 'user_id=eq.' + otherUser.user_id,
+      }, (payload) => {
+        if (payload.new) setOtherUserPresence(payload.new)
+      })
+      .subscribe()
+
+    const recheckInterval = setInterval(fetchPresence, 60 * 1000)
+
+    return () => {
+      supabase.removeChannel(channel)
+      clearInterval(recheckInterval)
+    }
+  }, [otherUser?.user_id, conversation?.type])
 
   /* ── Feature 4: Fetch starred messages ─────────────────── */
   useEffect(() => {
@@ -2024,7 +2083,20 @@ export default function ChatScreen({ conversationId, onBack }) {
     : (otherUser?.full_name || otherUser?.ref_code || 'Chat')
 
   const initial = displayName[0]?.toUpperCase() || (isGroup ? 'G' : 'C')
-  const subTitle = isGroup ? `${Object.keys(membersMap).length} miembros` : 'Online'
+
+  let subTitle
+  if (isGroup) {
+    subTitle = `${Object.keys(membersMap).length} miembros`
+  } else if (otherUserPresence) {
+    const lastSeenMs = otherUserPresence.last_seen_at
+      ? new Date(otherUserPresence.last_seen_at).getTime()
+      : 0
+    const recentlyActive = (Date.now() - lastSeenMs) < 90 * 1000
+    const effectivelyOnline = otherUserPresence.is_online && recentlyActive
+    subTitle = formatLastSeen(otherUserPresence.last_seen_at, effectivelyOnline)
+  } else {
+    subTitle = ''
+  }
 
   const typists = Object.values(typingUsers)
   let typingText = ''
@@ -2229,7 +2301,14 @@ export default function ChatScreen({ conversationId, onBack }) {
             <h1 style={{ fontFamily: FONT.headline, fontSize: 16, fontWeight: 700, color: C.text }}>{displayName}</h1>
             {isMuted && <Icon name="notifications_off" size={14} style={{ color: C.textDim }} />}
           </div>
-          <p style={{ fontSize: 11, color: isGroup ? C.textDim : C.primaryBright }}>{subTitle}</p>
+          <p style={{
+            fontSize: 11,
+            color: isGroup
+              ? C.textDim
+              : (subTitle === 'En línea' ? C.primaryBright : C.textDim),
+          }}>
+            {subTitle}
+          </p>
         </div>
         <div onClick={(e) => { e.stopPropagation(); setShowHeaderMenu(v => !v) }} style={{ cursor: 'pointer', padding: 8, borderRadius: 99, display: 'flex', position: 'relative' }}>
           <Icon name="more_vert" size={24} style={{ color: C.textDim }} />
