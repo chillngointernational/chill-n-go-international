@@ -95,7 +95,7 @@ flowchart TD
     style U7 fill:#E1F5EE,stroke:#1D9E75
     style S1 fill:#F1EFE8,stroke:#888780
     style S2 fill:#F1EFE8,stroke:#888780
-    style S3 fill:#F1EFE8,stroke:#888780
+    style S3 fill:#E1F5EE,stroke:#1D9E75
     style S4 fill:#E1F5EE,stroke:#1D9E75
     style S5 fill:#F1EFE8,stroke:#888780
     style S6 fill:#FCEBEB,stroke:#E24B4A
@@ -115,9 +115,11 @@ flowchart TD
 
 | Momento | Qué vive el usuario | Bug técnico | Referencia |
 |---------|---------------------|-------------|------------|
-| Momento 1 · 2 · 3 | Pierde atribución de referido si cierra pestaña en Stripe | `ref_code` solo persistido en URL, sin localStorage/cookie | Ver Sección 5.2 |
-| Momento 3 | Paga pero el webhook crashea al reintentar el mismo email | `cng-stripe-webhook` usa `.insert()` sin upsert en `identity_profiles` | Ver Sección 5.1 |
-| Momento 3 | Un agente del Matrix no puede suscribirse a CNG+ | `auth.signUp()` rechaza el email si ya existe en `auth.users` | Ver Sección 5.1 |
+| Momento 1-3 | ✅ **RESUELTO 19 abr 2026** | `ref_code` ahora persiste en localStorage (TTL 30 días) — commit `3ebc92e` | — |
+| Momento 3 | ✅ **RESUELTO 19 abr 2026** | Webhook usa upsert con onConflict + ya no inventa datos con `email.split` — commits `3ebc92e`, `34984d2` | — |
+| Momento 3 | ✅ **RESUELTO 19 abr 2026** | Wizard crea `identity_profile` nuevo antes del pago — commit `3ebc92e` | — |
+| Momento 4 | Usuario ve momentáneamente "verifica tu identidad" otra vez tras completar KYC | ⚠️ Race condition visual: webhook puede tardar <5s en procesar; UI muestra `kyc_pending` hasta recarga | Cosmético — sin impacto funcional |
+| Momento 4 | Comportamiento post-KYC asimétrico entre Join.jsx y Dashboard | ⚠️ Optimistic update asimétrico: Join setea `identity_verification_status='processing'`, Dashboard solo recarga | Cosmético |
 | Momento 6 | No encuentra a un usuario que sabe que existe | Búsqueda solo filtra por `full_name` (no email, username, first_name) | Ver Sección 5.4 |
 | Momento 6 | Usuarios con `full_name` NULL no aparecen en resultados | Caso Mónica — registros incompletos | Ver Sección 5.4 |
 | Momento 6 | No puede enviar mensaje nuevo a alguien sin conversación previa | Falta policy INSERT en `cng_conversation_members` → RLS deny silencioso | Ver Sección 5.4 |
@@ -180,7 +182,7 @@ flowchart TD
     style S11 fill:#FCEBEB,stroke:#E24B4A
     style S12 fill:#F1EFE8,stroke:#888780
     style S13 fill:#F1EFE8,stroke:#888780
-    style S14 fill:#FAEEDA,stroke:#EF9F27
+    style S14 fill:#E1F5EE,stroke:#1D9E75
 ```
 
 <!-- DUDA: el diagrama menciona "CreatePostScreen" y "WalletScreen" — en el código git actual solo existe CreateScreen.jsx (no "Post" en el nombre); WalletScreen NO existe como archivo — la UI para gastar/canjear Chilliums no está implementada todavía. La funcionalidad de transferir Chilliums está embebida dentro de ChatScreen.jsx. Los labels del diagrama se preservan como los diste porque reflejan la intención de producto, pero la tabla siguiente marca las brechas reales contra el código. -->
@@ -259,7 +261,7 @@ flowchart LR
 ```mermaid
 flowchart TD
     A[Landing / join link] --> B[Join.jsx<br/>captura email y ref]
-    B --> C[cng-create-checkout<br/>no-git]
+    B --> C[cng-create-checkout]
     C --> D[Stripe Checkout<br/>$10]
     D --> E[webhook<br/>cng-stripe-webhook]
     E --> F[INSERT identity_profiles]
@@ -272,9 +274,9 @@ flowchart TD
     L --> M[UPDATE verification_status=verified]
     M --> N[Dashboard con KYC OK]
 
-    style C fill:#FAEEDA,stroke:#EF9F27
-    style E fill:#FAEEDA,stroke:#EF9F27
-    style F fill:#FCEBEB,stroke:#E24B4A
+    style C fill:#E1F5EE,stroke:#1D9E75
+    style E fill:#E1F5EE,stroke:#1D9E75
+    style F fill:#E1F5EE,stroke:#1D9E75
 ```
 
 **Componentes:**
@@ -290,10 +292,14 @@ flowchart TD
 
 **Edge Functions:** las 5 listadas arriba
 
-**Riesgos conocidos:**
-- ❌ Webhook `cng-stripe-webhook` usa `.insert()` sin upsert en `identity_profiles` → duplicate email = crash, usuario queda atascado tras pagar
-- ⚠️ `ref_code` solo persistido en `success_url` → si el usuario cierra pestaña en Stripe, pierde la atribución
-- ⚠️ Un agente del Matrix (con fila en `auth.users`) no puede ser miembro CNG+ — `auth.signUp()` rechaza el email existente
+**Riesgos (actualizados 19 abr 2026):**
+- ✅ RESUELTO — Webhook ahora usa upsert con `onConflict: 'email'` + ya no inventa datos con `email.split` (commit `3ebc92e`)
+- ✅ RESUELTO — `ref_code` persiste en localStorage con TTL 30 días (commit `3ebc92e`)
+- ✅ RESUELTO — Dual role (Matrix agent) desbloqueado: wizard crea `identity_profile` nuevo antes del pago (commit `3ebc92e`)
+- ⚠️ Race condition visual post-KYC (<5s de latencia del webhook) — cosmético, sin impacto funcional
+
+**Commits del 19 abr 2026 que impactan este flujo:**
+`3ebc92e` wizard antes del pago · `072ce93` import cng-create-checkout · `34984d2` validaciones server-side checkout · `34404d3` HMAC KYC + session reuse · `968f27a` gate `isFullyActive` + dashboard states · `a0dd7c3` filtros ledger actualizados
 
 ---
 
@@ -330,9 +336,11 @@ flowchart TD
 
 <!-- DUDA: ¿dónde se calculan y pagan las comisiones mensuales recurrentes de $3.50 / $2.00? No vi una edge function que corra mensualmente. Podría vivir en un cron de Supabase (pg_cron) o en lógica del webhook de renovación. Necesita auditoría adicional. -->
 
-**Riesgos conocidos:**
-- ⚠️ Persistencia solo por URL — edge cases pierden comisiones
-- ⚠️ Lógica de comisiones recurrentes **no localizada en código git** — puede estar en pg_cron o fuera del repo
+**Riesgos (actualizados 19 abr 2026):**
+- ✅ RESUELTO — `ref_code` ahora persiste en localStorage con TTL 30 días + fallback si URL vacía (commit `3ebc92e`)
+- ✅ RESUELTO — Self-referral ahora prevenido: Join.jsx bloquea si email del usuario == email del referrer (commit `3ebc92e`)
+- ✅ RESUELTO — Email duplicate también bloqueado antes de avanzar al wizard (commit `3ebc92e`)
+- ⚠️ Lógica de comisiones recurrentes **no localizada en código git** — puede estar en pg_cron o fuera del repo (sin cambio)
 
 ---
 
@@ -484,6 +492,14 @@ flowchart TD
 - ⚠️ Commit reciente `cbdc91e` — "detect silent RLS failure on recipient balance update" — indica que ya hubo un bug de RLS en esta ruta
 - 📄 Ver [auditoria-chilliums-2026-04-16/](auditoria-chilliums-2026-04-16/) para auditoría detallada
 
+**📝 Cambio de nomenclatura (19 abr 2026):**
+Los tipos del `chilliums_ledger` se renombraron para alinearse con el modelo de 2 niveles de referidos:
+- `cashback_direct` → `earn_referral_level_0` (miembro pagador, 50%)
+- `cashback_network` (con `referral_level=2`) → `earn_referral_level_1` (referrer directo, 35%)
+- `cashback_network` (con `referral_level=3`) → `earn_referral_level_2` (abuelo, 15%)
+
+Los números de `referral_level` bajaron 1 (antes 1/2/3, ahora 0/1/2). Commits: `3ebc92e` (webhook) + `a0dd7c3` (Network.jsx / NetworkScreen.jsx). Entradas legacy del ledger con tipos viejos no se migran automáticamente — si hay data producción previa, requiere `UPDATE` manual.
+
 ---
 
 ## 6. Tablas de Base de Datos
@@ -542,7 +558,7 @@ flowchart TD
 
 | Función | Estado | Propósito |
 |---|---|---|
-| `cng-create-checkout` | ❌ No en git | Crea Stripe Checkout Session para $10 inicial |
+| `cng-create-checkout` | ✅ En git (19 abr 2026) | Crea Stripe Checkout Session para $10 inicial + valida que exista profile con `payment_status=pending` antes de Stripe |
 | `cng-create-portal` | ❌ No en git | Crea Stripe Billing Portal session para gestionar suscripción |
 | `cng-create-verification` | ✅ En git | Crea Stripe Identity VerificationSession |
 | `cng-stripe-webhook` | ✅ En git | Procesa eventos de Stripe Checkout + Subscription |
@@ -585,12 +601,12 @@ Desde [src/App.jsx](src/App.jsx):
 | 2 | Registros con `full_name` NULL no aparecen en búsqueda (caso Mónica) | ⚠️ Bloqueante puntual | Schema issue | Pendiente |
 | 3 | Falta policy INSERT en `cng_conversation_members` → enviar mensaje nuevo falla | ❌ Bug crítico | [social-tables.sql:395-407](src/sql/social-tables.sql:395) | Pendiente |
 | 4 | `handleSelect` hace `console.error` sin toast al usuario | ⚠️ UX silenciosa | [MessagesScreen.jsx:106-107](src/pages/app/MessagesScreen.jsx:106) | Pendiente |
-| 5 | Webhook `cng-stripe-webhook` usa `.insert()` sin upsert → crash en retry | ⚠️ Riesgo de pagos perdidos | [cng-stripe-webhook/index.ts:238-255](supabase/functions/cng-stripe-webhook/index.ts:238) | Idempotencia de eventos ya agregada (e44fc0a); upsert de perfil aún no |
-| 6 | Botón "Ir a mi cuenta" no navega en algunos casos | ⚠️ UX | <!-- DUDA: localizar exactamente --> | Pendiente |
-| 7 | `ref_code` solo persistido en URL (sin localStorage) → pérdidas de comisión | ⚠️ Riesgo | [Join.jsx:237-238](src/pages/Join.jsx:237) | Pendiente |
-| 8 | Dual role (agente Matrix que quiere ser miembro CNG+) no soportado | ❌ Bloqueante para casos especiales | [RegistrationWizard.jsx:387-404](src/components/RegistrationWizard.jsx:387) | Pendiente — requiere rediseño |
+| 5 | Webhook `cng-stripe-webhook` usa `.insert()` sin upsert → crash en retry | — | [cng-stripe-webhook/index.ts](supabase/functions/cng-stripe-webhook/index.ts) | ✅ **RESUELTO 19 abr 2026** — upsert con `onConflict: 'email'` + eliminado default `email.split("@")[0]` (commit `3ebc92e`) |
+| 6 | Botón "Ir a mi cuenta" no navega en algunos casos | — | [Join.jsx:667](src/pages/Join.jsx:667) | ✅ **RESUELTO 19 abr 2026** — ahora `<Link to="/dashboard">` directo (commit `968f27a`) |
+| 7 | `ref_code` solo persistido en URL (sin localStorage) → pérdidas de comisión | — | [Join.jsx](src/pages/Join.jsx) | ✅ **RESUELTO 19 abr 2026** — localStorage con TTL 30 días + leído como fallback si URL vacía (commit `3ebc92e`) |
+| 8 | Dual role (agente Matrix que quiere ser miembro CNG+) no soportado | — | [RegistrationWizard.jsx](src/components/RegistrationWizard.jsx) | ✅ **RESUELTO 19 abr 2026** — wizard crea `identity_profile` nuevo antes del pago; bloqueo básico removido (commit `3ebc92e`) |
 | 9 | Transferencia de Chilliums en cliente (UPDATE directo) → race condition | ⚠️ Riesgo de doble gasto | [ChatScreen.jsx:1235-1290](src/pages/app/ChatScreen.jsx:1235) | Pendiente — mover a RPC/Edge |
-| 10 | 2 Edge Functions (`cng-create-checkout`, `cng-create-portal`) no versionadas en git | ⚠️ Riesgo operacional | — | Pendiente — `supabase functions download` |
+| 10 | 2 Edge Functions no versionadas en git | ⚠️ Riesgo operacional | — | ⚙️ **PARCIAL 19 abr 2026** — `cng-create-checkout` ya en git (commit `072ce93`); `cng-create-portal` sigue fuera |
 | 11 | RLS de `identity_profiles` no está en git (vive solo en dashboard) | ⚠️ Riesgo operacional | — | Pendiente — traer a git |
 | 12 | No hay `supabase/migrations/` → schema no versionado | ⚠️ Riesgo | — | Pendiente — `supabase db pull` |
 
@@ -602,19 +618,20 @@ Desde [src/App.jsx](src/App.jsx):
 |---|---|---|---|
 | Stripe Identity (flow) | ✅ OK | 17 abr 2026 | SSN desactivado |
 | Supabase email confirm | ✅ OK | 17 abr 2026 | Desactivado para signup automático |
-| Webhook `cng-identity-webhook` | ✅ OK | 17 abr 2026 | HMAC verificado, actualiza por email |
+| Webhook `cng-identity-webhook` (HMAC) | ✅ OK | 19 abr 2026 | HMAC ahora validado con `STRIPE_IDENTITY_WEBHOOK_SECRET` (commit `34404d3`). Antes no tenía validación — vulnerabilidad cerrada. |
 | Webhook `cng-stripe-webhook` (JWT) | ✅ OK | 18 abr 2026 | `verify_jwt=false` vía config.toml |
 | Webhook `cng-stripe-webhook` (idempotencia de eventos) | ✅ OK | ~17 abr 2026 | Commit e44fc0a |
-| Webhook `cng-stripe-webhook` (idempotencia de perfil) | ⚠️ Riesgo | — | `.insert()` crashea en retry |
+| Webhook `cng-stripe-webhook` (idempotencia de perfil) | ✅ OK | 19 abr 2026 | Ya usa upsert con onConflict; no crashea en retry (commit `3ebc92e`) |
 | Búsqueda de usuarios | ❌ Bug | 18 abr 2026 | Solo `full_name`, sin filtros consistentes |
 | Flujo enviar mensaje nuevo | ❌ Bug | 18 abr 2026 | Falta policy INSERT en `conversation_members` |
 | Feed social | ⚠️ Warning | 18 abr 2026 | Mismatch de filtros con búsqueda |
 | Chilliums (transferencias) | ⚠️ Warning | 17 abr 2026 | UPDATE cliente, RLS silenciosa detectada |
 | Chilliums (reparto 50/35/15) | ✅ OK | 17 abr 2026 | Commits 0a06a1d, 8011d5c corrigen reparto |
-| Referral link persistence | ⚠️ Warning | 18 abr 2026 | Solo URL, sin localStorage backup |
-| Dual-role user (agente + miembro) | ❌ Gap | 18 abr 2026 | `auth.signUp` rechaza email existente |
+| Chilliums (tipos del ledger) | ✅ OK | 19 abr 2026 | Renombrados a `earn_referral_level_0/1/2` en backend y frontend — consistencia verificada (commits `3ebc92e`, `a0dd7c3`) |
+| Referral link persistence | ✅ OK | 19 abr 2026 | localStorage con TTL 30 días + fallback si URL vacía (commit `3ebc92e`) |
+| Dual-role user (agente + miembro) | ⚠️ Parcial | 19 abr 2026 | Wizard crea `identity_profile` nuevo antes del pago (resuelve bloqueo básico), pero el concepto "un humano con 2 roles" sigue sin diseñarse explícitamente en el schema |
 | Schema versionado | ❌ Gap | 19 abr 2026 | No hay `supabase/migrations/` en repo |
-| Edge Functions versionadas | ⚠️ Warning | 19 abr 2026 | 2 de 5 no están en git |
+| Edge Functions versionadas | ⚠️ Parcial | 19 abr 2026 | 4 de 5 en git; `cng-create-portal` sigue fuera (commit `072ce93` trajo `cng-create-checkout`) |
 | RLS de `identity_profiles` versionada | ❌ Gap | 19 abr 2026 | Solo en dashboard |
 | Emails transaccionales | ❓ Desconocido | — | <!-- DUDA: ¿qué emails existen? ¿bienvenida, confirmación de pago, KYC OK? --> |
 
@@ -642,6 +659,18 @@ En lugar de usar `@stripe/stripe-js` en el cliente, se redirige a la página hos
 
 ### ADR-07 — `verify_jwt = false` para webhook de Stripe
 Stripe no envía `Authorization` header en sus webhooks, así que Supabase Edge Functions los rechazaba con 401. Se configuró `supabase/config.toml` para desactivar verify_jwt solo en `cng-stripe-webhook`. La seguridad se delega a la validación de la firma `stripe-signature` dentro del handler. **Estado:** desplegado 18 abr 2026.
+
+### ADR-08 — Wizard obligatorio antes del pago
+**Fecha:** 19 abr 2026
+El pago se bloquea hasta completar el wizard. Esto crea el `identity_profile` con `payment_status='pending'` ANTES de que el usuario llegue a Stripe. El webhook solo hace UPDATE del profile existente, nunca crea profiles con datos inventados. Motivación: cerrar el bug Mónica, donde el usuario podía pagar sin llenar datos y el webhook inventaba `first_name` con `email.split("@")[0]`. **Estado:** desplegado 19 abr 2026 — commit `3ebc92e`.
+
+### ADR-09 — Base fija $7 para reparto de Chilliums
+**Fecha:** 19 abr 2026
+El cálculo del reparto 50/35/15 siempre usa `MEMBERSHIP_PRICE = $7` como base, independiente del monto bruto pagado. Primer mes ($10) o renovación ($7), el usuario siempre recibe $2.75 en Chilliums. Los $3 extra del primer mes cubren costo de Stripe Identity + margen operativo para Chill n Go. Motivación: previsibilidad del reparto y valor cashback constante para el usuario. **Estado:** vigente desde commit `3ebc92e`.
+
+### ADR-10 — HMAC obligatorio en todos los webhooks
+**Fecha:** 19 abr 2026
+Todos los webhooks (pago e identity) validan la firma HMAC con su propio secret antes de procesar el body. Se agregó `STRIPE_IDENTITY_WEBHOOK_SECRET` como env var separada del webhook de pagos (`STRIPE_WEBHOOK_SECRET`). Motivación: cerrar vulnerabilidad donde cualquiera con el URL del webhook de identity podía marcar emails como KYC-verified enviando un POST falso. **Estado:** desplegado 19 abr 2026 — commit `34404d3`.
 
 ---
 
@@ -674,6 +703,8 @@ npx supabase functions download cng-create-portal --project-ref jahnlhzbjcbmjnuz
 ---
 
 ## Última modificación
+
+**19 de abril de 2026** — Sesión de 4 flujos completados (A: entrada, B: pago, C: KYC, D: activación). 5 bugs críticos cerrados incluyendo bug Mónica y vulnerabilidad HMAC. 6 commits desplegados a producción: `3ebc92e`, `072ce93`, `34984d2`, `34404d3`, `968f27a`, `a0dd7c3`. Sistema listo para prueba end-to-end con usuario fake. Agregados ADR-08/09/10. Actualizadas Sección 3.1 (diagrama + tabla bugs resueltos), 3.2 (M14 verde), 5.1 (diagrama + notas de commits), 5.2 (self-referral + localStorage), 5.6 (rename de tipos), 7 (cng-create-checkout en git), 9 (bugs #5/6/7/8/10), 10 (checklist).
 
 **18 de abril de 2026** — Sección 3 expandida a dos Journey Maps: 3.1 Miembro Nuevo (onboarding) y 3.2 Miembro Activo (uso diario, 7 momentos recurrentes incl. renovación mensual). Agregado diagrama de conexión entre ambos journeys. Auditado código para identificar bugs/riesgos de los momentos 8–14 contra el código real.
 
