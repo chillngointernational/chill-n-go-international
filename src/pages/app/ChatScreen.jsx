@@ -518,10 +518,10 @@ export default function ChatScreen({ conversationId, onBack }) {
         }
       }
 
-      // Fetch muted/pinned status
+      // Fetch muted/pinned/cleared_at status
       const { data: myMembership } = await supabase
         .from('cng_conversation_members')
-        .select('is_muted, is_pinned')
+        .select('is_muted, is_pinned, cleared_at')
         .eq('conversation_id', conversationId)
         .eq('user_id', user.id)
         .maybeSingle()
@@ -544,11 +544,15 @@ export default function ChatScreen({ conversationId, onBack }) {
         }
       }
 
-      const { data: msgs, error } = await supabase
+      let msgsQuery = supabase
         .from('cng_messages')
         .select('*')
         .eq('conversation_id', conversationId)
         .order('created_at', { ascending: true })
+      if (myMembership?.cleared_at) {
+        msgsQuery = msgsQuery.gt('created_at', myMembership.cleared_at)
+      }
+      const { data: msgs, error } = await msgsQuery
 
       if (error) throw error
       setMessages(msgs || [])

@@ -452,6 +452,10 @@ export default function MessagesScreen({ onOpenChat }) {
   const [blockedSet, setBlockedSet] = useState(new Set())
   const [showBlockConfirm, setShowBlockConfirm] = useState(false)
   const [blockTarget, setBlockTarget] = useState(null) // conv object
+  const [showClearConfirm, setShowClearConfirm] = useState(false)
+  const [clearTarget, setClearTarget] = useState(null)
+  const [showDeleteChatConfirm, setShowDeleteChatConfirm] = useState(false)
+  const [deleteChatTarget, setDeleteChatTarget] = useState(null)
   const [showReportModal, setShowReportModal] = useState(false)
   const [reportTarget, setReportTarget] = useState(null) // conv object
   const [reportReason, setReportReason] = useState('')
@@ -552,6 +556,60 @@ export default function MessagesScreen({ onOpenChat }) {
     } catch (e) {
       console.error('Archive error:', e)
       setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, is_archived: false } : c))
+    }
+  }
+
+  const handleClearChat = (conv) => {
+    closeContextMenu()
+    setClearTarget(conv)
+    setShowClearConfirm(true)
+  }
+
+  const confirmClearChat = async () => {
+    const conv = clearTarget
+    setShowClearConfirm(false)
+    if (!conv || !user) return
+    const prevMsg = conv.msg
+    const prevTime = conv.time
+    setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, msg: '', time: '' } : c))
+    try {
+      const { error } = await supabase
+        .from('cng_conversation_members')
+        .update({ cleared_at: new Date().toISOString() })
+        .eq('conversation_id', conv.id)
+        .eq('user_id', user.id)
+      if (error) throw error
+      showToast('Chat vaciado')
+    } catch (e) {
+      console.error('Clear chat error:', e)
+      setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, msg: prevMsg, time: prevTime } : c))
+      showToast('Error al vaciar el chat')
+    }
+  }
+
+  const handleDeleteChat = (conv) => {
+    closeContextMenu()
+    setDeleteChatTarget(conv)
+    setShowDeleteChatConfirm(true)
+  }
+
+  const confirmDeleteChat = async () => {
+    const conv = deleteChatTarget
+    setShowDeleteChatConfirm(false)
+    if (!conv || !user) return
+    setConversations(prev => prev.filter(c => c.id !== conv.id))
+    try {
+      const { error } = await supabase
+        .from('cng_conversation_members')
+        .delete()
+        .eq('conversation_id', conv.id)
+        .eq('user_id', user.id)
+      if (error) throw error
+      showToast('Chat eliminado')
+    } catch (e) {
+      console.error('Delete chat error:', e)
+      fetchConversations()
+      showToast('Error al eliminar el chat')
     }
   }
 
@@ -718,7 +776,7 @@ export default function MessagesScreen({ onOpenChat }) {
     try {
       const { data: memberships, error: memErr } = await supabase
         .from('cng_conversation_members')
-        .select('conversation_id, unread_count, is_muted, is_archived, is_pinned')
+        .select('conversation_id, unread_count, is_muted, is_archived, is_pinned, cleared_at')
         .eq('user_id', user.id)
 
       if (memErr) throw memErr
@@ -729,7 +787,7 @@ export default function MessagesScreen({ onOpenChat }) {
       const memberFlagsMap = {}
       memberships.forEach(m => {
         unreadMap[m.conversation_id] = m.unread_count
-        memberFlagsMap[m.conversation_id] = { is_muted: !!m.is_muted, is_archived: !!m.is_archived, is_pinned: !!m.is_pinned }
+        memberFlagsMap[m.conversation_id] = { is_muted: !!m.is_muted, is_archived: !!m.is_archived, is_pinned: !!m.is_pinned, cleared_at: m.cleared_at || null }
       })
 
       const { data: convos, error: convErr } = await supabase
@@ -772,14 +830,18 @@ export default function MessagesScreen({ onOpenChat }) {
         const finalName = isGroup ? c.name : (otherMember?.full_name || otherMember?.ref_code || 'Unknown')
 
         const flags = memberFlagsMap[c.id] || {}
+        const cleared = flags.cleared_at
+        const hasNewerSinceClear = cleared && c.last_message_at && new Date(c.last_message_at) > new Date(cleared)
+        const hidePreview = !!cleared && !hasNewerSinceClear
+
         return {
           id: c.id,
           type: c.type,
           name: finalName,
           avatar_url: isGroup ? c.avatar_url : otherMember?.avatar_url,
           initial: finalName ? finalName[0].toUpperCase() : 'U',
-          msg: c.last_message_preview || 'No messages yet',
-          time: c.last_message_at ? timeAgo(c.last_message_at) : '',
+          msg: hidePreview ? '' : (c.last_message_preview || 'No messages yet'),
+          time: hidePreview ? '' : (c.last_message_at ? timeAgo(c.last_message_at) : ''),
           unread: unreadMap[c.id] || 0,
           other_user_id: otherMemberUserId,
           is_muted: flags.is_muted,
@@ -1239,6 +1301,26 @@ export default function MessagesScreen({ onOpenChat }) {
               <Icon name="archive" size={18} style={{ color: C.text }} />
               <span style={{ fontSize: 14, color: C.text, fontFamily: FONT.body }}>Archivar</span>
             </div>
+            {/* Clear chat */}
+            <div
+              onClick={() => handleClearChat(contextMenu.conv)}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', cursor: 'pointer', borderRadius: 8, transition: 'background 0.1s' }}
+              onPointerEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+              onPointerLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+            >
+              <Icon name="cleaning_services" size={18} style={{ color: C.text }} />
+              <span style={{ fontSize: 14, color: C.text, fontFamily: FONT.body }}>Vaciar chat</span>
+            </div>
+            {/* Delete chat */}
+            <div
+              onClick={() => handleDeleteChat(contextMenu.conv)}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', cursor: 'pointer', borderRadius: 8, transition: 'background 0.1s' }}
+              onPointerEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+              onPointerLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+            >
+              <Icon name="delete" size={18} style={{ color: '#ff4444' }} />
+              <span style={{ fontSize: 14, color: '#ff4444', fontFamily: FONT.body }}>Eliminar chat</span>
+            </div>
             {/* Separator */}
             <div style={{ height: 1, background: 'rgba(241,239,232,0.08)', margin: '4px 12px' }} />
             {/* Report */}
@@ -1309,6 +1391,96 @@ export default function MessagesScreen({ onOpenChat }) {
                 onMouseLeave={(e) => { e.currentTarget.style.background = '#ff4444' }}
               >
                 Bloquear
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ CLEAR CHAT CONFIRMATION MODAL ═══ */}
+      {showClearConfirm && clearTarget && (
+        <div
+          onClick={() => setShowClearConfirm(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 400, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%', maxWidth: 320,
+              background: 'rgba(13,17,23,0.97)', borderRadius: 20,
+              border: '1px solid rgba(241,239,232,0.1)',
+              backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+              padding: '28px 24px 20px', textAlign: 'center',
+            }}
+          >
+            <Icon name="cleaning_services" size={40} style={{ color: C.text, marginBottom: 12 }} />
+            <h3 style={{ fontFamily: FONT.headline, fontSize: 18, fontWeight: 700, color: C.text, marginBottom: 8 }}>
+              ¿Vaciar chat?
+            </h3>
+            <p style={{ fontSize: 13, color: C.textDim, fontFamily: FONT.body, marginBottom: 24, lineHeight: 1.5 }}>
+              Los mensajes se ocultarán solo para ti. El otro usuario seguirá viéndolos.
+            </p>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <div
+                onClick={() => setShowClearConfirm(false)}
+                style={{ flex: 1, padding: '12px 0', borderRadius: 12, background: 'rgba(255,255,255,0.05)', color: C.text, fontSize: 14, fontWeight: 600, fontFamily: FONT.body, cursor: 'pointer', textAlign: 'center' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+              >
+                Cancelar
+              </div>
+              <div
+                onClick={confirmClearChat}
+                style={{ flex: 1, padding: '12px 0', borderRadius: 12, background: C.text, color: '#0d1117', fontSize: 14, fontWeight: 600, fontFamily: FONT.body, cursor: 'pointer', textAlign: 'center' }}
+                onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.85' }}
+                onMouseLeave={(e) => { e.currentTarget.style.opacity = '1' }}
+              >
+                Vaciar
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ DELETE CHAT CONFIRMATION MODAL ═══ */}
+      {showDeleteChatConfirm && deleteChatTarget && (
+        <div
+          onClick={() => setShowDeleteChatConfirm(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 400, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%', maxWidth: 320,
+              background: 'rgba(13,17,23,0.97)', borderRadius: 20,
+              border: '1px solid rgba(241,239,232,0.1)',
+              backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+              padding: '28px 24px 20px', textAlign: 'center',
+            }}
+          >
+            <Icon name="delete" size={40} style={{ color: '#ff4444', marginBottom: 12 }} />
+            <h3 style={{ fontFamily: FONT.headline, fontSize: 18, fontWeight: 700, color: C.text, marginBottom: 8 }}>
+              ¿Eliminar chat?
+            </h3>
+            <p style={{ fontSize: 13, color: C.textDim, fontFamily: FONT.body, marginBottom: 24, lineHeight: 1.5 }}>
+              Se eliminará de tu lista. El otro usuario seguirá viéndolo.
+            </p>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <div
+                onClick={() => setShowDeleteChatConfirm(false)}
+                style={{ flex: 1, padding: '12px 0', borderRadius: 12, background: 'rgba(255,255,255,0.05)', color: C.text, fontSize: 14, fontWeight: 600, fontFamily: FONT.body, cursor: 'pointer', textAlign: 'center' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+              >
+                Cancelar
+              </div>
+              <div
+                onClick={confirmDeleteChat}
+                style={{ flex: 1, padding: '12px 0', borderRadius: 12, background: '#ff4444', color: '#fff', fontSize: 14, fontWeight: 600, fontFamily: FONT.body, cursor: 'pointer', textAlign: 'center' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = '#e03030' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = '#ff4444' }}
+              >
+                Eliminar
               </div>
             </div>
           </div>
