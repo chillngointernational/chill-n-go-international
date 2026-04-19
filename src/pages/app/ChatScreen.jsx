@@ -126,6 +126,7 @@ const DeliveryStatus = ({ status }) => {
   if (status === 'sent') return <span className="material-symbols-outlined" style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', verticalAlign: 'middle', lineHeight: 1 }}>done</span>
   if (status === 'delivered') return <span className="material-symbols-outlined" style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', verticalAlign: 'middle', lineHeight: 1 }}>done_all</span>
   if (status === 'read') return <span className="material-symbols-outlined" style={{ fontSize: 12, color: '#53BDEB', verticalAlign: 'middle', lineHeight: 1 }}>done_all</span>
+  if (status === 'failed') return <span className="material-symbols-outlined" style={{ fontSize: 14, color: '#ff4444', verticalAlign: 'middle', lineHeight: 1 }}>error</span>
   return null
 }
 
@@ -1010,10 +1011,46 @@ export default function ChatScreen({ conversationId, onBack }) {
       })
     } catch (e) {
       console.error('Send error:', e)
-      setMessages(prev => prev.filter(m => m.id !== tempId))
-      if (type === 'text') setText(trimmed)
+      // Keep the message visible but flagged as failed so the user can retry
+      setMessages(prev => prev.map(m =>
+        m.id === tempId ? { ...m, delivery_status: 'failed' } : m
+      ))
     } finally {
       setSending(false)
+    }
+  }
+
+  const handleRetryMessage = async (failedMsg) => {
+    if (!failedMsg || !user) return
+    setMessages(prev => prev.map(m =>
+      m.id === failedMsg.id ? { ...m, delivery_status: 'sending' } : m
+    ))
+    try {
+      const row = {
+        conversation_id: conversationId,
+        sender_id: user.id,
+        content: failedMsg.content,
+        message_type: failedMsg.message_type,
+        delivery_status: 'sent',
+      }
+      if (failedMsg.reply_to_id) row.reply_to_id = failedMsg.reply_to_id
+      if (failedMsg.media_url) row.media_url = failedMsg.media_url
+      if (failedMsg.is_view_once) row.is_view_once = failedMsg.is_view_once
+
+      const { data, error } = await supabase.from('cng_messages').insert(row).select().single()
+      if (error) throw error
+
+      setMessages(prev => {
+        const hasReal = prev.some(m => m.id === data.id)
+        if (hasReal) return prev.filter(m => m.id !== failedMsg.id)
+        return prev.map(m => m.id === failedMsg.id ? data : m)
+      })
+    } catch (e) {
+      console.error('Retry error:', e)
+      setMessages(prev => prev.map(m =>
+        m.id === failedMsg.id ? { ...m, delivery_status: 'failed' } : m
+      ))
+      showToast('No se pudo enviar. Verifica tu conexión.')
     }
   }
 
@@ -2126,10 +2163,10 @@ export default function ChatScreen({ conversationId, onBack }) {
 
               <div
                 style={{ position: 'relative', maxWidth: '75%' }}
-                onPointerDown={() => handleMsgPointerDown(msg.id, isMine && !isDeleted)}
+                onPointerDown={() => { if (msg.delivery_status === 'failed') return; handleMsgPointerDown(msg.id, isMine && !isDeleted) }}
                 onPointerUp={handleMsgPointerUp}
                 onPointerLeave={handleMsgPointerUp}
-                onContextMenu={(e) => handleContextMenuEvent(e, msg.id, isMine && !isDeleted)}
+                onContextMenu={(e) => { if (msg.delivery_status === 'failed') { e.preventDefault(); return } handleContextMenuEvent(e, msg.id, isMine && !isDeleted) }}
               >
                 <div style={{
                   padding: !isDeleted && (msg.message_type === 'image' || msg.message_type === 'video' || msg.message_type === 'chilliums') ? 4 : '12px 16px',
@@ -2140,7 +2177,10 @@ export default function ChatScreen({ conversationId, onBack }) {
                     ? 'rgba(255,255,255,0.03)'
                     : (isMine ? GRADIENT.primary : C.surfaceHigh),
                   color: isMine ? '#fff' : C.text,
-                  border: isDeleted ? '1px solid rgba(241,239,232,0.06)' : 'none',
+                  border: isDeleted
+                    ? '1px solid rgba(241,239,232,0.06)'
+                    : (msg.delivery_status === 'failed' ? '1px solid #ff4444' : 'none'),
+                  opacity: msg.delivery_status === 'failed' ? 0.8 : 1,
                 }}>
                   {/* Story reply reference */}
                   {msg.story_id && !isDeleted && (
@@ -2200,6 +2240,18 @@ export default function ChatScreen({ conversationId, onBack }) {
                     )
                   )}
                 </div>
+
+                {/* ── Retry label for failed messages ─── */}
+                {isMine && msg.delivery_status === 'failed' && (
+                  <div
+                    onClick={(e) => { e.stopPropagation(); handleRetryMessage(msg) }}
+                    style={{ marginTop: 4, textAlign: 'right', cursor: 'pointer' }}
+                  >
+                    <span style={{ fontSize: 11, color: '#ff4444', fontFamily: FONT.body }}>
+                      No enviado · Toca para reintentar
+                    </span>
+                  </div>
+                )}
 
                 {/* ── Context Menu (Edit/Delete) for OWN messages ─── */}
                 {contextMenu && contextMenu.msgId === msg.id && isMine && !isDeleted && (
