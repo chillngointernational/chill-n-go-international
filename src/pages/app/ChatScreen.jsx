@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from 'react'
 import Picker from '@emoji-mart/react'
 import data from '@emoji-mart/data'
 import { C, FONT, Icon, GRADIENT, GLASS_NAV } from '../../stitch'
@@ -29,6 +29,59 @@ function formatLastSeen(lastSeenAt, isOnline) {
 
   const date = new Date(lastSeenAt)
   return `Última vez el ${date.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })}`
+}
+
+function applyInlineFormats(text, keyPrefix = 'fmt') {
+  if (typeof text !== 'string') return text
+
+  const patterns = [
+    { regex: /\*([^*\n]+?)\*/g, tag: 'bold' },
+    { regex: /_([^_\n]+?)_/g, tag: 'italic' },
+    { regex: /~([^~\n]+?)~/g, tag: 'strike' },
+    { regex: /`([^`\n]+?)`/g, tag: 'mono' },
+  ]
+
+  let parts = [{ type: 'text', content: text }]
+
+  patterns.forEach(({ regex, tag }) => {
+    const newParts = []
+    parts.forEach(part => {
+      if (part.type !== 'text') {
+        newParts.push(part)
+        return
+      }
+      const content = part.content
+      let lastIndex = 0
+      let match
+      const localRegex = new RegExp(regex.source, 'g')
+      while ((match = localRegex.exec(content)) !== null) {
+        if (match.index > lastIndex) {
+          newParts.push({ type: 'text', content: content.substring(lastIndex, match.index) })
+        }
+        newParts.push({ type: tag, content: match[1] })
+        lastIndex = match.index + match[0].length
+      }
+      if (lastIndex < content.length) {
+        newParts.push({ type: 'text', content: content.substring(lastIndex) })
+      }
+    })
+    parts = newParts
+  })
+
+  return parts.map((p, i) => {
+    const key = `${keyPrefix}-${i}`
+    if (p.type === 'bold') return <strong key={key}>{p.content}</strong>
+    if (p.type === 'italic') return <em key={key}>{p.content}</em>
+    if (p.type === 'strike') return <span key={key} style={{ textDecoration: 'line-through' }}>{p.content}</span>
+    if (p.type === 'mono') return <code key={key} style={{
+      fontFamily: 'monospace',
+      background: 'rgba(255,255,255,0.1)',
+      padding: '1px 4px',
+      borderRadius: 3,
+      fontSize: '0.9em',
+    }}>{p.content}</code>
+    return p.content
+  })
 }
 
 /* ── Reactions localStorage helper ────────────────────────────── */
@@ -2366,7 +2419,7 @@ export default function ChatScreen({ conversationId, onBack }) {
             }}>{part.content}</a>
           )
         }
-        return part.content
+        return <Fragment key={i}>{applyInlineFormats(part.content, `fmt-${i}`)}</Fragment>
       })
     }
     return (
