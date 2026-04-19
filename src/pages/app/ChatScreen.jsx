@@ -18,6 +18,33 @@ const STICKER_EMOJIS = [
   '🏖️', '✈️', '🏠', '🍽️', '💰', '🎶', '🚀', '💎', '🌴', '🎊',
 ]
 
+/* ── File size limits (matching WhatsApp) ─────────────────────── */
+const SIZE_LIMITS = {
+  image: 16 * 1024 * 1024,       // 16 MB
+  video: 16 * 1024 * 1024,       // 16 MB
+  voice: 16 * 1024 * 1024,       // 16 MB
+  document: 100 * 1024 * 1024,   // 100 MB
+  groupAvatar: 5 * 1024 * 1024,  //  5 MB
+}
+
+const SIZE_LIMIT_LABELS = {
+  image: '16 MB',
+  video: '16 MB',
+  voice: '16 MB',
+  document: '100 MB',
+  groupAvatar: '5 MB',
+}
+
+function validateFileSize(file, type) {
+  const limit = SIZE_LIMITS[type]
+  if (!limit) return { ok: true }
+  const size = typeof file?.size === 'number' ? file.size : 0
+  if (size > limit) {
+    return { ok: false, message: `Archivo demasiado grande. Máximo: ${SIZE_LIMIT_LABELS[type]}` }
+  }
+  return { ok: true }
+}
+
 /* ── Popup shell ──────────────────────────────────────────────── */
 const POPUP_STYLE = {
   position: 'absolute',
@@ -611,6 +638,11 @@ export default function ChatScreen({ conversationId, onBack }) {
     const file = e.target.files?.[0]
     if (!file || !user || !conversation) return
     e.target.value = ''
+    const check = validateFileSize(file, 'groupAvatar')
+    if (!check.ok) {
+      showToast(check.message)
+      return
+    }
     setGroupAvatarUploading(true)
     try {
       const ext = file.name.split('.').pop()
@@ -621,7 +653,10 @@ export default function ChatScreen({ conversationId, onBack }) {
       const { error } = await supabase.from('cng_conversations').update({ avatar_url: urlData.publicUrl }).eq('id', conversationId)
       if (error) throw error
       setConversation(prev => ({ ...prev, avatar_url: urlData.publicUrl }))
-    } catch (e) { console.error('Group avatar error:', e) }
+    } catch (e) {
+      console.error('Group avatar error:', e)
+      showToast('Error al subir avatar. Intenta de nuevo.')
+    }
     finally { setGroupAvatarUploading(false) }
   }
 
@@ -983,6 +1018,12 @@ export default function ChatScreen({ conversationId, onBack }) {
     const file = e.target.files?.[0]
     if (!file || !user) return
     e.target.value = ''
+    const isVideo = file.type.startsWith('video/')
+    const check = validateFileSize(file, isVideo ? 'video' : 'image')
+    if (!check.ok) {
+      showToast(check.message)
+      return
+    }
     setShowAttachMenu(false)
     setUploading(true)
     try {
@@ -994,7 +1035,6 @@ export default function ChatScreen({ conversationId, onBack }) {
       const { data: urlData } = supabase.storage
         .from('cng-media')
         .getPublicUrl(path)
-      const isVideo = file.type.startsWith('video/')
       const msgType = isVideo ? 'video' : 'image'
       const { data: newMsg, error } = await supabase.from('cng_messages').insert({
         conversation_id: conversationId,
@@ -1010,6 +1050,7 @@ export default function ChatScreen({ conversationId, onBack }) {
       scrollToBottom()
     } catch (e) {
       console.error('Upload error:', e)
+      showToast('Error al subir archivo. Intenta de nuevo.')
     } finally {
       setUploading(false)
     }
@@ -1058,6 +1099,12 @@ export default function ChatScreen({ conversationId, onBack }) {
 
         if (blob.size < 500) return
 
+        const check = validateFileSize(blob, 'voice')
+        if (!check.ok) {
+          showToast(check.message)
+          return
+        }
+
         setUploading(true)
         try {
           const ext = getExtForMime(blobType)
@@ -1083,6 +1130,7 @@ export default function ChatScreen({ conversationId, onBack }) {
           if (error) throw error
         } catch (e) {
           console.error('Voice upload error:', e)
+          showToast('Error al subir audio. Intenta de nuevo.')
         } finally {
           setUploading(false)
         }
@@ -1114,6 +1162,12 @@ export default function ChatScreen({ conversationId, onBack }) {
     const file = e.target.files?.[0]
     if (!file || !user) return
     e.target.value = ''
+    const isVideo = file.type.startsWith('video/')
+    const check = validateFileSize(file, isVideo ? 'video' : 'image')
+    if (!check.ok) {
+      showToast(check.message)
+      return
+    }
     setShowAttachMenu(false)
     setUploading(true)
     try {
@@ -1121,7 +1175,6 @@ export default function ChatScreen({ conversationId, onBack }) {
       const { error: upErr } = await supabase.storage.from('cng-media').upload(path, file, { contentType: file.type })
       if (upErr) throw upErr
       const { data: urlData } = supabase.storage.from('cng-media').getPublicUrl(path)
-      const isVideo = file.type.startsWith('video/')
       const { data: newMsg, error } = await supabase.from('cng_messages').insert({
         conversation_id: conversationId,
         sender_id: user.id,
@@ -1134,7 +1187,10 @@ export default function ChatScreen({ conversationId, onBack }) {
       if (error) throw error
       setMessages(prev => prev.some(m => m.id === newMsg.id) ? prev : [...prev, newMsg])
       scrollToBottom()
-    } catch (e) { console.error('View once upload error:', e) }
+    } catch (e) {
+      console.error('View once upload error:', e)
+      showToast('Error al subir archivo. Intenta de nuevo.')
+    }
     finally { setUploading(false) }
   }
 
@@ -1167,6 +1223,11 @@ export default function ChatScreen({ conversationId, onBack }) {
     const file = e.target.files?.[0]
     if (!file || !user) return
     e.target.value = ''
+    const check = validateFileSize(file, 'document')
+    if (!check.ok) {
+      showToast(check.message)
+      return
+    }
     setShowAttachMenu(false)
     setUploading(true)
     try {
@@ -1185,7 +1246,10 @@ export default function ChatScreen({ conversationId, onBack }) {
       if (error) throw error
       setMessages(prev => prev.some(m => m.id === newMsg.id) ? prev : [...prev, newMsg])
       scrollToBottom()
-    } catch (e) { console.error('Doc upload error:', e) }
+    } catch (e) {
+      console.error('Doc upload error:', e)
+      showToast('Error al subir archivo. Intenta de nuevo.')
+    }
     finally { setUploading(false) }
   }
 
