@@ -820,9 +820,14 @@ export default function ChatScreen({ conversationId, onBack }) {
       const { error: upErr } = await supabase.storage.from('cng-media').upload(path, fileToUpload, { contentType: fileToUpload.type })
       if (upErr) throw upErr
       const { data: urlData } = supabase.storage.from('cng-media').getPublicUrl(path)
-      const { error } = await supabase.from('cng_conversations').update({ avatar_url: urlData.publicUrl }).eq('id', conversationId)
-      if (error) throw error
-      setConversation(prev => ({ ...prev, avatar_url: urlData.publicUrl }))
+      try {
+        const { error } = await supabase.from('cng_conversations').update({ avatar_url: urlData.publicUrl }).eq('id', conversationId)
+        if (error) throw error
+        setConversation(prev => ({ ...prev, avatar_url: urlData.publicUrl }))
+      } catch (updateErr) {
+        await supabase.storage.from('cng-media').remove([path]).catch(() => {})
+        throw updateErr
+      }
     } catch (e) {
       console.error('Group avatar error:', e)
       showToast('Error al subir avatar. Intenta de nuevo.')
@@ -1387,18 +1392,23 @@ export default function ChatScreen({ conversationId, onBack }) {
         .from('cng-media')
         .getPublicUrl(path)
       const msgType = isVideo ? 'video' : 'image'
-      const { data: newMsg, error } = await supabase.from('cng_messages').insert({
-        conversation_id: conversationId,
-        sender_id: user.id,
-        content: urlData.publicUrl,
-        message_type: msgType,
-        media_url: urlData.publicUrl,
-        delivery_status: 'sent',
-      }).select().single()
-      if (error) throw error
-      setMessages(prev => prev.some(m => m.id === newMsg.id) ? prev : [...prev, newMsg])
-      scrollToBottom()
-      scrollToBottom()
+      try {
+        const { data: newMsg, error } = await supabase.from('cng_messages').insert({
+          conversation_id: conversationId,
+          sender_id: user.id,
+          content: urlData.publicUrl,
+          message_type: msgType,
+          media_url: urlData.publicUrl,
+          delivery_status: 'sent',
+        }).select().single()
+        if (error) throw error
+        setMessages(prev => prev.some(m => m.id === newMsg.id) ? prev : [...prev, newMsg])
+        scrollToBottom()
+        scrollToBottom()
+      } catch (insertErr) {
+        await supabase.storage.from('cng-media').remove([path]).catch(() => {})
+        throw insertErr
+      }
     } catch (e) {
       console.error('Upload error:', e)
       showToast('Error al subir archivo. Intenta de nuevo.')
@@ -1470,15 +1480,20 @@ export default function ChatScreen({ conversationId, onBack }) {
             .from('cng-media')
             .getPublicUrl(path)
 
-          const { error } = await supabase.from('cng_messages').insert({
-            conversation_id: conversationId,
-            sender_id: user.id,
-            content: '🎙️ Voice message',
-            message_type: 'voice',
-            media_url: urlData.publicUrl,
-            delivery_status: 'sent',
-          })
-          if (error) throw error
+          try {
+            const { error } = await supabase.from('cng_messages').insert({
+              conversation_id: conversationId,
+              sender_id: user.id,
+              content: '🎙️ Voice message',
+              message_type: 'voice',
+              media_url: urlData.publicUrl,
+              delivery_status: 'sent',
+            })
+            if (error) throw error
+          } catch (insertErr) {
+            await supabase.storage.from('cng-media').remove([path]).catch(() => {})
+            throw insertErr
+          }
         } catch (e) {
           console.error('Voice upload error:', e)
           showToast('Error al subir audio. Intenta de nuevo.')
@@ -1538,18 +1553,23 @@ export default function ChatScreen({ conversationId, onBack }) {
       const { error: upErr } = await supabase.storage.from('cng-media').upload(path, fileToUpload, { contentType: fileToUpload.type })
       if (upErr) throw upErr
       const { data: urlData } = supabase.storage.from('cng-media').getPublicUrl(path)
-      const { data: newMsg, error } = await supabase.from('cng_messages').insert({
-        conversation_id: conversationId,
-        sender_id: user.id,
-        content: isVideo ? '🔒 Video · Ver una vez' : '🔒 Foto · Ver una vez',
-        message_type: isVideo ? 'video' : 'image',
-        media_url: urlData.publicUrl,
-        delivery_status: 'sent',
-        is_view_once: true,
-      }).select().single()
-      if (error) throw error
-      setMessages(prev => prev.some(m => m.id === newMsg.id) ? prev : [...prev, newMsg])
-      scrollToBottom()
+      try {
+        const { data: newMsg, error } = await supabase.from('cng_messages').insert({
+          conversation_id: conversationId,
+          sender_id: user.id,
+          content: isVideo ? '🔒 Video · Ver una vez' : '🔒 Foto · Ver una vez',
+          message_type: isVideo ? 'video' : 'image',
+          media_url: urlData.publicUrl,
+          delivery_status: 'sent',
+          is_view_once: true,
+        }).select().single()
+        if (error) throw error
+        setMessages(prev => prev.some(m => m.id === newMsg.id) ? prev : [...prev, newMsg])
+        scrollToBottom()
+      } catch (insertErr) {
+        await supabase.storage.from('cng-media').remove([path]).catch(() => {})
+        throw insertErr
+      }
     } catch (e) {
       console.error('View once upload error:', e)
       showToast('Error al subir archivo. Intenta de nuevo.')
@@ -1598,17 +1618,22 @@ export default function ChatScreen({ conversationId, onBack }) {
       const { error: upErr } = await supabase.storage.from('cng-media').upload(path, file, { contentType: file.type })
       if (upErr) throw upErr
       const { data: urlData } = supabase.storage.from('cng-media').getPublicUrl(path)
-      const { data: newMsg, error } = await supabase.from('cng_messages').insert({
-        conversation_id: conversationId,
-        sender_id: user.id,
-        content: file.name,
-        message_type: 'document',
-        media_url: urlData.publicUrl,
-        delivery_status: 'sent',
-      }).select().single()
-      if (error) throw error
-      setMessages(prev => prev.some(m => m.id === newMsg.id) ? prev : [...prev, newMsg])
-      scrollToBottom()
+      try {
+        const { data: newMsg, error } = await supabase.from('cng_messages').insert({
+          conversation_id: conversationId,
+          sender_id: user.id,
+          content: file.name,
+          message_type: 'document',
+          media_url: urlData.publicUrl,
+          delivery_status: 'sent',
+        }).select().single()
+        if (error) throw error
+        setMessages(prev => prev.some(m => m.id === newMsg.id) ? prev : [...prev, newMsg])
+        scrollToBottom()
+      } catch (insertErr) {
+        await supabase.storage.from('cng-media').remove([path]).catch(() => {})
+        throw insertErr
+      }
     } catch (e) {
       console.error('Doc upload error:', e)
       showToast('Error al subir archivo. Intenta de nuevo.')
