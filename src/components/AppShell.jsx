@@ -1,7 +1,6 @@
 import { useRef, useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
-import { usePresence } from '../hooks/usePresence'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { C, FONT, Icon, GRADIENT, GLASS_NAV, useDesktop } from '../stitch'
 import FeedScreen from '../pages/app/FeedScreen'
@@ -34,7 +33,6 @@ export default function AppShell() {
     const scrollRef = useRef(null)
     const isDesktop = useDesktop()
     const { user } = useAuth()
-    usePresence()
     const [unreadCount, setUnreadCount] = useState(0)
 
     useEffect(() => {

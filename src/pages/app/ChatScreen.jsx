@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { C, FONT, Icon, GRADIENT, GLASS_NAV } from '../../stitch'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
+import { usePresence } from '../../hooks/usePresence'
 
 function timeFormat(dateStr) {
   const d = new Date(dateStr)
@@ -375,6 +376,7 @@ function PollCard({ pollId, conversationId, userId, isMine, pollsCache, setPolls
 
 /* ════════════════════════════════════════════════════════════════ */
 export default function ChatScreen({ conversationId, onBack }) {
+  usePresence()
   const { user } = useAuth()
   const [messages, setMessages] = useState([])
 

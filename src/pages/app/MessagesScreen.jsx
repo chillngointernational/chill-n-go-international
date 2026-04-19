@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { C, FONT, Icon, GRADIENT } from '../../stitch'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
+import { usePresence } from '../../hooks/usePresence'
 import TopBar from '../../components/TopBar'
 import { StoryRing, StoryViewer, CreateStory } from './StoriesComponents'
 
@@ -424,6 +425,7 @@ function NewGroupModal({ open, onClose, onSelectConversation, user }) {
    MAIN MESSAGES SCREEN — with Stories Tray
    ══════════════════════════════════════════════════════════ */
 export default function MessagesScreen({ onOpenChat }) {
+  usePresence()
   const { user } = useAuth()
   const [conversations, setConversations] = useState([])
   const [loading, setLoading] = useState(true)
