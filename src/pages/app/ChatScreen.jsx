@@ -47,6 +47,70 @@ function validateFileSize(file, type) {
   return { ok: true }
 }
 
+async function compressImage(file, options = {}) {
+  const { maxWidth = 1920, maxHeight = 1920, quality = 0.85 } = options
+
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) {
+      resolve(file)
+      return
+    }
+    if (file.type === 'image/gif') {
+      resolve(file)
+      return
+    }
+
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+
+      let { width, height } = img
+      if (width > maxWidth || height > maxHeight) {
+        const ratio = Math.min(maxWidth / width, maxHeight / height)
+        width = Math.round(width * ratio)
+        height = Math.round(height * ratio)
+      }
+
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+
+      const ctx = canvas.getContext('2d')
+      ctx.drawImage(img, 0, 0, width, height)
+
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            reject(new Error('Compression failed'))
+            return
+          }
+          if (blob.size >= file.size) {
+            resolve(file)
+            return
+          }
+          const compressedFile = new File(
+            [blob],
+            file.name.replace(/\.[^.]+$/, '.jpg'),
+            { type: 'image/jpeg', lastModified: Date.now() }
+          )
+          resolve(compressedFile)
+        },
+        'image/jpeg',
+        quality
+      )
+    }
+
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('Image load failed'))
+    }
+
+    img.src = url
+  })
+}
+
 /* ── Popup shell ──────────────────────────────────────────────── */
 const POPUP_STYLE = {
   position: 'absolute',
@@ -673,11 +737,20 @@ export default function ChatScreen({ conversationId, onBack }) {
       showToast(check.message)
       return
     }
+
+    let fileToUpload = file
+    try {
+      fileToUpload = await compressImage(file, { maxWidth: 512, maxHeight: 512, quality: 0.9 })
+    } catch (err) {
+      console.warn('Avatar compression failed:', err)
+      fileToUpload = file
+    }
+
     setGroupAvatarUploading(true)
     try {
-      const ext = file.name.split('.').pop()
+      const ext = fileToUpload.name.split('.').pop()
       const path = `groups/${conversationId}/avatar-${Date.now()}.${ext}`
-      const { error: upErr } = await supabase.storage.from('cng-media').upload(path, file, { contentType: file.type })
+      const { error: upErr } = await supabase.storage.from('cng-media').upload(path, fileToUpload, { contentType: fileToUpload.type })
       if (upErr) throw upErr
       const { data: urlData } = supabase.storage.from('cng-media').getPublicUrl(path)
       const { error } = await supabase.from('cng_conversations').update({ avatar_url: urlData.publicUrl }).eq('id', conversationId)
@@ -1194,12 +1267,24 @@ export default function ChatScreen({ conversationId, onBack }) {
       return
     }
     setShowAttachMenu(false)
+
+    let fileToUpload = file
+    if (!isVideo) {
+      try {
+        fileToUpload = await compressImage(file)
+        console.log(`[Compression] ${file.name}: ${(file.size / 1024 / 1024).toFixed(2)}MB → ${(fileToUpload.size / 1024 / 1024).toFixed(2)}MB`)
+      } catch (err) {
+        console.warn('Image compression failed, uploading original:', err)
+        fileToUpload = file
+      }
+    }
+
     setUploading(true)
     try {
-      const path = `messages/${conversationId}/${Date.now()}-${file.name}`
+      const path = `messages/${conversationId}/${Date.now()}-${fileToUpload.name}`
       const { error: upErr } = await supabase.storage
         .from('cng-media')
-        .upload(path, file, { contentType: file.type })
+        .upload(path, fileToUpload, { contentType: fileToUpload.type })
       if (upErr) throw upErr
       const { data: urlData } = supabase.storage
         .from('cng-media')
@@ -1338,10 +1423,22 @@ export default function ChatScreen({ conversationId, onBack }) {
       return
     }
     setShowAttachMenu(false)
+
+    let fileToUpload = file
+    if (!isVideo) {
+      try {
+        fileToUpload = await compressImage(file)
+        console.log(`[Compression] ${file.name}: ${(file.size / 1024 / 1024).toFixed(2)}MB → ${(fileToUpload.size / 1024 / 1024).toFixed(2)}MB`)
+      } catch (err) {
+        console.warn('Image compression failed, uploading original:', err)
+        fileToUpload = file
+      }
+    }
+
     setUploading(true)
     try {
-      const path = `messages/${conversationId}/viewonce-${Date.now()}-${file.name}`
-      const { error: upErr } = await supabase.storage.from('cng-media').upload(path, file, { contentType: file.type })
+      const path = `messages/${conversationId}/viewonce-${Date.now()}-${fileToUpload.name}`
+      const { error: upErr } = await supabase.storage.from('cng-media').upload(path, fileToUpload, { contentType: fileToUpload.type })
       if (upErr) throw upErr
       const { data: urlData } = supabase.storage.from('cng-media').getPublicUrl(path)
       const { data: newMsg, error } = await supabase.from('cng_messages').insert({
