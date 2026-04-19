@@ -269,7 +269,7 @@ const LANG = {
   },
 }
 
-export default function RegistrationWizard({ email, refCode, referrerName, onComplete, onLangChange }) {
+export default function RegistrationWizard({ email, refCode, referrerName, referrerUserId, onWizardComplete, onLangChange }) {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 767px)')
@@ -311,10 +311,6 @@ export default function RegistrationWizard({ email, refCode, referrerName, onCom
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [acceptedPrivacy, setAcceptedPrivacy] = useState(false)
   const [acceptedTruthful, setAcceptedTruthful] = useState(false)
-
-  // Step 6: Stripe Identity
-  const [verificationStatus, setVerificationStatus] = useState(null) // null, 'pending', 'verified', 'error'
-  const [verificationSessionId, setVerificationSessionId] = useState('')
 
   // Language detection based on country
   useEffect(() => {
@@ -403,17 +399,25 @@ export default function RegistrationWizard({ email, refCode, referrerName, onCom
         return
       }
 
-      // 2. Update identity_profiles with registration data (no document fields)
-      const updateData = {
-        full_name: fullName,
+      // 2. Generate own ref_code and upsert identity_profile with complete data
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+      let myRefCode = 'CNG-'
+      for (let i = 0; i < 6; i++) {
+        myRefCode += chars.charAt(Math.floor(Math.random() * chars.length))
+      }
+
+      const profileData = {
+        user_id: authData?.user?.id || null,
+        email,
         first_name: firstName,
         last_name: lastName,
         maternal_last_name: maternalLastName || null,
+        full_name: fullName,
         date_of_birth: dob,
-        nationality,
-        country_of_residence: countryOfResidence,
         phone,
         phone_country_code: phoneCountryCode,
+        nationality,
+        country_of_residence: countryOfResidence,
         address_street: addressStreet,
         address_unit: addressUnit || null,
         address_city: addressCity,
@@ -423,94 +427,30 @@ export default function RegistrationWizard({ email, refCode, referrerName, onCom
         accepted_terms: true,
         accepted_privacy: true,
         accepted_truthful: true,
-        registration_completed: true,
-        identity_verification_status: 'pending',
+        ref_code: myRefCode,
+        referred_by: referrerUserId || null,
+        payment_status: 'pending',
+        registration_completed: false,
+        account_type: 'member',
         updated_at: new Date().toISOString(),
       }
 
-      if (authData?.user) {
-        updateData.user_id = authData.user.id
-      }
-
-      const { error: updateError } = await supabase
+      const { error: upsertError } = await supabase
         .from('identity_profiles')
-        .update(updateData)
-        .eq('email', email)
+        .upsert(profileData, { onConflict: 'email' })
 
-      if (updateError) {
-        console.error('Update error:', updateError)
-      }
-
-      // 3. Move to Stripe Identity verification step
-      setSubStep(6)
-    } catch (err) {
-      setError(t.accountCreateError + err.message)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function startIdentityVerification() {
-    setLoading(true)
-    setError('')
-
-    try {
-      const response = await fetch(
-        'https://jahnlhzbjcbmjnuzxsvj.supabase.co/functions/v1/cng-create-verification',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: email,
-            return_url: window.location.origin + '/join?step=register&ref=' + refCode + '&email=' + encodeURIComponent(email) + '&verify=complete',
-          }),
-        }
-      )
-
-      const data = await response.json()
-
-      if (data.error) {
-        setError(data.error)
+      if (upsertError) {
+        setError(t.accountCreateError + upsertError.message)
         setLoading(false)
         return
       }
 
-      // Save verification session ID
-      setVerificationSessionId(data.session_id)
-
-      // Update member record with session ID
-      await supabase
-        .from('identity_profiles')
-        .update({
-          stripe_verification_session_id: data.session_id,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('email', email)
-
-      // Open Stripe Identity modal
-      const stripe = window.Stripe('pk_test_51Rvx4iClWFP3vllVGpXmK95SXNw6SGUhcObbEZIIG1Sl1hlh6iszofr1Xl2FLTpXWpz6yL1Pvt9Dma1OHhv6VVE800RZSbAarS')
-      const result = await stripe.verifyIdentity(data.client_secret)
-
-      if (result.error) {
-        console.error('Identity verification error:', result.error)
-        setError(result.error.message)
-        setVerificationStatus('error')
-      } else {
-        // User completed the modal (submitted documents)
-        setVerificationStatus('pending')
-
-        // Update member status
-        await supabase
-          .from('identity_profiles')
-          .update({
-            identity_verification_status: 'processing',
-            updated_at: new Date().toISOString(),
-          })
-          .eq('email', email)
+      // 3. Notify parent to advance to payment step
+      if (onWizardComplete) {
+        onWizardComplete({ email, fullName })
       }
     } catch (err) {
-      setError(t.verifyStartError + err.message)
-      setVerificationStatus('error')
+      setError(t.accountCreateError + err.message)
     } finally {
       setLoading(false)
     }
@@ -522,7 +462,6 @@ export default function RegistrationWizard({ email, refCode, referrerName, onCom
     { num: 3, label: t.stepAddress },
     { num: 4, label: t.stepPassword },
     { num: 5, label: t.stepConfirm },
-    { num: 6, label: t.stepVerify },
   ]
 
   return (
@@ -775,110 +714,6 @@ export default function RegistrationWizard({ email, refCode, referrerName, onCom
         </div>
       )}
 
-      {/* STEP 6: Stripe Identity Verification */}
-      {subStep === 6 && (
-        <div style={s.stepContent}>
-          {!verificationStatus && (
-            <>
-              <div style={s.verifyIconWrap}>
-                <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
-                  <circle cx="28" cy="28" r="26" stroke={C.primary} strokeWidth="2" />
-                  <path d="M28 16v4M28 36v4M16 28h4M36 28h4" stroke={C.primary} strokeWidth="2" strokeLinecap="round" />
-                  <circle cx="28" cy="28" r="8" stroke={C.primary} strokeWidth="2" />
-                </svg>
-              </div>
-              <h3 style={s.stepTitle}>{t.verifyTitle}</h3>
-              <p style={s.stepDesc}>
-                {t.verifyDescStart}<strong style={{ color: C.text }}>Stripe</strong>{t.verifyDescEnd}
-              </p>
-
-              <div style={s.verifyFeatures}>
-                <div style={s.verifyFeature}>
-                  <span style={s.verifyFeatureIcon}>📄</span>
-                  <span>{t.verifyFeature1}</span>
-                </div>
-                <div style={s.verifyFeature}>
-                  <span style={s.verifyFeatureIcon}>🤳</span>
-                  <span>{t.verifyFeature2}</span>
-                </div>
-                <div style={s.verifyFeature}>
-                  <span style={s.verifyFeatureIcon}>📧</span>
-                  <span>{t.verifyFeature3}</span>
-                </div>
-                <div style={s.verifyFeature}>
-                  <span style={s.verifyFeatureIcon}>📱</span>
-                  <span>{t.verifyFeature4}</span>
-                </div>
-              </div>
-
-              <div style={s.verifyNote}>
-                <strong>{t.verifySecurityNote}</strong>{t.verifySecurityDesc}
-              </div>
-
-              <button onClick={startIdentityVerification} style={s.btn} disabled={loading}>
-                {loading ? t.verifyingBtn : t.verifyBtn}
-              </button>
-
-              <button
-                onClick={() => onComplete(email)}
-                style={{ ...s.btnSkip, marginTop: 12 }}
-              >
-                {t.verifyLaterBtn}
-              </button>
-              <p style={{ fontSize: 11, color: C.textFaint, textAlign: 'center', marginTop: 6 }}>
-                {t.verifyLaterNote}
-              </p>
-            </>
-          )}
-
-          {verificationStatus === 'pending' && (
-            <>
-              <div style={s.verifyIconWrap}>
-                <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
-                  <circle cx="28" cy="28" r="26" stroke={C.primary} strokeWidth="2" />
-                  <path d="M20 28L26 34L38 22" stroke={C.primary} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </div>
-              <h3 style={s.stepTitle}>{t.docsSentTitle}</h3>
-              <p style={s.stepDesc}>{t.docsSentDesc}</p>
-
-              <div style={s.verifyNote}>
-                {t.docsSentNote}
-              </div>
-
-              <button onClick={() => onComplete(email)} style={s.btn}>
-                {t.goToAccountBtn}
-              </button>
-            </>
-          )}
-
-          {verificationStatus === 'error' && (
-            <>
-              <div style={s.verifyIconWrap}>
-                <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
-                  <circle cx="28" cy="28" r="26" stroke={C.errorBright} strokeWidth="2" />
-                  <path d="M22 22L34 34M34 22L22 34" stroke={C.errorBright} strokeWidth="2.5" strokeLinecap="round" />
-                </svg>
-              </div>
-              <h3 style={s.stepTitle}>{t.errorTitle}</h3>
-              <p style={s.stepDesc}>{t.errorDesc}</p>
-
-              {error && <div style={s.error}>{error}</div>}
-
-              <button onClick={() => { setVerificationStatus(null); setError(''); }} style={s.btn}>
-                {t.retryBtn}
-              </button>
-
-              <button
-                onClick={() => onComplete(email)}
-                style={{ ...s.btnSkip, marginTop: 12 }}
-              >
-                {t.continueWithoutVerify}
-              </button>
-            </>
-          )}
-        </div>
-      )}
     </div>
   )
 }
