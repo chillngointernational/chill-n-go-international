@@ -112,24 +112,26 @@ export default function Network() {
     const l2 = referrals.filter(r => r.level === 2)
 
     const earnings = {
-        cashback: ledger.filter(l => l.type === 'cashback_direct').reduce((s, l) => s + Number(l.amount), 0),
-        referral_l1: ledger.filter(l => l.type === 'cashback_network' && l.referral_level === 2).reduce((s, l) => s + Number(l.amount), 0),
-        referral_l2: ledger.filter(l => l.type === 'cashback_network' && l.referral_level === 3).reduce((s, l) => s + Number(l.amount), 0),
+        cashback: ledger.filter(l => l.type === 'earn_referral_level_0').reduce((s, l) => s + Number(l.amount), 0),
+        referral_l1: ledger.filter(l => l.type === 'earn_referral_level_1' && l.referral_level === 1).reduce((s, l) => s + Number(l.amount), 0),
+        referral_l2: ledger.filter(l => l.type === 'earn_referral_level_2' && l.referral_level === 2).reduce((s, l) => s + Number(l.amount), 0),
         bonus: ledger.filter(l => l.type === 'bonus').reduce((s, l) => s + Number(l.amount), 0),
         redeemed: member?.chilliums_total_spent || 0,
     }
 
     const typeLabels = {
-        cashback_direct: 'Cashback',
-        cashback_network: 'Referido',
+        earn_referral_level_0: 'Cashback',
+        earn_referral_level_1: 'Referido L1',
+        earn_referral_level_2: 'Referido L2',
         bonus: 'Bono',
         redemption: 'Redención',
         adjustment: 'Ajuste',
     }
 
     const typeColors = {
-        cashback_direct: C.primaryBright,
-        cashback_network: C.tertiaryContainer,
+        earn_referral_level_0: C.primaryBright,
+        earn_referral_level_1: C.tertiaryContainer,
+        earn_referral_level_2: C.tertiaryContainer,
         bonus: '#EF9F27',
         redemption: C.errorBright,
         adjustment: C.onSurfaceVariant,
