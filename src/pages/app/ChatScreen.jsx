@@ -373,6 +373,16 @@ export default function ChatScreen({ conversationId, onBack }) {
   const [descriptionText, setDescriptionText] = useState('')
   const groupAvatarInputRef = useRef(null)
 
+  // ─── GROUP: LEAVE / REMOVE / ADD MEMBERS ─────────────────
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false)
+  const [showRemoveMemberConfirm, setShowRemoveMemberConfirm] = useState(null)
+  const [showAddMembersModal, setShowAddMembersModal] = useState(false)
+  const [addMemberSearch, setAddMemberSearch] = useState('')
+  const [addMemberResults, setAddMemberResults] = useState([])
+  const [addMemberSearching, setAddMemberSearching] = useState(false)
+  const [addMemberSending, setAddMemberSending] = useState(false)
+  const [selectedNewMembers, setSelectedNewMembers] = useState([])
+
   // ─── FEATURE 4: STARRED MESSAGES ────────────────────────
   const [starredSet, setStarredSet] = useState(new Set())
   const [deletedForMeSet, setDeletedForMeSet] = useState(new Set())
@@ -689,6 +699,109 @@ export default function ChatScreen({ conversationId, onBack }) {
       setConversation(prev => ({ ...prev, description: descriptionText.trim() }))
       setEditingDescription(false)
     } catch (e) { console.error('Description save error:', e) }
+  }
+
+  /* ── Group: leave / remove / add members ─────────────────── */
+  const handleLeaveGroup = async () => {
+    setShowLeaveConfirm(false)
+    try {
+      const { error } = await supabase
+        .from('cng_conversation_members')
+        .delete()
+        .eq('conversation_id', conversationId)
+        .eq('user_id', user.id)
+      if (error) throw error
+      showToast('Saliste del grupo')
+      setShowGroupInfo(false)
+      onBack()
+    } catch (e) {
+      console.error('Leave group error:', e)
+      showToast('Error al salir del grupo')
+    }
+  }
+
+  const handleRemoveMember = async (memberUserId) => {
+    setShowRemoveMemberConfirm(null)
+    try {
+      const { error } = await supabase
+        .from('cng_conversation_members')
+        .delete()
+        .eq('conversation_id', conversationId)
+        .eq('user_id', memberUserId)
+      if (error) throw error
+      setMembersMap(prev => {
+        const next = { ...prev }
+        delete next[memberUserId]
+        return next
+      })
+      showToast('Miembro removido')
+    } catch (e) {
+      console.error('Remove member error:', e)
+      showToast('Error al remover miembro')
+    }
+  }
+
+  useEffect(() => {
+    if (!showAddMembersModal) return
+    if (!addMemberSearch.trim()) { setAddMemberResults([]); return }
+    const timer = setTimeout(async () => {
+      setAddMemberSearching(true)
+      try {
+        const existingIds = Object.keys(membersMap)
+        const q = addMemberSearch.trim()
+        const { data } = await supabase
+          .from('identity_profiles')
+          .select('user_id, full_name, ref_code, avatar_url, email')
+          .or(`full_name.ilike.%${q}%,ref_code.ilike.%${q}%,email.ilike.%${q}%`)
+          .limit(15)
+        const filtered = (data || []).filter(u => !existingIds.includes(u.user_id))
+        setAddMemberResults(filtered)
+      } catch (e) {
+        console.error('Search members error:', e)
+        setAddMemberResults([])
+      } finally {
+        setAddMemberSearching(false)
+      }
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [addMemberSearch, showAddMembersModal, membersMap])
+
+  const handleAddMembers = async () => {
+    if (selectedNewMembers.length === 0 || addMemberSending) return
+    setAddMemberSending(true)
+    try {
+      const rows = selectedNewMembers.map(m => ({
+        conversation_id: conversationId,
+        user_id: m.user_id,
+        role: 'member',
+      }))
+      const { error } = await supabase.from('cng_conversation_members').insert(rows)
+      if (error) throw error
+      setMembersMap(prev => {
+        const next = { ...prev }
+        selectedNewMembers.forEach(m => { next[m.user_id] = m })
+        return next
+      })
+      showToast(`${selectedNewMembers.length} miembro(s) agregado(s)`)
+      setShowAddMembersModal(false)
+      setSelectedNewMembers([])
+      setAddMemberSearch('')
+      setAddMemberResults([])
+    } catch (e) {
+      console.error('Add members error:', e)
+      showToast('Error al agregar miembros')
+    } finally {
+      setAddMemberSending(false)
+    }
+  }
+
+  const toggleNewMemberSelection = (member) => {
+    setSelectedNewMembers(prev => {
+      if (prev.find(m => m.user_id === member.user_id)) {
+        return prev.filter(m => m.user_id !== member.user_id)
+      }
+      return [...prev, member]
+    })
   }
 
   /* ── Feature 6: GIF fetch ──────────────────────────────── */
@@ -3385,6 +3498,23 @@ export default function ChatScreen({ conversationId, onBack }) {
               </div>
               {/* Members list */}
               <p style={{ fontSize: 11, color: C.textDim, fontFamily: FONT.body, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8, fontWeight: 600 }}>Miembros</p>
+              {conversation?.admin_id === user?.id && (
+                <div
+                  onClick={() => setShowAddMembersModal(true)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '10px 12px', borderRadius: 10, cursor: 'pointer',
+                    background: 'rgba(104,219,174,0.08)',
+                    border: `1px solid ${C.primary}40`,
+                    marginBottom: 12,
+                  }}
+                >
+                  <Icon name="person_add" size={18} style={{ color: C.primary }} />
+                  <span style={{ fontSize: 13, fontWeight: 600, color: C.primary, fontFamily: FONT.body }}>
+                    Agregar miembros
+                  </span>
+                </div>
+              )}
               {Object.values(membersMap).map(m => (
                 <div key={m.user_id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0' }}>
                   <div style={{ width: 36, height: 36, borderRadius: 99, overflow: 'hidden', flexShrink: 0 }}>
@@ -3402,8 +3532,184 @@ export default function ChatScreen({ conversationId, onBack }) {
                   {conversation?.admin_id === m.user_id && (
                     <span style={{ fontSize: 10, fontWeight: 700, color: '#B8956A', fontFamily: FONT.headline, padding: '2px 8px', borderRadius: 99, background: 'rgba(184,149,106,0.15)', letterSpacing: 0.5 }}>Admin</span>
                   )}
+                  {conversation?.admin_id === user?.id && m.user_id !== user.id && conversation?.admin_id !== m.user_id && (
+                    <div
+                      onClick={() => setShowRemoveMemberConfirm(m)}
+                      style={{ cursor: 'pointer', padding: 4 }}
+                    >
+                      <Icon name="person_remove" size={18} style={{ color: '#ff4444' }} />
+                    </div>
+                  )}
                 </div>
               ))}
+              {conversation?.admin_id !== user?.id && (
+                <div
+                  onClick={() => setShowLeaveConfirm(true)}
+                  style={{
+                    marginTop: 20, padding: '12px 16px',
+                    borderRadius: 12, cursor: 'pointer',
+                    background: 'rgba(255,68,68,0.08)',
+                    border: '1px solid rgba(255,68,68,0.3)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  }}
+                >
+                  <Icon name="logout" size={18} style={{ color: '#ff4444' }} />
+                  <span style={{ fontSize: 14, fontWeight: 600, color: '#ff4444', fontFamily: FONT.body }}>
+                    Salir del grupo
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Leave Group Confirmation ─────────────────────────── */}
+      {showLeaveConfirm && (
+        <div onClick={() => setShowLeaveConfirm(false)} style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 320, background: 'rgba(13,17,23,0.97)', borderRadius: 20, border: '1px solid rgba(241,239,232,0.1)', backdropFilter: 'blur(20px)', padding: '28px 24px 20px', textAlign: 'center' }}>
+            <Icon name="logout" size={40} style={{ color: '#ff4444', marginBottom: 12 }} />
+            <h3 style={{ fontFamily: FONT.headline, fontSize: 18, fontWeight: 700, color: C.text, marginBottom: 8 }}>¿Salir del grupo?</h3>
+            <p style={{ fontSize: 13, color: C.textDim, fontFamily: FONT.body, marginBottom: 24, lineHeight: 1.5 }}>
+              Ya no recibirás mensajes de este grupo. Un admin tendrá que agregarte de nuevo si quieres volver.
+            </p>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <div onClick={() => setShowLeaveConfirm(false)} style={{ flex: 1, padding: '12px 0', borderRadius: 12, background: 'rgba(255,255,255,0.05)', color: C.text, fontSize: 14, fontWeight: 600, fontFamily: FONT.body, cursor: 'pointer', textAlign: 'center' }}>
+                Cancelar
+              </div>
+              <div onClick={handleLeaveGroup} style={{ flex: 1, padding: '12px 0', borderRadius: 12, background: '#ff4444', color: '#fff', fontSize: 14, fontWeight: 600, fontFamily: FONT.body, cursor: 'pointer', textAlign: 'center' }}>
+                Salir
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Remove Member Confirmation ───────────────────────── */}
+      {showRemoveMemberConfirm && (
+        <div onClick={() => setShowRemoveMemberConfirm(null)} style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 320, background: 'rgba(13,17,23,0.97)', borderRadius: 20, border: '1px solid rgba(241,239,232,0.1)', backdropFilter: 'blur(20px)', padding: '28px 24px 20px', textAlign: 'center' }}>
+            <Icon name="person_remove" size={40} style={{ color: '#ff4444', marginBottom: 12 }} />
+            <h3 style={{ fontFamily: FONT.headline, fontSize: 18, fontWeight: 700, color: C.text, marginBottom: 8 }}>
+              ¿Remover a {showRemoveMemberConfirm.full_name || showRemoveMemberConfirm.ref_code}?
+            </h3>
+            <p style={{ fontSize: 13, color: C.textDim, fontFamily: FONT.body, marginBottom: 24, lineHeight: 1.5 }}>
+              Ya no podrá ver ni enviar mensajes en este grupo.
+            </p>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <div onClick={() => setShowRemoveMemberConfirm(null)} style={{ flex: 1, padding: '12px 0', borderRadius: 12, background: 'rgba(255,255,255,0.05)', color: C.text, fontSize: 14, fontWeight: 600, fontFamily: FONT.body, cursor: 'pointer', textAlign: 'center' }}>
+                Cancelar
+              </div>
+              <div onClick={() => handleRemoveMember(showRemoveMemberConfirm.user_id)} style={{ flex: 1, padding: '12px 0', borderRadius: 12, background: '#ff4444', color: '#fff', fontSize: 14, fontWeight: 600, fontFamily: FONT.body, cursor: 'pointer', textAlign: 'center' }}>
+                Remover
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Add Members Modal ────────────────────────────────── */}
+      {showAddMembersModal && (
+        <div
+          onClick={() => { setShowAddMembersModal(false); setSelectedNewMembers([]); setAddMemberSearch(''); setAddMemberResults([]) }}
+          style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: '100%', maxWidth: 400, maxHeight: '80vh', background: 'rgba(13,17,23,0.97)', borderRadius: 20, border: '1px solid rgba(241,239,232,0.1)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+          >
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(241,239,232,0.08)', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <Icon name="person_add" size={20} style={{ color: C.primary }} />
+              <h2 style={{ fontFamily: FONT.headline, fontSize: 16, fontWeight: 700, color: C.text, flex: 1 }}>Agregar miembros</h2>
+              <div onClick={() => { setShowAddMembersModal(false); setSelectedNewMembers([]); setAddMemberSearch(''); setAddMemberResults([]) }} style={{ cursor: 'pointer', padding: 4 }}>
+                <Icon name="close" size={20} style={{ color: C.textDim }} />
+              </div>
+            </div>
+
+            {selectedNewMembers.length > 0 && (
+              <div style={{ padding: '10px 14px', display: 'flex', flexWrap: 'wrap', gap: 6, borderBottom: '1px solid rgba(241,239,232,0.06)' }}>
+                {selectedNewMembers.map(m => (
+                  <div key={m.user_id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(104,219,174,0.12)', border: `1px solid ${C.primary}40`, borderRadius: 99, padding: '4px 8px 4px 4px' }}>
+                    <div style={{ width: 22, height: 22, borderRadius: 99, overflow: 'hidden', flexShrink: 0 }}>
+                      {m.avatar_url ? (
+                        <img src={m.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        <div style={{ width: '100%', height: '100%', background: C.surfaceHigh, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: C.text, fontFamily: FONT.headline }}>
+                          {(m.full_name || m.ref_code || '?')[0].toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: C.text, fontFamily: FONT.body }}>{m.full_name || m.ref_code}</span>
+                    <div onClick={() => toggleNewMemberSelection(m)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                      <Icon name="close" size={14} style={{ color: C.textDim }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ padding: '12px 16px' }}>
+              <input
+                autoFocus
+                placeholder="Buscar por nombre, código o email..."
+                value={addMemberSearch}
+                onChange={(e) => setAddMemberSearch(e.target.value)}
+                style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: 12, padding: '10px 14px', color: C.text, fontSize: 14, fontFamily: FONT.body, outline: 'none', boxSizing: 'border-box' }}
+              />
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px 12px' }}>
+              {addMemberSearching && (
+                <div style={{ display: 'flex', justifyContent: 'center', padding: 20 }}>
+                  <div style={{ width: 20, height: 20, border: '2px solid rgba(104,219,174,0.3)', borderTopColor: C.primary, borderRadius: 99, animation: 'spin 0.8s linear infinite' }} />
+                </div>
+              )}
+              {!addMemberSearching && addMemberSearch.trim() && addMemberResults.length === 0 && (
+                <p style={{ textAlign: 'center', padding: 20, color: C.textDim, fontSize: 13, fontFamily: FONT.body }}>No se encontraron usuarios</p>
+              )}
+              {addMemberResults.map(m => {
+                const isSelected = !!selectedNewMembers.find(s => s.user_id === m.user_id)
+                return (
+                  <div
+                    key={m.user_id}
+                    onClick={() => toggleNewMemberSelection(m)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 12, cursor: 'pointer', background: isSelected ? 'rgba(104,219,174,0.08)' : 'transparent', transition: 'background 0.15s' }}
+                  >
+                    <div style={{ width: 40, height: 40, borderRadius: 99, overflow: 'hidden', flexShrink: 0 }}>
+                      {m.avatar_url ? (
+                        <img src={m.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        <div style={{ width: '100%', height: '100%', background: C.surfaceHigh, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 700, color: C.text, fontFamily: FONT.headline }}>
+                          {(m.full_name || m.ref_code || '?')[0].toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <p style={{ fontSize: 14, fontWeight: 600, color: C.text, fontFamily: FONT.headline }}>{m.full_name || m.ref_code}</p>
+                      {m.ref_code && m.full_name && <p style={{ fontSize: 12, color: C.textDim }}>@{m.ref_code}</p>}
+                    </div>
+                    <div style={{ width: 22, height: 22, borderRadius: 99, border: isSelected ? `2px solid ${C.primary}` : '2px solid rgba(241,239,232,0.25)', background: isSelected ? C.primary : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {isSelected && <Icon name="check" size={14} style={{ color: '#fff' }} />}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div style={{ padding: '12px 16px', borderTop: '1px solid rgba(241,239,232,0.08)' }}>
+              <div
+                onClick={handleAddMembers}
+                style={{
+                  width: '100%', padding: '12px 0', borderRadius: 12,
+                  background: (selectedNewMembers.length === 0 || addMemberSending) ? C.surfaceHigh : GRADIENT.primary,
+                  color: (selectedNewMembers.length === 0 || addMemberSending) ? C.textFaint : '#fff',
+                  fontSize: 14, fontWeight: 600, fontFamily: FONT.body,
+                  cursor: (selectedNewMembers.length === 0 || addMemberSending) ? 'default' : 'pointer',
+                  textAlign: 'center',
+                }}
+              >
+                {addMemberSending ? 'Agregando...' : `Agregar${selectedNewMembers.length > 0 ? ` (${selectedNewMembers.length})` : ''}`}
+              </div>
             </div>
           </div>
         </div>
