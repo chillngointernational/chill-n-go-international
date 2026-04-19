@@ -39,9 +39,9 @@ function NewMessageModal({ open, onClose, onSelectConversation, user }) {
       try {
         const { data } = await supabase
           .from('identity_profiles')
-          .select('user_id, full_name, ref_code, avatar_url')
+          .select('user_id, full_name, ref_code, avatar_url, email')
           .neq('user_id', user.id)
-          .ilike('full_name', '%' + query.trim() + '%')
+          .or(`full_name.ilike.%${query.trim()}%,ref_code.ilike.%${query.trim()}%,email.ilike.%${query.trim()}%`)
           .limit(10)
         setResults(data || [])
       } catch {
@@ -224,9 +224,9 @@ function NewGroupModal({ open, onClose, onSelectConversation, user }) {
       try {
         const { data } = await supabase
           .from('identity_profiles')
-          .select('user_id, full_name, ref_code, avatar_url')
+          .select('user_id, full_name, ref_code, avatar_url, email')
           .neq('user_id', user.id)
-          .ilike('full_name', '%' + query.trim() + '%')
+          .or(`full_name.ilike.%${query.trim()}%,ref_code.ilike.%${query.trim()}%,email.ilike.%${query.trim()}%`)
           .limit(15)
         setResults(data || [])
       } catch {

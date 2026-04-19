@@ -1584,9 +1584,9 @@ export default function ChatScreen({ conversationId, onBack }) {
     try {
       const { data } = await supabase
         .from('identity_profiles')
-        .select('user_id, full_name, ref_code, avatar_url')
+        .select('user_id, full_name, ref_code, avatar_url, email')
         .neq('user_id', user.id)
-        .or(`full_name.ilike.%${q}%,ref_code.ilike.%${q}%`)
+        .or(`full_name.ilike.%${q}%,ref_code.ilike.%${q}%,email.ilike.%${q}%`)
         .limit(15)
       setFwdMembers(data || [])
     } catch { setFwdMembers([]) }
