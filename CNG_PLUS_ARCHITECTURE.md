@@ -1,7 +1,7 @@
 # CNG+ System Architecture
 
-**Versión:** 1.0  
-**Fecha:** 18 de abril de 2026  
+**Versión:** 1.1  
+**Fecha:** 19 de abril de 2026  
 **Autor:** Oscar Jovani (único desarrollador)  
 **Estado del documento:** Vivo — actualizar al tocar arquitectura
 
@@ -28,8 +28,11 @@ CNG+ es una red social verificada con membresía de pago. Los miembros pagan $10
 | KYC | Stripe Identity (flow `vf_1TI1VhClWFP3vllVQjUBTF7X`) | — |
 | Hosting | Vercel | — |
 | Storage bucket | `cng-media` | Supabase Storage |
+| Emoji picker | emoji-mart + @emoji-mart/react + @emoji-mart/data | 5.6.0 / 1.1.1 / 1.2.1 |
 
 > Nota: No hay SDK de Stripe en frontend — todo el flujo de pago es vía redirect a páginas hospedadas de Stripe.
+>
+> `@emoji-mart/react` solo declara peer `react ^16.8 || ^17 || ^18`, así que el repo usa `.npmrc` con `legacy-peer-deps=true` para que `npm install` local y en Vercel no rompa contra React 19.
 
 ---
 
@@ -385,43 +388,62 @@ flowchart TD
 
 ### 5.4 Mensajería social
 
-**Descripción:** Usuario busca a otro miembro, abre chat nuevo, se crean filas en `cng_conversations` + `cng_conversation_members`, y se envían mensajes vía `cng_messages`. Soporta texto, media, polls, reactions, starred, blocked users, reports.
+**Descripción:** Mensajería 1:1 y grupos con paridad funcional aproximada a WhatsApp. Usuario busca miembros, abre chat nuevo o existente, y envía mensajes vía `cng_messages`. ChatScreen (~4200 líneas) concentra la mayor parte de la UX.
+
+**Features vigentes (19 abr 2026):**
+- **Composición:** texto, imagen, video, voz (grabadora), documento, ubicación, polls, stickers, GIFs (GIPHY), ver-una-vez.
+- **Mensajes:** reply, forward, star, edit (ventana 15 min), delete "para mí" vs "para todos", copy.
+- **Reacciones:** 6 shortcuts rápidos + picker custom (emoji-mart) con cualquier emoji Unicode.
+- **Formato inline:** markdown-lite al renderizar — `*bold*`, `_italic_`, `~strike~`, `` `mono` ``. Se guarda texto crudo; el parse es solo en UI.
+- **@Menciones:** autocomplete en grupos desde `membersMap`, navegación con flechas, highlight al render.
+- **Presence:** indicador "En línea" / "Última vez hace N min" via hook `usePresence` (heartbeat 30s + visibilitychange + beacon on unload). Scope: solo se marca online en `MessagesScreen` y `ChatScreen`, no en toda la app.
+- **Compresión:** imágenes se pasan a JPEG 1920×1920 q=0.85 (avatar grupo: 512×512 q=0.9) antes del upload. GIFs y videos no se tocan. Si el comprimido pesa más que el original, se sube el original.
+- **Failed send:** etiqueta "No enviado · Toca para reintentar" con `handleRetryMessage`.
+- **Validación upload:** 16MB imagen/video/voz, 100MB documento, 5MB avatar grupo.
+- **Cleanup atómico:** si el INSERT/UPDATE falla tras un upload exitoso, el objeto en `cng-media` se remueve como best-effort para evitar huérfanos.
+- **Grupos:** crear, cambiar avatar/descripción (solo admin), agregar miembros (solo admin, con búsqueda), remover miembros (solo admin), salir del grupo (no admin). Admin no puede salir — feature pendiente.
+- **Gestión de chat:** vaciar chat (`cleared_at` por miembro) y eliminar chat (`DELETE FROM cng_conversation_members`), igual a WhatsApp.
+- **Búsqueda in-chat:** filtra mensajes de texto del historial, excluye soft-deleted y `deletedForMeSet`.
+- **Starred modal:** lista mensajes marcados, excluye los eliminados "para mí".
+- **Anclado visual:** cuando hay pocos mensajes, se apilan al fondo (inner wrapper `marginTop: 'auto'`).
 
 ```mermaid
 flowchart TD
-    A[MessagesScreen<br/>FAB nuevo chat] --> B[NewMessageModal<br/>búsqueda]
-    B --> C[Query identity_profiles<br/>ilike full_name]
-    C --> D[handleSelect user]
-    D --> E[INSERT cng_conversations<br/>created_by=me]
-    E --> F[INSERT cng_conversation_members<br/>ambos usuarios]
-    F --> G{RLS INSERT<br/>permite?}
-    G -->|No policy| H[RLS DENY silencioso]
-    G -->|Policy OK| I[INSERT cng_messages]
-    I --> J[ChatScreen abre]
+    A[MessagesScreen<br/>FAB nuevo chat o item existente] --> B{tipo?}
+    B -->|Nuevo 1:1| C[NewMessageModal<br/>busqueda full_name + ref_code + email]
+    B -->|Nuevo grupo| D[NewGroupModal<br/>seleccion multi + nombre]
+    B -->|Existente| E[ChatScreen]
+    C --> F[handleSelect]
+    F --> G[INSERT cng_conversations + members<br/>ambos usuarios]
+    D --> H[INSERT conversations type=group<br/>admin_id + members]
+    G --> E
+    H --> E
+    E --> I[Realtime subscription<br/>postgres_changes cng_messages]
+    I --> J[Render incremental + typing + presence]
 
-    style C fill:#FCEBEB,stroke:#E24B4A
-    style F fill:#FCEBEB,stroke:#E24B4A
-    style H fill:#FCEBEB,stroke:#E24B4A
+    style C fill:#E8F5E9,stroke:#1D9E75
+    style G fill:#FAEEDA,stroke:#EF9F27
 ```
 
 **Componentes:**
-- [src/pages/app/MessagesScreen.jsx:40-45](src/pages/app/MessagesScreen.jsx:40) — búsqueda
-- [src/pages/app/MessagesScreen.jsx:56-111](src/pages/app/MessagesScreen.jsx:56) — handleSelect (crea conversación)
-- [src/pages/app/ChatScreen.jsx](src/pages/app/ChatScreen.jsx) — interfaz de chat (1600+ líneas, maneja todo)
-- [src/pages/app/StoriesComponents.jsx:24-77](src/pages/app/StoriesComponents.jsx:24) — reply a story crea conversación también
+- [src/pages/app/MessagesScreen.jsx](src/pages/app/MessagesScreen.jsx) — lista de chats, NewMessageModal, NewGroupModal, context menu (silenciar, fijar, archivar, vaciar, eliminar), realtime preview, `usePresence()` montado acá.
+- [src/pages/app/ChatScreen.jsx](src/pages/app/ChatScreen.jsx) (~4200 líneas) — todo lo demás, `usePresence()` también montado acá.
+- [src/hooks/usePresence.js](src/hooks/usePresence.js) — upsert en `user_presence` (30s heartbeat + visibilitychange + `sendBeacon` on unload).
+- [src/pages/app/StoriesComponents.jsx:24-77](src/pages/app/StoriesComponents.jsx:24) — reply a story crea conversación también.
 
-**Tablas:** `cng_conversations`, `cng_conversation_members`, `cng_messages`, `cng_message_reactions`, `cng_starred_messages`, `cng_blocked_users`, `cng_reports`, `cng_polls`, `cng_poll_votes`
+**Tablas:** `cng_conversations`, `cng_conversation_members` (con `cleared_at`, `is_muted`, `is_pinned`, `is_archived`), `cng_messages` (con `delivery_status`, `edited_at`, `is_deleted`, `is_view_once`, `viewed_once_at`, `reply_to_id`), `cng_message_reactions`, `cng_starred_messages`, `cng_deleted_messages` (delete-for-me), `cng_blocked_users`, `cng_reports`, `cng_polls`, `cng_poll_votes`, `user_presence`.
 
 **RLS (de [src/sql/social-tables.sql](src/sql/social-tables.sql)):**
 - `cng_conversations` INSERT: `created_by = auth.uid()` ✅
-- `cng_conversation_members` INSERT: **❌ NO EXISTE POLICY** → deny por default
 - `cng_messages` INSERT: `sender_id = auth.uid()` + membership check ✅
+- `user_presence` SELECT: todos; UPDATE/UPSERT: solo fila propia ✅
 
-**Bugs críticos:**
-- ❌ **Falta policy INSERT en `cng_conversation_members`** → enviar mensaje a usuario sin conversación previa falla siempre
-- ❌ `handleSelect` hace `console.error` sin toast → usuario ve silencio
-- ⚠️ Búsqueda usa solo `full_name` con `.ilike()` → no encuentra por email, first_name, ni username
-- ⚠️ Sin dedup de conversaciones → abrir chat dos veces crea dos conversaciones
+**Bugs y gaps conocidos:**
+- ⚠️ `cng_conversation_members` INSERT policy — la arquitectura doc vieja marcaba "policy ausente" como crítico; los flujos de `handleAddMembers` / `handleLeaveGroup` escriben a esa tabla sin error en test interno, así que hoy o la policy existe o las operaciones funcionan por SECURITY DEFINER. **Acción pendiente:** auditar policies reales en dashboard y dejar SQL versionado.
+- ⚠️ Presence "zombie online" parcial — `sendBeacon` al REST de Supabase no autentica (PostgREST lo rechaza); se depende de la tolerancia 90s client-side en ChatScreen. Acción pendiente: derivar `is_online` en DB (columna generada o vista) para matar el problema por diseño.
+- ⚠️ `isMessageEditable` — 15 min window correcto, pero dependía de float timestamp; ya rechaza IDs `temp-*` y estados `sending/failed`.
+- ⚠️ Edit en modo edición no resetea `mentionQuery` stale — edge case, dropdown puede quedar visible al entrar a edit. Documentado, no fix aún.
+- 📄 22 commits de chat hoy (lista en "Última modificación"); 6 issues pre-existentes de lint siguen, no introducidos por esta sesión.
 
 ---
 
@@ -462,43 +484,60 @@ flowchart TD
 
 ### 5.6 Chilliums (economía interna)
 
-**Descripción:** Chilliums son un programa de lealtad (NO dinero). Valor interno 1:1 USD para contabilidad, pero NUNCA se muestra así al usuario. Se ganan por referidos y suscripciones; se gastan o transfieren vía chat.
+**Descripción:** Chilliums son un programa de lealtad (NO dinero). Valor interno 1 Chillium = 1 USD para contabilidad, pero jamás se presenta como moneda al usuario. Se ganan por referidos y suscripciones (reparto 50/35/15). **No existen transferencias P2P ni redención hoy** — eso vive en un futuro módulo Wallet aún no construido.
+
+**Estado banking-grade (19 abr 2026, commits `4ae71c8` + `0481736`):**
+
+El subsistema Chilliums pasó de "UPDATE cliente float" a un diseño con garantías de DB financiera. Cuatro decisiones estructurales viven consolidadas en la ADR-11:
+
+1. **Enteros en DB** — toda la persistencia usa `bigint` en centi-chilliums. 1 CHL = 100 centi-chilliums. Columnas: `identity_profiles.chilliums_balance`, `chilliums_total_earned`, `chilliums_total_spent`; `chilliums_ledger.amount`, `balance_after`. Cero operaciones flotantes en el backend.
+2. **RPC única** — `apply_chilliums(user_id, delta, type, description, source_user_id, referral_level, source_transaction_id)` es la **única puerta** al balance. Toma lock pesimista `FOR UPDATE` sobre `identity_profiles`, inserta en `chilliums_ledger`, actualiza `chilliums_balance` y `chilliums_total_earned/_spent` en la misma transacción. Marcada `SECURITY DEFINER`; grant exclusivo a `service_role`. El cliente no puede tocar balances directamente.
+3. **FKs a `identity_profiles(id)` con `ON DELETE RESTRICT`** — `chilliums_ledger.user_id` y `.source_user_id` ya no apuntan a `auth.users`. El ledger es historial indestructible: no se puede borrar un perfil si tiene entradas. Si se requiere eliminación legal de cuenta, se hace soft-delete del perfil preservando el ledger.
+4. **Floor estricto en el split 50/35/15** — cada nivel recibe `floor(base * split_i)` en centi-chilliums. El residuo (1–2 centi-chilliums dependiendo del base) queda como margen de empresa. No se reparte a nadie. Así `L0 + L1 + L2 ≤ base`, nunca mayor, y el invariante financiero siempre se conserva.
 
 ```mermaid
 flowchart TD
-    A[Evento: suscripción activa] --> B[cng-stripe-webhook]
-    B --> C[Calcula reparto 50/35/15]
-    C --> D[UPDATE identity_profiles<br/>chilliums_balance]
-    D --> E[INSERT chilliums_ledger<br/>tipo=earn]
-    F[ChatScreen<br/>transfer modal] --> G[UPDATE sender balance]
-    G --> H[UPDATE recipient balance]
-    H --> I[INSERT chilliums_ledger x2]
-    I --> J[Mensaje tipo=transfer]
+    A[Stripe event<br/>checkout.session.completed<br/>o invoice.payment_succeeded] --> B[cng-stripe-webhook<br/>HMAC + idempotency]
+    B --> C[INSERT transactions<br/>gross / op_cost / net_profit]
+    C --> D[Calcula splits<br/>floor 50/35/15 en centi]
+    D --> E["supabase.rpc('apply_chilliums', L0)"]
+    E --> F["supabase.rpc('apply_chilliums', L1)"]
+    F --> G["supabase.rpc('apply_chilliums', L2)"]
+    E --> H[(Postgres TX<br/>FOR UPDATE)]
+    F --> H
+    G --> H
+    H --> I[UPDATE identity_profiles<br/>+ INSERT chilliums_ledger]
 
-    style G fill:#FAEEDA,stroke:#EF9F27
-    style H fill:#FAEEDA,stroke:#EF9F27
+    style B fill:#E8F5E9,stroke:#1D9E75
+    style H fill:#E8F5E9,stroke:#1D9E75
 ```
 
+**Tipos del ledger (19 abr 2026):**
+- `cashback_direct` — miembro pagador (L0, 50%)
+- `cashback_network` — referrer directo (L1, 35%) y abuelo (L2, 15%), distinguidos por la columna `referral_level` (1 o 2)
+- Tipos anteriores (`earn_referral_level_0/1/2`) reemplazados por este set consolidado
+
 **Componentes:**
-- [src/pages/app/ChatScreen.jsx:1235-1290](src/pages/app/ChatScreen.jsx:1235) — transferencia de Chilliums entre usuarios
-- [src/pages/Network.jsx:91](src/pages/Network.jsx:91) — lectura del ledger
-- [src/pages/app/NetworkScreen.jsx:91](src/pages/app/NetworkScreen.jsx:91) — idem en app
-- [supabase/functions/cng-stripe-webhook/index.ts](supabase/functions/cng-stripe-webhook/index.ts) — distribución por suscripción
+- [supabase/functions/cng-stripe-webhook/index.ts](supabase/functions/cng-stripe-webhook/index.ts) — webhook reescrito: llama `supabase.rpc('apply_chilliums', ...)` en vez de UPDATE manual. No toca `chilliums_balance` directamente.
+- RPC `apply_chilliums` — definida en DB (no versionada en git todavía; ver gap en Sección 9).
+- [src/lib/chilliums.js](src/lib/chilliums.js) — helper de frontend:
+  - `formatChilliums(centi)` — display canónico, divide por 100, `en-US`, 2 decimales fijos, separador de miles. Acepta null/undefined/NaN devolviendo `'0.00'`.
+  - `toCentiChilliums(chilliums)` — inverso para inputs legacy: `Math.floor(num * 100)`.
+  - `fromCentiChilliums(centi)` — conversión numérica para cálculo (no display).
+- Display migrado (21 reemplazos de `.toFixed(2)` / `.toFixed(0)` → `formatChilliums`):
+  - [src/pages/Dashboard.jsx](src/pages/Dashboard.jsx) — balance + ganado total (también se corrigió bug de campo fantasma `total_earnings` → `chilliums_total_earned`).
+  - [src/pages/app/ProfileScreen.jsx](src/pages/app/ProfileScreen.jsx) — stats row + balance card.
+  - [src/pages/Network.jsx](src/pages/Network.jsx) y [src/pages/app/NetworkScreen.jsx](src/pages/app/NetworkScreen.jsx) — balance, earnings {cashback, referral_l1, referral_l2, bonus}, total_earned, total_spent, ledger rows.
 
-**Tablas:** `identity_profiles.chilliums_balance`, `chilliums_ledger`
+**Chat no tiene nada de Chilliums.** El modal de transferencia P2P, los handlers `openChilliumsModal` / `handleSendChilliums`, el render de `message_type === 'chilliums'` y la rama preview residual en MessagesScreen fueron eliminados en `261d9f8` y `0481736`. La funcionalidad volverá como parte del **módulo Wallet** futuro, no desde el chat.
 
-**Riesgos conocidos:**
-- ⚠️ Transferencia en ChatScreen hace UPDATE directo a `chilliums_balance` en cliente → race condition si dos transferencias concurrentes. Debería ser vía RPC transaccional o Edge Function.
-- ⚠️ Commit reciente `cbdc91e` — "detect silent RLS failure on recipient balance update" — indica que ya hubo un bug de RLS en esta ruta
-- 📄 Ver [auditoria-chilliums-2026-04-16/](auditoria-chilliums-2026-04-16/) para auditoría detallada
+**Tablas:** `identity_profiles.chilliums_balance`, `.chilliums_total_earned`, `.chilliums_total_spent`, `chilliums_ledger`, `transactions`.
 
-**📝 Cambio de nomenclatura (19 abr 2026):**
-Los tipos del `chilliums_ledger` se renombraron para alinearse con el modelo de 2 niveles de referidos:
-- `cashback_direct` → `earn_referral_level_0` (miembro pagador, 50%)
-- `cashback_network` (con `referral_level=2`) → `earn_referral_level_1` (referrer directo, 35%)
-- `cashback_network` (con `referral_level=3`) → `earn_referral_level_2` (abuelo, 15%)
-
-Los números de `referral_level` bajaron 1 (antes 1/2/3, ahora 0/1/2). Commits: `3ebc92e` (webhook) + `a0dd7c3` (Network.jsx / NetworkScreen.jsx). Entradas legacy del ledger con tipos viejos no se migran automáticamente — si hay data producción previa, requiere `UPDATE` manual.
+**Deuda conocida (post-migración):**
+- ⚠️ RPC `apply_chilliums` no vive en `supabase/migrations/` todavía; solo en dashboard.
+- ⚠️ Valores legacy con tipos viejos del ledger no se backfillearon automáticamente — requiere `UPDATE` manual si hubo data producción antes del 19 abr.
+- ⚠️ `identity_profiles.total_earnings` (campo fantasma) puede seguir existiendo en el schema aunque ya no se lee desde código. Candidato a `DROP COLUMN`.
+- 📄 Ver [auditoria-chilliums-2026-04-16/](auditoria-chilliums-2026-04-16/) para auditoría previa (pre-migración).
 
 ---
 
@@ -527,13 +566,15 @@ Los números de `referral_level` bajaron 1 (antes 1/2/3, ahora 0/1/2). Commits: 
 ### Mensajería
 | Tabla | Propósito |
 |---|---|
-| `cng_conversations` | Hilo de conversación (directo o grupo) |
-| `cng_conversation_members` | Miembros en cada conversación |
-| `cng_messages` | Mensajes individuales |
-| `cng_message_reactions` | Reacciones a mensajes (emoji) |
+| `cng_conversations` | Hilo de conversación (directo o grupo, con `admin_id` para grupos) |
+| `cng_conversation_members` | Miembros en cada conversación (`cleared_at`, `is_muted`, `is_pinned`, `is_archived`) |
+| `cng_messages` | Mensajes individuales (`delivery_status`, `edited_at`, `is_deleted`, `is_view_once`, `viewed_once_at`, `reply_to_id`) |
+| `cng_message_reactions` | Reacciones a mensajes (emoji, ahora soporta cualquier Unicode vía emoji-mart) |
 | `cng_starred_messages` | Mensajes marcados |
+| `cng_deleted_messages` | "Eliminar para mí" — par (user_id, message_id); no borra el mensaje, solo oculta para ese usuario |
 | `cng_blocked_users` | Bloqueos entre usuarios |
 | `cng_reports` | Reportes de moderación |
+| `user_presence` | `(user_id, last_seen_at, is_online, updated_at)` — heartbeat de `usePresence`. RLS: lectura pública, escritura solo a fila propia |
 
 ### Stories / Polls
 | Tabla | Propósito |
@@ -605,10 +646,12 @@ Desde [src/App.jsx](src/App.jsx):
 | 6 | Botón "Ir a mi cuenta" no navega en algunos casos | — | [Join.jsx:667](src/pages/Join.jsx:667) | ✅ **RESUELTO 19 abr 2026** — ahora `<Link to="/dashboard">` directo (commit `968f27a`) |
 | 7 | `ref_code` solo persistido en URL (sin localStorage) → pérdidas de comisión | — | [Join.jsx](src/pages/Join.jsx) | ✅ **RESUELTO 19 abr 2026** — localStorage con TTL 30 días + leído como fallback si URL vacía (commit `3ebc92e`) |
 | 8 | Dual role (agente Matrix que quiere ser miembro CNG+) no soportado | — | [RegistrationWizard.jsx](src/components/RegistrationWizard.jsx) | ✅ **RESUELTO 19 abr 2026** — wizard crea `identity_profile` nuevo antes del pago; bloqueo básico removido (commit `3ebc92e`) |
-| 9 | Transferencia de Chilliums en cliente (UPDATE directo) → race condition | ⚠️ Riesgo de doble gasto | [ChatScreen.jsx:1235-1290](src/pages/app/ChatScreen.jsx:1235) | Pendiente — mover a RPC/Edge |
+| 9 | Transferencia de Chilliums en cliente (UPDATE directo) → race condition | — | — | ✅ **REMOVIDO 19 abr 2026** — feature P2P eliminada del chat (commits `261d9f8`, `0481736`). La funcionalidad volverá en el módulo Wallet futuro sobre la RPC `apply_chilliums` (ver ADR-11) |
 | 10 | 2 Edge Functions no versionadas en git | ⚠️ Riesgo operacional | — | ⚙️ **PARCIAL 19 abr 2026** — `cng-create-checkout` ya en git (commit `072ce93`); `cng-create-portal` sigue fuera |
 | 11 | RLS de `identity_profiles` no está en git (vive solo en dashboard) | ⚠️ Riesgo operacional | — | Pendiente — traer a git |
 | 12 | No hay `supabase/migrations/` → schema no versionado | ⚠️ Riesgo | — | Pendiente — `supabase db pull` |
+| 13 | Wallet como módulo no existe — prerequisito para M12 del Journey Activo (gastar/transferir/redimir Chilliums) | ⚠️ Feature gap | — | Pendiente — diseño + construcción del módulo sobre RPC `apply_chilliums` |
+| 14 | RPC `apply_chilliums` no versionada (vive solo en dashboard) | ⚠️ Riesgo operacional | — | Pendiente — traer a `supabase/migrations/` junto con el resto del schema |
 
 ---
 
@@ -625,9 +668,11 @@ Desde [src/App.jsx](src/App.jsx):
 | Búsqueda de usuarios | ❌ Bug | 18 abr 2026 | Solo `full_name`, sin filtros consistentes |
 | Flujo enviar mensaje nuevo | ❌ Bug | 18 abr 2026 | Falta policy INSERT en `conversation_members` |
 | Feed social | ⚠️ Warning | 18 abr 2026 | Mismatch de filtros con búsqueda |
-| Chilliums (transferencias) | ⚠️ Warning | 17 abr 2026 | UPDATE cliente, RLS silenciosa detectada |
-| Chilliums (reparto 50/35/15) | ✅ OK | 17 abr 2026 | Commits 0a06a1d, 8011d5c corrigen reparto |
-| Chilliums (tipos del ledger) | ✅ OK | 19 abr 2026 | Renombrados a `earn_referral_level_0/1/2` en backend y frontend — consistencia verificada (commits `3ebc92e`, `a0dd7c3`) |
+| Chilliums (transferencias P2P) | ✅ OK | 19 abr 2026 | **REMOVIDO** — feature eliminada del chat (`261d9f8`, `0481736`); volverá como parte del futuro módulo Wallet sobre la RPC `apply_chilliums` |
+| Chilliums (reparto 50/35/15) | ✅ OK | 19 abr 2026 | Vía RPC atómica `apply_chilliums` (lock `FOR UPDATE`) + floor estricto — invariante `L0+L1+L2 ≤ base` garantizado. Commit `4ae71c8` |
+| Chilliums (tipos del ledger) | ✅ OK | 19 abr 2026 | Consolidados a `cashback_direct` (L0) y `cashback_network` (L1/L2 con `referral_level` 1 o 2). Commit `4ae71c8` |
+| Chilliums (enteros bigint) | ✅ OK | 19 abr 2026 | Persistencia en centi-chilliums (1 CHL = 100 centi). Cero float arithmetic en backend. Helper `src/lib/chilliums.js` en frontend. Commit `4ae71c8` |
+| Chilliums (FKs del ledger) | ✅ OK | 19 abr 2026 | Apuntan a `identity_profiles(id)` con `ON DELETE RESTRICT` — historial indestructible. Commit `4ae71c8` |
 | Referral link persistence | ✅ OK | 19 abr 2026 | localStorage con TTL 30 días + fallback si URL vacía (commit `3ebc92e`) |
 | Dual-role user (agente + miembro) | ⚠️ Parcial | 19 abr 2026 | Wizard crea `identity_profile` nuevo antes del pago (resuelve bloqueo básico), pero el concepto "un humano con 2 roles" sigue sin diseñarse explícitamente en el schema |
 | Schema versionado | ❌ Gap | 19 abr 2026 | No hay `supabase/migrations/` en repo |
@@ -672,6 +717,25 @@ El cálculo del reparto 50/35/15 siempre usa `MEMBERSHIP_PRICE = $7` como base, 
 **Fecha:** 19 abr 2026
 Todos los webhooks (pago e identity) validan la firma HMAC con su propio secret antes de procesar el body. Se agregó `STRIPE_IDENTITY_WEBHOOK_SECRET` como env var separada del webhook de pagos (`STRIPE_WEBHOOK_SECRET`). Motivación: cerrar vulnerabilidad donde cualquiera con el URL del webhook de identity podía marcar emails como KYC-verified enviando un POST falso. **Estado:** desplegado 19 abr 2026 — commit `34404d3`.
 
+### ADR-11 — Chilliums bancario-grado
+**Fecha:** 19 abr 2026
+
+Cuatro decisiones estructurales consolidadas que llevan a Chilliums de "programa de lealtad con UPDATE float en cliente" a subsistema con garantías de DB financiera. Ver también Sección 5.6.
+
+**Decisión 1 — Unidad interna = centi-chilliums (bigint).**
+Toda persistencia en enteros: `identity_profiles.chilliums_balance/total_earned/total_spent` y `chilliums_ledger.amount/balance_after` son `bigint`. 1 CHL = 100 centi-chilliums = 1 USD. Cero float arithmetic en backend. Motivación: errores de representación binaria (p. ej. `5.50 * 0.35 = 1.9249999...`) son inaceptables cuando se trata de balance monetario, aunque Chilliums no sea "dinero" legalmente. Display via `src/lib/chilliums.js::formatChilliums()` — `en-US`, 2 decimales fijos, separador de miles.
+
+**Decisión 2 — `apply_chilliums` es la única puerta al balance.**
+Función Postgres `SECURITY DEFINER` que acepta `(user_id, delta, type, description, source_user_id, referral_level, source_transaction_id)`. Toma lock pesimista `SELECT ... FOR UPDATE` sobre la fila del perfil, inserta en `chilliums_ledger` con el `balance_after` correcto, y actualiza `chilliums_balance` + `chilliums_total_earned/_spent` en la misma transacción. Grant exclusivo a `service_role` — el cliente no puede tocar balances directamente ni vía supabase-js. Motivación: eliminar la clase de race conditions que había con read-modify-write desde cliente, y centralizar el audit trail.
+
+**Decisión 3 — FKs del ledger a `identity_profiles(id)` con `ON DELETE RESTRICT`.**
+`chilliums_ledger.user_id` y `.source_user_id` dejaron de apuntar a `auth.users` y ahora apuntan a `identity_profiles(id)`. `ON DELETE RESTRICT` hace al historial indestructible: no se puede borrar un perfil con entradas de ledger. Motivación: el libro mayor es evidencia contable y no debe perder filas por un DELETE accidental en otra tabla. Si hace falta eliminar una cuenta por compliance, se hace soft-delete del perfil preservando el ledger.
+
+**Decisión 4 — Floor estricto en el split 50/35/15.**
+Cada nivel recibe `floor(base * split_i)` en centi-chilliums. El residuo (1–2 centi-chilliums dependiendo del base) se queda como margen operativo de la empresa, no se reparte. Así `L0 + L1 + L2 ≤ base` siempre — nunca mayor. Ejemplo: `base = 550` → L0=275, L1=192, L2=82 → suma=549, residuo=1. Motivación: elegir un régimen de redondeo explícito evita drift acumulativo (centi-chilliums "apareciendo de la nada" cuando se suman múltiples transacciones) y hace el invariante financiero verificable por query SQL.
+
+**Estado:** desplegado 19 abr 2026 — commits `4ae71c8` (migración completa + helper + 21 reemplazos display) y `0481736` (cleanup de rama muerta en MessagesScreen). **Deuda post-decisión:** la RPC `apply_chilliums` y el schema final de `chilliums_ledger` todavía no están en `supabase/migrations/` (ver bug #14).
+
 ---
 
 ## Apéndice A — Comandos útiles
@@ -704,7 +768,15 @@ npx supabase functions download cng-create-portal --project-ref jahnlhzbjcbmjnuz
 
 ## Última modificación
 
-**19 de abril de 2026** — Sesión de 4 flujos completados (A: entrada, B: pago, C: KYC, D: activación). 5 bugs críticos cerrados incluyendo bug Mónica y vulnerabilidad HMAC. 6 commits desplegados a producción: `3ebc92e`, `072ce93`, `34984d2`, `34404d3`, `968f27a`, `a0dd7c3`. Sistema listo para prueba end-to-end con usuario fake. Agregados ADR-08/09/10. Actualizadas Sección 3.1 (diagrama + tabla bugs resueltos), 3.2 (M14 verde), 5.1 (diagrama + notas de commits), 5.2 (self-referral + localStorage), 5.6 (rename de tipos), 7 (cng-create-checkout en git), 9 (bugs #5/6/7/8/10), 10 (checklist).
+**19 de abril de 2026 (tarde)** — Sesión de chat + Chilliums banking-grade. **22 commits** desplegados a `origin/main`, versión doc pasa a 1.1.
+
+Chat (~15 features nuevas, commits `94eb485` → `261d9f8`): validación tamaño, eliminar/vaciar chat, failed retry, delete para mí vs. todos, búsqueda ampliada (full_name + ref_code + email), grupos (leave / add / remove), edit window 15 min, compresión imagen pre-upload, presence indicator + `usePresence` hook scoped a `/messages` y `/chat`, emoji picker emoji-mart, @mentions autocomplete en grupos, markdown-lite inline (`*_~` `` ` ``), anclado de mensajes al fondo, GIPHY key a env var, cleanup atómico de huérfanos, post-audit fixes (isMessageEditable rechaza optimistic, starred y search excluyen deletedForMeSet). `.npmrc` con `legacy-peer-deps=true` para el peer conflict de emoji-mart × React 19.
+
+Chilliums banking-grade (commits `4ae71c8` + `0481736`): migración a bigint centi-chilliums, RPC `apply_chilliums` (lock `FOR UPDATE`, `SECURITY DEFINER`, grant a service_role), FKs del ledger a `identity_profiles(id)` con `ON DELETE RESTRICT`, floor estricto en split 50/35/15 (residuo a empresa), webhook reescrito para usar la RPC, tipos del ledger consolidados a `cashback_direct` (L0) + `cashback_network` (L1/L2). Frontend: `src/lib/chilliums.js` con `formatChilliums` / `toCentiChilliums` / `fromCentiChilliums`, 21 reemplazos de `.toFixed(2/0)` en Dashboard, ProfileScreen, Network, NetworkScreen. Bug del campo fantasma `total_earnings` corregido a `chilliums_total_earned`. Rama muerta `message_type === 'chilliums'` en MessagesScreen removida.
+
+**Cambios en este doc:** Sección 2 (stack + nota de emoji-mart × React 19), Sección 5.4 (mensajería refresh completo), Sección 5.6 (reescritura completa banking-grade), Sección 6 (añadidas `cng_deleted_messages`, `user_presence`; detalladas columnas de `cng_conversation_members` y `cng_messages`), Sección 9 (bug #9 REMOVIDO, nuevos bugs #13 Wallet-gap y #14 RPC sin versionar), Sección 10 (5 filas de Chilliums todas verdes con fecha 19 abr 2026), ADR-11 nueva (4 decisiones consolidadas: enteros, RPC única, FKs a profiles, floor estricto). No se tocaron ADRs de presence ni edit window — pendientes para próxima sesión.
+
+**19 de abril de 2026 (mañana)** — Sesión de 4 flujos completados (A: entrada, B: pago, C: KYC, D: activación). 5 bugs críticos cerrados incluyendo bug Mónica y vulnerabilidad HMAC. 6 commits desplegados a producción: `3ebc92e`, `072ce93`, `34984d2`, `34404d3`, `968f27a`, `a0dd7c3`. Sistema listo para prueba end-to-end con usuario fake. Agregados ADR-08/09/10. Actualizadas Sección 3.1 (diagrama + tabla bugs resueltos), 3.2 (M14 verde), 5.1 (diagrama + notas de commits), 5.2 (self-referral + localStorage), 5.6 (rename de tipos), 7 (cng-create-checkout en git), 9 (bugs #5/6/7/8/10), 10 (checklist).
 
 **18 de abril de 2026** — Sección 3 expandida a dos Journey Maps: 3.1 Miembro Nuevo (onboarding) y 3.2 Miembro Activo (uso diario, 7 momentos recurrentes incl. renovación mensual). Agregado diagrama de conexión entre ambos journeys. Auditado código para identificar bugs/riesgos de los momentos 8–14 contra el código real.
 
