@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { Link } from 'react-router-dom'
 import { C, FONT, Icon, GRADIENT } from '../stitch'
+import { formatChilliums } from '../lib/chilliums';
 
 export default function Network() {
     const { user, member } = useAuth()
@@ -148,7 +149,7 @@ export default function Network() {
                             <ellipse cx="15" cy="15" rx="12" ry="5" fill="#EF9F27" opacity="0.6" />
                             <text x="15" y="18" textAnchor="middle" fontSize="8" fontWeight="bold" fill="#633806">C</text>
                         </svg>
-                        <span style={s.balanceText}>{member?.chilliums_balance?.toFixed(2) || '0.00'}</span>
+                        <span style={s.balanceText}>{formatChilliums(member?.chilliums_balance)}</span>
                     </div>
                 </div>
             </nav>
@@ -173,7 +174,7 @@ export default function Network() {
                         </svg>
                         <div>
                             <div style={s.bigBalanceLabel}>Balance total</div>
-                            <div style={{ ...s.bigBalanceAmount, ...(isMobile ? { fontSize: 24 } : {}) }}>{member?.chilliums_balance?.toFixed(2) || '0.00'} <span style={s.bigBalanceCurrency}>Chilliums</span></div>
+                            <div style={{ ...s.bigBalanceAmount, ...(isMobile ? { fontSize: 24 } : {}) }}>{formatChilliums(member?.chilliums_balance)} <span style={s.bigBalanceCurrency}>Chilliums</span></div>
                         </div>
                     </div>
 
@@ -183,28 +184,28 @@ export default function Network() {
                             <div style={s.earningDot(C.primaryBright)} />
                             <div style={s.earningInfo}>
                                 <span style={s.earningLabel}>Cashback</span>
-                                <span style={s.earningValue}>{earnings.cashback.toFixed(2)}</span>
+                                <span style={s.earningValue}>{formatChilliums(earnings.cashback)}</span>
                             </div>
                         </div>
                         <div style={s.earningItem}>
                             <div style={s.earningDot(C.tertiaryContainer)} />
                             <div style={s.earningInfo}>
                                 <span style={s.earningLabel}>Nivel 1</span>
-                                <span style={s.earningValue}>{earnings.referral_l1.toFixed(2)}</span>
+                                <span style={s.earningValue}>{formatChilliums(earnings.referral_l1)}</span>
                             </div>
                         </div>
                         <div style={s.earningItem}>
                             <div style={s.earningDot('#D85A30')} />
                             <div style={s.earningInfo}>
                                 <span style={s.earningLabel}>Nivel 2</span>
-                                <span style={s.earningValue}>{earnings.referral_l2.toFixed(2)}</span>
+                                <span style={s.earningValue}>{formatChilliums(earnings.referral_l2)}</span>
                             </div>
                         </div>
                         <div style={s.earningItem}>
                             <div style={s.earningDot('#EF9F27')} />
                             <div style={s.earningInfo}>
                                 <span style={s.earningLabel}>Bonos</span>
-                                <span style={s.earningValue}>{earnings.bonus.toFixed(2)}</span>
+                                <span style={s.earningValue}>{formatChilliums(earnings.bonus)}</span>
                             </div>
                         </div>
                     </div>
@@ -359,7 +360,7 @@ export default function Network() {
                                 <div style={s.summaryIcon('#EF9F27')}>
                                     <Icon name="paid" size={20} style={{ color: '#EF9F27' }} />
                                 </div>
-                                <div style={s.summaryNumber}>{member?.chilliums_total_earned?.toFixed(2) || '0.00'}</div>
+                                <div style={s.summaryNumber}>{formatChilliums(member?.chilliums_total_earned)}</div>
                                 <div style={s.summaryLabel}>Ganado total</div>
                                 <div style={s.summarySub}>Chilliums</div>
                             </div>
@@ -367,7 +368,7 @@ export default function Network() {
                                 <div style={s.summaryIcon(C.errorBright)}>
                                     <Icon name="redeem" size={20} style={{ color: C.errorBright }} />
                                 </div>
-                                <div style={s.summaryNumber}>{(member?.chilliums_total_spent || 0).toFixed(2)}</div>
+                                <div style={s.summaryNumber}>{formatChilliums(member?.chilliums_total_spent)}</div>
                                 <div style={s.summaryLabel}>Redimidos</div>
                                 <div style={s.summarySub}>Usados en compras</div>
                             </div>
@@ -401,7 +402,7 @@ export default function Network() {
                                             ...s.historyAmount,
                                             color: Number(entry.amount) >= 0 ? C.primary : C.error,
                                         }}>
-                                            {Number(entry.amount) >= 0 ? '+' : ''}{Number(entry.amount).toFixed(2)}
+                                            {Number(entry.amount) >= 0 ? '+' : ''}{formatChilliums(entry.amount)}
                                         </div>
                                     </div>
                                 ))}

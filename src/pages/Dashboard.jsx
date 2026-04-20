@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { useNavigate, Link } from 'react-router-dom'
 import { C, FONT, Icon, GRADIENT } from '../stitch'
 import { getMemberState } from '../utils/memberStatus'
+import { formatChilliums } from '../lib/chilliums';
 
 export default function Dashboard() {
   const { user, member, signOut } = useAuth()
@@ -191,7 +192,7 @@ export default function Dashboard() {
             <span style={styles.balanceLabel}>Chilliums</span>
           </div>
           <div style={styles.balanceAmount}>
-            {member?.chilliums_balance?.toFixed(2) || '0.00'}
+            {formatChilliums(member?.chilliums_balance)}
           </div>
           <div style={styles.balanceSub}>1 Chillium = 1 USD</div>
         </div>
@@ -273,7 +274,7 @@ export default function Dashboard() {
                 <div style={styles.networkSub}>Nivel 2</div>
               </div>
               <div style={styles.networkCard}>
-                <div style={styles.networkNumber}>{member?.total_earnings?.toFixed(2) || '0.00'}</div>
+                <div style={styles.networkNumber}>{formatChilliums(member?.chilliums_total_earned)}</div>
                 <div style={styles.networkLabel}>Ganado total</div>
                 <div style={styles.networkSub}>Chilliums</div>
               </div>

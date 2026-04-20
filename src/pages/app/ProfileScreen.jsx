@@ -3,6 +3,7 @@ import { C, FONT, Icon, GRADIENT } from '../../stitch'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
+import { formatChilliums } from '../../lib/chilliums';
 
 export default function ProfileScreen({ onNavigate }) {
   const { user, member, signOut, fetchMember } = useAuth()
@@ -114,7 +115,7 @@ export default function ProfileScreen({ onNavigate }) {
           <div><span style={{ color: C.onSurface, fontFamily: FONT.headline, fontSize: 20, fontWeight: 900 }}>{postCount}</span><p style={{ fontSize: 10, color: C.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: 2, fontWeight: 700 }}>Posts</p></div>
           <div><span style={{ color: C.onSurface, fontFamily: FONT.headline, fontSize: 20, fontWeight: 900 }}>{followersCount}</span><p style={{ fontSize: 10, color: C.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: 3, fontWeight: 700 }}>Followers</p></div>
           <div><span style={{ color: C.onSurface, fontFamily: FONT.headline, fontSize: 20, fontWeight: 900 }}>{followingCount}</span><p style={{ fontSize: 10, color: C.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: 3, fontWeight: 700 }}>Following</p></div>
-          <div><span style={{ color: C.primary, fontFamily: FONT.headline, fontSize: 20, fontWeight: 900 }}>{member?.chilliums_balance?.toFixed(0) || '0'}</span><p style={{ fontSize: 10, color: C.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: 3, fontWeight: 700 }}>Chilliums</p></div>
+          <div><span style={{ color: C.primary, fontFamily: FONT.headline, fontSize: 20, fontWeight: 900 }}>{formatChilliums(member?.chilliums_balance)}</span><p style={{ fontSize: 10, color: C.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: 3, fontWeight: 700 }}>Chilliums</p></div>
         </div>
 
         <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
@@ -131,7 +132,7 @@ export default function ProfileScreen({ onNavigate }) {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
                 <p style={{ fontSize: 12, color: C.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: 3, fontWeight: 700, marginBottom: 4 }}>Current Balance</p>
-                <h2 style={{ fontSize: 36, fontFamily: FONT.headline, fontWeight: 900, color: '#5DCAA5', letterSpacing: '-1px' }}>{member?.chilliums_balance?.toFixed(2) || '0.00'} <span style={{ fontSize: 14, fontWeight: 400, color: '#0F6E56' }}>CHILL</span></h2>
+                <h2 style={{ fontSize: 36, fontFamily: FONT.headline, fontWeight: 900, color: '#5DCAA5', letterSpacing: '-1px' }}>{formatChilliums(member?.chilliums_balance)} <span style={{ fontSize: 14, fontWeight: 400, color: '#0F6E56' }}>CHILL</span></h2>
               </div>
               <Icon name="account_balance_wallet" size={28} style={{ color: C.primary }} />
             </div>
