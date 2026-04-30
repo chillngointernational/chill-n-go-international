@@ -1,0 +1,8 @@
+[functions.cng-stripe-webhook]
+verify_jwt = false
+
+[functions.cng-identity-webhook]
+verify_jwt = false
+
+[functions.cng-issue-welcome-session]
+verify_jwt = false
