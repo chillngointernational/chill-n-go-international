@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
-import { useSearchParams, Link } from 'react-router-dom'
+import { useSearchParams, useNavigate, Link } from 'react-router-dom'
 import { supabase, supabasePublic } from '../lib/supabase'
-import RegistrationWizard from '../components/RegistrationWizard'
 import { C, FONT, GRADIENT } from '../stitch'
 
 const REF_STORAGE_KEY = 'cng_ref_code'
@@ -57,7 +56,7 @@ const LANG = {
     invalidLink: 'Link inválido',
     invalidLinkDesc: 'El código de referido no existe o la cuenta del referidor no está activa. Pide un link nuevo a quien te invitó.',
 
-    stepRegister: 'Registro',
+    stepRegister: 'Invitación',
     stepPayment: 'Pago',
     stepVerify: 'Verificar',
 
@@ -95,6 +94,7 @@ const LANG = {
     payBtn: 'Pagar $10 USD (primer mes)',
     stripeNote: 'Pago seguro con Stripe. Primer mes $10, después $7/mes. Cancela cuando quieras.',
     paymentError: 'Error al procesar el pago: ',
+    invalidSession: 'Sesión inválida. Vuelve a iniciar el registro.',
 
     kycTitle: 'Verifica tu identidad',
     kycDescStart: 'Necesitamos verificar tu identidad con ',
@@ -128,7 +128,7 @@ const LANG = {
     invalidLink: 'Invalid link',
     invalidLinkDesc: 'The referral code doesn\'t exist or the referrer\'s account is not active. Ask for a new link from whoever invited you.',
 
-    stepRegister: 'Register',
+    stepRegister: 'Invitation',
     stepPayment: 'Payment',
     stepVerify: 'Verify',
 
@@ -166,6 +166,7 @@ const LANG = {
     payBtn: 'Pay $10 USD (first month)',
     stripeNote: 'Secure payment via Stripe. First month $10, then $7/mo. Cancel anytime.',
     paymentError: 'Error processing payment: ',
+    invalidSession: 'Invalid session. Please start registration again.',
 
     kycTitle: 'Verify your identity',
     kycDescStart: 'We need to verify your identity with ',
@@ -203,17 +204,15 @@ export default function Join() {
   }, [])
 
   const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
   const urlRefCode = searchParams.get('ref')
   const paidParam = searchParams.get('paid')
   const emailParam = searchParams.get('email')
+  const sessionIdParam = searchParams.get('session_id')
 
   const [refCode, setRefCode] = useState(urlRefCode || null)
-  const [step, setStep] = useState(1) // 1=welcome/wizard, 2=pay, 3=kyc
+  const [step, setStep] = useState(1) // 1=invite, 2=email+pay, 3=kyc
   const [email, setEmail] = useState('')
-  const [emailSubmitted, setEmailSubmitted] = useState(false)
-  const [emailValidating, setEmailValidating] = useState(false)
-  const [wizardCompleted, setWizardCompleted] = useState(false)
-  const [fullName, setFullName] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [referrer, setReferrer] = useState(null)
@@ -240,9 +239,7 @@ export default function Join() {
   useEffect(() => {
     if (paidParam === 'true' && emailParam) {
       setEmail(decodeURIComponent(emailParam))
-      setEmailSubmitted(true)
       setAcceptedInvite(true)
-      setWizardCompleted(true)
       setStep(3) // KYC
     }
   }, [paidParam, emailParam])
@@ -277,7 +274,7 @@ export default function Join() {
     }
   }
 
-  async function handleEmailSubmit() {
+  async function handlePayment() {
     setError('')
     const trimmed = email.trim().toLowerCase()
     if (!trimmed) {
@@ -288,49 +285,19 @@ export default function Join() {
       setError(t.enterValidEmail)
       return
     }
-    // Self-referral guard
     if (referrer && trimmed === referrer.email.toLowerCase()) {
       setError(t.selfReferral)
       return
     }
-    setEmailValidating(true)
-    try {
-      const { data: existing } = await supabasePublic
-        .from('identity_profiles')
-        .select('email')
-        .eq('email', trimmed)
-        .maybeSingle()
-      if (existing) {
-        setError(t.emailAlreadyRegistered)
-        setEmailValidating(false)
-        return
-      }
-      setEmail(trimmed)
-      setEmailSubmitted(true)
-    } catch (e) {
-      setError(e.message || t.enterValidEmail)
-    } finally {
-      setEmailValidating(false)
-    }
-  }
-
-  function handleWizardComplete({ fullName: name }) {
-    setFullName(name)
-    setWizardCompleted(true)
-    setStep(2) // ready to pay
-  }
-
-  async function handlePayment() {
     setLoading(true)
-    setError('')
     try {
       const response = await fetch('https://jahnlhzbjcbmjnuzxsvj.supabase.co/functions/v1/cng-create-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email,
+          email: trimmed,
           ref_code: refCode,
-          success_url: window.location.origin + '/join?paid=true&ref=' + refCode + '&email=' + encodeURIComponent(email),
+          success_url: window.location.origin + '/join?paid=true&ref=' + refCode + '&email=' + encodeURIComponent(trimmed),
           cancel_url: window.location.origin + '/join?ref=' + refCode,
         }),
       })
@@ -397,6 +364,40 @@ export default function Join() {
     } catch (err) {
       setError(t.kycStartError + err.message)
       setVerificationStatus('error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function goToWelcome() {
+    if (!sessionIdParam) {
+      setError(t.invalidSession)
+      return
+    }
+    setLoading(true)
+    setError('')
+    try {
+      const r = await fetch('https://jahnlhzbjcbmjnuzxsvj.supabase.co/functions/v1/cng-issue-welcome-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionIdParam }),
+      })
+      const data = await r.json()
+      if (data.error) {
+        setError(data.error)
+        return
+      }
+      const { error: otpErr } = await supabase.auth.verifyOtp({
+        token_hash: data.hashed_token,
+        type: 'magiclink',
+      })
+      if (otpErr) {
+        setError(otpErr.message)
+        return
+      }
+      navigate('/welcome')
+    } catch (err) {
+      setError(err.message)
     } finally {
       setLoading(false)
     }
@@ -511,7 +512,7 @@ export default function Join() {
               </div>
             </div>
 
-            <button onClick={() => setAcceptedInvite(true)} style={styles.button}>
+            <button onClick={() => { setAcceptedInvite(true); setStep(2); }} style={styles.button}>
               {t.acceptBtn(referrerDisplayName)}
             </button>
 
@@ -521,17 +522,14 @@ export default function Join() {
           </>
         )}
 
-        {/* STEP 1b: Email capture */}
-        {step === 1 && acceptedInvite && !emailSubmitted && (
+        {/* STEP 2: Email + pay */}
+        {step === 2 && (
           <>
             <div style={{ ...styles.refBadge, background: 'rgba(29,158,117,0.1)', borderColor: 'rgba(29,158,117,0.3)', color: C.primary }}>
               {t.invitedBy} {referrerDisplayName}
             </div>
 
             <h1 style={styles.title}>{t.startTitle}</h1>
-            <p style={styles.subtitle}>{t.startSubtitle}</p>
-
-            {error && <div style={styles.error}>{error}</div>}
 
             <div style={styles.field}>
               <label style={styles.label}>{t.emailLabel}</label>
@@ -539,46 +537,11 @@ export default function Join() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && !emailValidating) handleEmailSubmit() }}
                 style={styles.input}
                 placeholder="tu@email.com"
                 autoFocus
               />
             </div>
-
-            <button onClick={handleEmailSubmit} style={{ ...styles.button, marginTop: 16 }} disabled={emailValidating}>
-              {emailValidating ? t.validatingEmail : t.startBtn}
-            </button>
-          </>
-        )}
-
-        {/* STEP 1c: Wizard */}
-        {step === 1 && acceptedInvite && emailSubmitted && !wizardCompleted && (
-          <>
-            <div style={{ ...styles.refBadge, background: 'rgba(29,158,117,0.1)', borderColor: 'rgba(29,158,117,0.3)', color: C.primary }}>
-              {t.invitedBy} {referrerDisplayName}
-            </div>
-
-            <RegistrationWizard
-              email={email}
-              refCode={refCode}
-              referrerName={referrerDisplayName}
-              referrerUserId={referrer?.user_id || null}
-              onLangChange={(newLang) => setLang(newLang)}
-              onWizardComplete={handleWizardComplete}
-            />
-          </>
-        )}
-
-        {/* STEP 2: Ready to pay */}
-        {step === 2 && (
-          <>
-            <div style={{ ...styles.refBadge, background: 'rgba(29,158,117,0.1)', borderColor: 'rgba(29,158,117,0.3)', color: C.primary }}>
-              {t.invitedBy} {referrerDisplayName}
-            </div>
-
-            <h1 style={styles.title}>{t.readyTitle(fullName || referrerDisplayName)}</h1>
-            <p style={styles.subtitle}>{t.readySubtitle}</p>
 
             <div style={styles.priceCard}>
               <div style={styles.priceName}>CNG+</div>
@@ -663,9 +626,9 @@ export default function Join() {
                   {t.kycSubmittedNote}
                 </div>
 
-                <Link to="/dashboard" style={{ ...styles.button, display: 'block', textAlign: 'center', textDecoration: 'none' }}>
-                  {t.goToAccountBtn}
-                </Link>
+                <button onClick={goToWelcome} style={styles.button} disabled={loading}>
+                  {loading ? t.processing : t.goToAccountBtn}
+                </button>
               </>
             )}
 
@@ -695,7 +658,7 @@ export default function Join() {
         )}
       </div>
 
-      {step === 1 && !emailSubmitted && (
+      {(step === 1 || step === 2) && (
         <p style={styles.loginLink}>
           {t.alreadyHaveAccount}<Link to="/login" style={{ color: C.primary, textDecoration: 'none' }}>{t.login}</Link>
         </p>

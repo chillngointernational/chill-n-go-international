@@ -165,38 +165,97 @@ serve(async (req) => {
         return new Response(JSON.stringify({ error: "No email found" }), { status: 400 });
       }
 
-      // The wizard must have created the profile before payment.
-      // We no longer create profiles with fabricated data here.
-      const { data: existing } = await supabase
+      let { data: existing } = await supabase
         .from("identity_profiles")
         .select("user_id, ref_code, account_type, referred_by")
         .eq("email", email)
-        .single();
+        .maybeSingle();
 
       if (!existing || !existing.user_id) {
-        console.error(
-          "[cng-stripe-webhook] checkout.session.completed but no identity_profile found for email=" +
-          email +
-          ". Expected the wizard to create the profile before payment. Event id=" +
-          event.id +
-          ". Returning 200 to prevent retries; this event will NOT be processed."
-        );
-        return new Response(
-          JSON.stringify({ received: true, error: "no_profile", email }),
-          { status: 200 }
-        );
-      }
+        // Payment-first flow: profile is created on the fly from this webhook.
+        const refCodeFromMetadata = session.metadata?.ref_code;
+        let referredBy = null;
+        if (refCodeFromMetadata) {
+          const { data: referrer } = await supabase
+            .from("identity_profiles")
+            .select("user_id")
+            .eq("ref_code", refCodeFromMetadata)
+            .eq("payment_status", "active")
+            .maybeSingle();
+          referredBy = referrer?.user_id || null;
+        }
 
-      await supabase
-        .from("identity_profiles")
-        .update({
-          payment_status: "active",
-          account_type: "member",
-          ref_code: existing.ref_code || generateRefCode(),
-          stripe_customer_id: customerId,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("user_id", existing.user_id);
+        const { data: authData, error: authError } =
+          await supabase.auth.admin.createUser({
+            email,
+            email_confirm: true,
+          });
+
+        let authUserId = authData?.user?.id || null;
+
+        if (!authUserId) {
+          // Orphan auth.users from a prior failed attempt: look up and reuse.
+          const { data: list } = await supabase.auth.admin.listUsers({
+            page: 1,
+            perPage: 1000,
+          });
+          const lowered = email.toLowerCase();
+          authUserId =
+            list?.users?.find((u) => u.email?.toLowerCase() === lowered)?.id ||
+            null;
+        }
+
+        if (!authUserId) {
+          console.error("[cng-stripe-webhook] failed to create or find auth user", {
+            email,
+            event_id: event.id,
+            authError,
+          });
+          return new Response(
+            JSON.stringify({ received: true, error: "auth_user_unavailable", email }),
+            { status: 200 }
+          );
+        }
+
+        const { data: newProfile, error: insertError } = await supabase
+          .from("identity_profiles")
+          .insert({
+            user_id: authUserId,
+            email,
+            ref_code: generateRefCode(),
+            referred_by: referredBy,
+            payment_status: "active",
+            account_type: "member",
+            stripe_customer_id: customerId,
+          })
+          .select("user_id, ref_code, account_type, referred_by")
+          .single();
+
+        if (insertError || !newProfile) {
+          console.error("[cng-stripe-webhook] identity_profiles insert failed", {
+            email,
+            event_id: event.id,
+            insertError,
+          });
+          return new Response(
+            JSON.stringify({ received: true, error: "profile_insert_failed", email }),
+            { status: 200 }
+          );
+        }
+
+        existing = newProfile;
+      } else {
+        await supabase
+          .from("identity_profiles")
+          .update({
+            payment_status: "active",
+            account_type: "member",
+            ref_code: existing.ref_code || generateRefCode(),
+            stripe_customer_id: customerId,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", existing.user_id);
+      }
 
       const { data: existingRole } = await supabase
         .from("platform_roles")

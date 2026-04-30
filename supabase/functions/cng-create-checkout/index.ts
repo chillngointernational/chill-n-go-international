@@ -42,30 +42,22 @@ serve(async (req) => {
       });
     }
 
-    // Validate the wizard already created the profile with payment_status='pending'
-    const { data: profile } = await supabase
+    if (!ref_code) {
+      return new Response(
+        JSON.stringify({ error: "ref_code is required" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const { data: referrer } = await supabase
       .from("identity_profiles")
       .select("user_id, payment_status")
-      .eq("email", email)
+      .eq("ref_code", ref_code)
       .maybeSingle();
 
-    if (!profile) {
+    if (!referrer || referrer.payment_status !== "active") {
       return new Response(
-        JSON.stringify({ error: "No registration found. Please complete the wizard first." }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    if (profile.payment_status === "active") {
-      return new Response(
-        JSON.stringify({ error: "This account is already active." }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    if (profile.payment_status !== "pending") {
-      return new Response(
-        JSON.stringify({ error: "Invalid registration state." }),
+        JSON.stringify({ error: "Invalid or inactive referral code" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -77,10 +69,13 @@ serve(async (req) => {
     params.append("line_items[0][quantity]", "1");
     params.append("subscription_data[trial_period_days]", "30");
     params.append("subscription_data[metadata][ref_code]", ref_code || "");
-    params.append("success_url", success_url);
+    const sep = success_url.includes('?') ? '&' : '?';
+    const successUrlWithSession = success_url + sep + 'session_id={CHECKOUT_SESSION_ID}';
+    params.append("success_url", successUrlWithSession);
     params.append("cancel_url", cancel_url);
     params.append("customer_email", email);
     params.append("metadata[ref_code]", ref_code || "");
+    params.append("metadata[email]", email || "");
     params.append("line_items[1][price_data][currency]", "usd");
     params.append("line_items[1][price_data][product_data][name]", "CNG+ Activacion (primer mes)");
     params.append("line_items[1][price_data][unit_amount]", "1000");
