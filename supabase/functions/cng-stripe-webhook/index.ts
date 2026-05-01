@@ -217,6 +217,19 @@ serve(async (req) => {
           );
         }
 
+        if (referredBy && referredBy === authUserId) {
+          console.error("[cng-stripe-webhook] self-referral attempt blocked", {
+            email,
+            event_id: event.id,
+            ref_code: refCodeFromMetadata,
+            authUserId,
+          });
+          return new Response(
+            JSON.stringify({ received: true, error: "self_referral", email }),
+            { status: 200 }
+          );
+        }
+
         const { data: newProfile, error: insertError } = await supabase
           .from("identity_profiles")
           .insert({
