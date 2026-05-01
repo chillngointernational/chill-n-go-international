@@ -31,96 +31,97 @@ function generateRefCode(): string {
 }
 
 async function creditChilliums(
-  userId: string,
-  amount: number,
+  profileId: string,
+  centiAmount: number,
   type: string,
   description: string,
-  sourceUserId: string | null,
+  sourceProfileId: string | null,
   referralLevel: number | null,
   sourceTransactionId: string | null
 ) {
-  const { data: profile } = await supabase
-    .from("identity_profiles")
-    .select("chilliums_balance, chilliums_total_earned")
-    .eq("user_id", userId)
-    .single();
-
-  if (!profile) {
-    console.error("creditChilliums: profile not found for user " + userId);
-    return;
-  }
-
-  const newBalance = (profile.chilliums_balance || 0) + amount;
-  const newTotalEarned = (profile.chilliums_total_earned || 0) + amount;
-
-  await supabase.from("chilliums_ledger").insert({
-    user_id: userId,
-    type,
-    amount,
-    balance_after: newBalance,
-    source_user_id: sourceUserId,
-    source_transaction_id: sourceTransactionId,
-    referral_level: referralLevel,
-    description,
+  const { error } = await supabase.rpc("apply_chilliums", {
+    p_user_id: profileId,
+    p_amount: centiAmount,
+    p_type: type,
+    p_description: description,
+    p_source_user_id: sourceProfileId,
+    p_referral_level: referralLevel,
+    p_source_transaction_id: sourceTransactionId,
   });
 
-  await supabase
-    .from("identity_profiles")
-    .update({
-      chilliums_balance: newBalance,
-      chilliums_total_earned: newTotalEarned,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("user_id", userId);
+  if (error) {
+    console.error("apply_chilliums RPC failed", {
+      profileId,
+      centiAmount,
+      type,
+      error,
+    });
+  }
 }
 
 async function distributeChilliums(
-  memberId: string,
+  memberAuthUserId: string,
   memberEmail: string,
-  baseAmount: number,
+  baseAmountDollars: number,
   description: string,
   transactionId: string | null
 ) {
-  // Level 0: the paying member (50%)
-  const l0Amount = baseAmount * SPLIT_L1;
-  await creditChilliums(
-    memberId, l0Amount, "earn_referral_level_0",
-    description + " - cashback propio",
-    memberId, 0, transactionId
-  );
-
   const { data: member } = await supabase
     .from("identity_profiles")
-    .select("referred_by")
-    .eq("user_id", memberId)
+    .select("id, referred_by")
+    .eq("user_id", memberAuthUserId)
     .single();
 
-  if (!member?.referred_by) return;
+  if (!member) {
+    console.error("distributeChilliums: member profile not found", { memberAuthUserId });
+    return;
+  }
 
-  // Level 1: direct referrer (35%)
-  const l1UserId = member.referred_by;
-  const l1Amount = baseAmount * SPLIT_L2;
+  const memberProfileId = member.id;
+  const baseCenti = Math.floor(baseAmountDollars * 100);
+
+  // Level 0: the paying member (50%)
+  const l0Centi = Math.floor(baseCenti * SPLIT_L1);
   await creditChilliums(
-    l1UserId, l1Amount, "earn_referral_level_1",
-    description + " - referido nivel 1: " + memberEmail,
-    memberId, 1, transactionId
+    memberProfileId, l0Centi, "cashback_direct",
+    description + " - cashback propio",
+    memberProfileId, null, transactionId
   );
 
-  const { data: l1Member } = await supabase
+  if (!member.referred_by) return;
+
+  // Level 1: direct referrer (35%)
+  const { data: l1Profile } = await supabase
     .from("identity_profiles")
-    .select("referred_by")
-    .eq("user_id", l1UserId)
+    .select("id, referred_by")
+    .eq("user_id", member.referred_by)
     .single();
 
-  if (!l1Member?.referred_by) return;
+  if (!l1Profile) return;
+
+  const l1Centi = Math.floor(baseCenti * SPLIT_L2);
+  await creditChilliums(
+    l1Profile.id, l1Centi, "cashback_network",
+    description + " - referido nivel 1: " + memberEmail,
+    memberProfileId, 1, transactionId
+  );
+
+  if (!l1Profile.referred_by) return;
 
   // Level 2: grandparent referrer (15%)
-  const l2UserId = l1Member.referred_by;
-  const l2Amount = baseAmount * SPLIT_L3;
+  const { data: l2Profile } = await supabase
+    .from("identity_profiles")
+    .select("id")
+    .eq("user_id", l1Profile.referred_by)
+    .single();
+
+  if (!l2Profile) return;
+
+  const l2Centi = Math.floor(baseCenti * SPLIT_L3);
   await creditChilliums(
-    l2UserId, l2Amount, "earn_referral_level_2",
+    l2Profile.id, l2Centi, "cashback_network",
     description + " - referido nivel 2: " + memberEmail,
-    memberId, 2, transactionId
+    memberProfileId, 2, transactionId
   );
 }
 
