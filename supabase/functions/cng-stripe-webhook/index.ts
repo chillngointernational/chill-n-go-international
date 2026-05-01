@@ -217,12 +217,14 @@ serve(async (req) => {
           );
         }
 
-        if (referredBy && referredBy === authUserId) {
+        if (referredBy === authUserId || existing?.referred_by === authUserId) {
           console.error("[cng-stripe-webhook] self-referral attempt blocked", {
             email,
             event_id: event.id,
             ref_code: refCodeFromMetadata,
             authUserId,
+            metadata_ref: referredBy,
+            orphan_ref: existing?.referred_by ?? null,
           });
           return new Response(
             JSON.stringify({ received: true, error: "self_referral", email }),
@@ -230,33 +232,69 @@ serve(async (req) => {
           );
         }
 
-        const { data: newProfile, error: insertError } = await supabase
-          .from("identity_profiles")
-          .insert({
-            user_id: authUserId,
-            email,
-            ref_code: generateRefCode(),
-            referred_by: referredBy,
-            payment_status: "active",
-            account_type: "member",
-            stripe_customer_id: customerId,
-          })
-          .select("user_id, ref_code, account_type, referred_by")
-          .single();
+        let resolvedProfile;
+        if (existing) {
+          // Orphan profile (email exists but user_id is null): UPDATE link
+          // instead of INSERT to avoid violating the unique email constraint.
+          const { data: updated, error: updateErr } = await supabase
+            .from("identity_profiles")
+            .update({
+              user_id: authUserId,
+              ref_code: existing.ref_code || generateRefCode(),
+              referred_by: existing.referred_by || referredBy,
+              payment_status: "active",
+              account_type: "member",
+              stripe_customer_id: customerId,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("email", email)
+            .select("user_id, ref_code, account_type, referred_by")
+            .single();
 
-        if (insertError || !newProfile) {
-          console.error("[cng-stripe-webhook] identity_profiles insert failed", {
-            email,
-            event_id: event.id,
-            insertError,
-          });
-          return new Response(
-            JSON.stringify({ received: true, error: "profile_insert_failed", email }),
-            { status: 200 }
-          );
+          if (updateErr || !updated) {
+            console.error("[cng-stripe-webhook] orphan profile UPDATE failed", {
+              email,
+              event_id: event.id,
+              updateErr,
+            });
+            return new Response(
+              JSON.stringify({ received: true, error: "profile_update_failed", email }),
+              { status: 200 }
+            );
+          }
+
+          resolvedProfile = updated;
+        } else {
+          const { data: newProfile, error: insertError } = await supabase
+            .from("identity_profiles")
+            .insert({
+              user_id: authUserId,
+              email,
+              ref_code: generateRefCode(),
+              referred_by: referredBy,
+              payment_status: "active",
+              account_type: "member",
+              stripe_customer_id: customerId,
+            })
+            .select("user_id, ref_code, account_type, referred_by")
+            .single();
+
+          if (insertError || !newProfile) {
+            console.error("[cng-stripe-webhook] identity_profiles insert failed", {
+              email,
+              event_id: event.id,
+              insertError,
+            });
+            return new Response(
+              JSON.stringify({ received: true, error: "profile_insert_failed", email }),
+              { status: 200 }
+            );
+          }
+
+          resolvedProfile = newProfile;
         }
 
-        existing = newProfile;
+        existing = resolvedProfile;
       } else {
         await supabase
           .from("identity_profiles")
