@@ -17,10 +17,6 @@ const STRIPE_FEE = 0.50;
 const CNG_FEE = 1.00;
 const DISTRIBUTABLE = MEMBERSHIP_PRICE - STRIPE_FEE - CNG_FEE;
 
-const SPLIT_L1 = 0.50;
-const SPLIT_L2 = 0.35;
-const SPLIT_L3 = 0.15;
-
 async function generateUniqueRefCode(): Promise<string> {
   const MAX_ATTEMPTS = 10;
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -37,102 +33,6 @@ async function generateUniqueRefCode(): Promise<string> {
     if (!collision) return code;
   }
   throw new Error("Failed to generate unique ref_code after " + MAX_ATTEMPTS + " attempts");
-}
-
-async function creditChilliums(
-  profileId: string,
-  centiAmount: number,
-  type: string,
-  description: string,
-  sourceProfileId: string | null,
-  referralLevel: number | null,
-  sourceTransactionId: string | null
-) {
-  const { error } = await supabase.rpc("apply_chilliums", {
-    p_user_id: profileId,
-    p_amount: centiAmount,
-    p_type: type,
-    p_description: description,
-    p_source_user_id: sourceProfileId,
-    p_referral_level: referralLevel,
-    p_source_transaction_id: sourceTransactionId,
-  });
-
-  if (error) {
-    console.error("apply_chilliums RPC failed", {
-      profileId,
-      centiAmount,
-      type,
-      error,
-    });
-    throw new Error(`apply_chilliums failed for ${profileId}: ${error.message}`);
-  }
-}
-
-async function distributeChilliums(
-  memberAuthUserId: string,
-  memberEmail: string,
-  baseAmountDollars: number,
-  description: string,
-  transactionId: string | null
-) {
-  const { data: member } = await supabase
-    .from("identity_profiles")
-    .select("id, referred_by")
-    .eq("user_id", memberAuthUserId)
-    .maybeSingle();
-
-  if (!member) {
-    console.error("distributeChilliums: member profile not found", { memberAuthUserId });
-    return;
-  }
-
-  const memberProfileId = member.id;
-  const baseCenti = Math.floor(baseAmountDollars * 100);
-
-  // Level 0: the paying member (50%)
-  const l0Centi = Math.floor(baseCenti * SPLIT_L1);
-  await creditChilliums(
-    memberProfileId, l0Centi, "cashback_direct",
-    description + " - cashback propio",
-    memberProfileId, null, transactionId
-  );
-
-  if (!member.referred_by) return;
-
-  // Level 1: direct referrer (35%)
-  const { data: l1Profile } = await supabase
-    .from("identity_profiles")
-    .select("id, referred_by")
-    .eq("user_id", member.referred_by)
-    .maybeSingle();
-
-  if (!l1Profile) return;
-
-  const l1Centi = Math.floor(baseCenti * SPLIT_L2);
-  await creditChilliums(
-    l1Profile.id, l1Centi, "cashback_network",
-    description + " - referido nivel 1: " + memberEmail,
-    memberProfileId, 1, transactionId
-  );
-
-  if (!l1Profile.referred_by) return;
-
-  // Level 2: grandparent referrer (15%)
-  const { data: l2Profile } = await supabase
-    .from("identity_profiles")
-    .select("id")
-    .eq("user_id", l1Profile.referred_by)
-    .maybeSingle();
-
-  if (!l2Profile) return;
-
-  const l2Centi = Math.floor(baseCenti * SPLIT_L3);
-  await creditChilliums(
-    l2Profile.id, l2Centi, "cashback_network",
-    description + " - referido nivel 2: " + memberEmail,
-    memberProfileId, 2, transactionId
-  );
 }
 
 serve(async (req) => {
@@ -380,42 +280,46 @@ serve(async (req) => {
         }
       }
 
-      const { data: txn } = await supabase
-        .from("transactions")
-        .insert({
-          user_id: existing.user_id,
-          lob: "cng_plus",
-          type: "subscription",
-          description: "Membresia CNG+ - activacion",
-          gross_amount: MEMBERSHIP_PRICE,
-          currency: "USD",
-          operating_cost: CNG_FEE,
-          net_profit: DISTRIBUTABLE,
-          status: "completed",
-          metadata: { stripe_event_id: event.id },
-        })
-        .select("id")
-        .single();
-
-      try {
-        await distributeChilliums(
-          existing.user_id, email, DISTRIBUTABLE,
-          "Membresia CNG+", txn?.id || null
-        );
-      } catch (distErr) {
-        if (txn?.id) {
-          const { error: delErr } = await supabase.from("transactions").delete().eq("id", txn.id);
-          if (delErr) {
-            console.error("[cng-stripe-webhook] CRITICAL: rollback of transactions failed", {
-              event_id: event.id, txn_id: txn.id, delErr,
-            });
+      // Resolve L1 and L2 profile IDs (RPC needs identity_profiles.id, not auth.users.id)
+      let l1ProfileId = null;
+      let l2ProfileId = null;
+      if (existing.referred_by) {
+        const { data: l1 } = await supabase
+          .from("identity_profiles")
+          .select("id, referred_by")
+          .eq("user_id", existing.referred_by)
+          .maybeSingle();
+        if (l1) {
+          l1ProfileId = l1.id;
+          if (l1.referred_by) {
+            const { data: l2 } = await supabase
+              .from("identity_profiles")
+              .select("id")
+              .eq("user_id", l1.referred_by)
+              .maybeSingle();
+            if (l2) l2ProfileId = l2.id;
           }
         }
-        console.error("[cng-stripe-webhook] distributeChilliums failed; rolled back for retry", {
-          event_id: event.id, txn_id: txn?.id, err: distErr.message,
+      }
+
+      // Atomic: INSERT transactions + 3× apply_chilliums in a single Postgres transaction
+      const { error: rpcErr } = await supabase.rpc("process_membership_payment", {
+        p_user_id: existing.user_id,
+        p_stripe_event_id: event.id,
+        p_base_centi: Math.floor(DISTRIBUTABLE * 100),
+        p_l1_profile_id: l1ProfileId,
+        p_l2_profile_id: l2ProfileId,
+        p_description: "Membresia CNG+ - activacion",
+      });
+
+      if (rpcErr) {
+        console.error("[cng-stripe-webhook] process_membership_payment failed", {
+          event_id: event.id,
+          user_id: existing.user_id,
+          rpcErr,
         });
         return new Response(
-          JSON.stringify({ error: "Chilliums distribution failed", code: "distribute_failed", event_id: event.id }),
+          JSON.stringify({ error: "Failed to process payment", code: "process_failed", event_id: event.id }),
           { status: 500 }
         );
       }
@@ -475,42 +379,46 @@ serve(async (req) => {
           })
           .eq("user_id", member.user_id);
 
-        const { data: txn } = await supabase
-          .from("transactions")
-          .insert({
-            user_id: member.user_id,
-            lob: "cng_plus",
-            type: "subscription",
-            description: "Membresia CNG+ - renovacion mensual",
-            gross_amount: MEMBERSHIP_PRICE,
-            currency: "USD",
-            operating_cost: CNG_FEE,
-            net_profit: DISTRIBUTABLE,
-            status: "completed",
-            metadata: { stripe_event_id: event.id },
-          })
-          .select("id")
-          .single();
-
-        try {
-          await distributeChilliums(
-            member.user_id, member.email, DISTRIBUTABLE,
-            "Renovacion CNG+", txn?.id || null
-          );
-        } catch (distErr) {
-          if (txn?.id) {
-            const { error: delErr } = await supabase.from("transactions").delete().eq("id", txn.id);
-            if (delErr) {
-              console.error("[cng-stripe-webhook] CRITICAL: rollback of renewal transactions failed", {
-                event_id: event.id, txn_id: txn.id, delErr,
-              });
+        // Resolve L1 and L2 profile IDs
+        let l1ProfileId = null;
+        let l2ProfileId = null;
+        if (member.referred_by) {
+          const { data: l1 } = await supabase
+            .from("identity_profiles")
+            .select("id, referred_by")
+            .eq("user_id", member.referred_by)
+            .maybeSingle();
+          if (l1) {
+            l1ProfileId = l1.id;
+            if (l1.referred_by) {
+              const { data: l2 } = await supabase
+                .from("identity_profiles")
+                .select("id")
+                .eq("user_id", l1.referred_by)
+                .maybeSingle();
+              if (l2) l2ProfileId = l2.id;
             }
           }
-          console.error("[cng-stripe-webhook] renewal distributeChilliums failed; rolled back for retry", {
-            event_id: event.id, txn_id: txn?.id, err: distErr.message,
+        }
+
+        // Atomic: INSERT transactions + 3× apply_chilliums in single Postgres tx
+        const { error: rpcErr } = await supabase.rpc("process_membership_payment", {
+          p_user_id: member.user_id,
+          p_stripe_event_id: event.id,
+          p_base_centi: Math.floor(DISTRIBUTABLE * 100),
+          p_l1_profile_id: l1ProfileId,
+          p_l2_profile_id: l2ProfileId,
+          p_description: "Renovacion CNG+",
+        });
+
+        if (rpcErr) {
+          console.error("[cng-stripe-webhook] renewal process_membership_payment failed", {
+            event_id: event.id,
+            user_id: member.user_id,
+            rpcErr,
           });
           return new Response(
-            JSON.stringify({ error: "Chilliums distribution failed", code: "distribute_failed", event_id: event.id }),
+            JSON.stringify({ error: "Failed to process renewal", code: "process_failed", event_id: event.id }),
             { status: 500 }
           );
         }
