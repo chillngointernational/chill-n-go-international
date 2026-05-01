@@ -71,11 +71,11 @@ serve(async (req) => {
 
     const { data: referrer } = await supabase
       .from("identity_profiles")
-      .select("user_id, payment_status")
+      .select("user_id, payment_status, registration_completed")
       .eq("ref_code", ref_code)
       .maybeSingle();
 
-    if (!referrer || referrer.payment_status !== "active") {
+    if (!referrer || referrer.payment_status !== "active" || !referrer.registration_completed) {
       return new Response(
         JSON.stringify({ error: "Invalid or inactive referral code", code: "invalid_ref_code" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }

@@ -161,7 +161,7 @@ serve(async (req) => {
 
       const session = event.data.object;
       const email = (session.customer_email || session.customer_details?.email)?.trim()?.toLowerCase();
-      const customerId = session.customer;
+      const customerId = typeof session.customer === "string" ? session.customer : null;
 
       if (!email) {
         return new Response(JSON.stringify({ error: "No email found on session", code: "no_email" }), { status: 400 });
@@ -183,6 +183,7 @@ serve(async (req) => {
             .select("user_id")
             .eq("ref_code", refCodeFromMetadata)
             .eq("payment_status", "active")
+            .eq("registration_completed", true)
             .maybeSingle();
           referredBy = referrer?.user_id || null;
         }

@@ -44,6 +44,20 @@ serve(async (req) => {
       const session = event.data.object;
       const email = session.metadata?.email;
       if (email) {
+        const { data: existing } = await supabase
+          .from("identity_profiles")
+          .select("identity_verification_status, stripe_verification_session_id")
+          .eq("email", email)
+          .maybeSingle();
+        if (
+          existing?.identity_verification_status === "verified" &&
+          existing?.stripe_verification_session_id === session.id
+        ) {
+          return new Response(
+            JSON.stringify({ received: true, status: "verified", duplicate: true }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
         const { data: updated, error: updErr } = await supabase
           .from("identity_profiles")
           .update({
@@ -71,6 +85,20 @@ serve(async (req) => {
       const session = event.data.object;
       const email = session.metadata?.email;
       if (email) {
+        const { data: existing } = await supabase
+          .from("identity_profiles")
+          .select("identity_verification_status, stripe_verification_session_id")
+          .eq("email", email)
+          .maybeSingle();
+        if (
+          existing?.identity_verification_status === "failed" &&
+          existing?.stripe_verification_session_id === session.id
+        ) {
+          return new Response(
+            JSON.stringify({ received: true, status: "failed", duplicate: true }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
         const { data: updated, error: updErr } = await supabase
           .from("identity_profiles")
           .update({

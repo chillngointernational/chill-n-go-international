@@ -161,7 +161,7 @@ export default function Welcome() {
       setError(t.avatarInvalidType)
       return
     }
-    if (file.size > 5 * 1024 * 1024) {
+    if (file.size > 5 * 1000 * 1000) {
       setError(t.avatarTooLarge)
       return
     }

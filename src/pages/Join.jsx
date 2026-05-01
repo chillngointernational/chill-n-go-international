@@ -430,6 +430,9 @@ export default function Join() {
           continue
         }
         setError(r.status === 404 ? t.paymentProcessing : mapErrorCode(data, t))
+        if (data?.code === 'registration_complete') {
+          setTimeout(() => navigate('/login'), 3000)
+        }
         return
       }
       if (!data?.hashed_token) {
