@@ -17,6 +17,32 @@ import StoreScreen from '../pages/app/StoreScreen'
 import StoreLocalScreen from '../pages/app/StoreLocalScreen'
 import NetworkScreen from '../pages/app/NetworkScreen'
 
+const STRIPE_PK = import.meta.env.VITE_STRIPE_PK
+
+function getKycLang() {
+    const browserLang = (navigator.language || '').toLowerCase()
+    return browserLang.startsWith('en') ? 'en' : 'es'
+}
+
+const KYC_LANG = {
+    es: {
+        title: 'Verificación de identidad falló',
+        message: 'Reintenta para acceder a todas las funciones.',
+        retryBtn: 'Reintentar verificación',
+        retrying: 'Iniciando...',
+        error: 'Error iniciando verificación: ',
+        keyMissing: 'Servicio de pagos no configurado. Contacta soporte.',
+    },
+    en: {
+        title: 'Identity verification failed',
+        message: 'Retry to unlock all features.',
+        retryBtn: 'Retry verification',
+        retrying: 'Starting...',
+        error: 'Error starting verification: ',
+        keyMissing: 'Payment service not configured. Contact support.',
+    },
+}
+
 const TABS = [
     { id: 'feed', icon: 'home', label: 'Feed' },
     { id: 'messages', icon: 'chat_bubble', label: 'Messages' },
@@ -32,8 +58,12 @@ export default function AppShell() {
     const navigate = useNavigate()
     const scrollRef = useRef(null)
     const isDesktop = useDesktop()
-    const { user } = useAuth()
+    const { user, member, fetchMember } = useAuth()
     const [unreadCount, setUnreadCount] = useState(0)
+    const [retryLoading, setRetryLoading] = useState(false)
+    const [retryError, setRetryError] = useState('')
+    const [retryLang] = useState(getKycLang)
+    const kt = KYC_LANG[retryLang]
 
     useEffect(() => {
         if (!user) return
@@ -50,6 +80,59 @@ export default function AppShell() {
         const interval = setInterval(fetchUnread, 5000)
         return () => clearInterval(interval)
     }, [user])
+
+    async function handleRetryKyc() {
+        if (!user?.email) return
+        if (!STRIPE_PK) {
+            setRetryError(kt.keyMissing)
+            return
+        }
+        setRetryLoading(true)
+        setRetryError('')
+        try {
+            const response = await fetch(
+                'https://jahnlhzbjcbmjnuzxsvj.supabase.co/functions/v1/cng-create-verification',
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: user.email,
+                        return_url: window.location.origin + '/app/feed',
+                    }),
+                }
+            )
+            const data = await response.json()
+            if (data.error) {
+                setRetryError(kt.error + data.error)
+                return
+            }
+            await supabase
+                .from('identity_profiles')
+                .update({
+                    stripe_verification_session_id: data.session_id,
+                    updated_at: new Date().toISOString(),
+                })
+                .eq('user_id', user.id)
+            const stripe = window.Stripe(STRIPE_PK)
+            const result = await stripe.verifyIdentity(data.client_secret)
+            if (result.error) {
+                setRetryError(result.error.message)
+                return
+            }
+            await supabase
+                .from('identity_profiles')
+                .update({
+                    identity_verification_status: 'processing',
+                    updated_at: new Date().toISOString(),
+                })
+                .eq('user_id', user.id)
+            if (fetchMember && user?.id) await fetchMember(user.id)
+        } catch (err) {
+            setRetryError(kt.error + err.message)
+        } finally {
+            setRetryLoading(false)
+        }
+    }
 
     // Parse current screen from URL
     const pathParts = location.pathname.replace('/app/', '').replace('/app', '').split('/')
@@ -100,6 +183,51 @@ export default function AppShell() {
             default: return <FeedScreen />
         }
     }
+
+    const kycBanner = (member?.identity_verification_status === 'failed') ? (
+        <div style={{
+            background: 'rgba(255,180,171,0.08)',
+            borderBottom: '1px solid rgba(255,180,171,0.25)',
+            padding: '10px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            fontFamily: FONT.body,
+        }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: C.error, marginBottom: 2 }}>
+                    {kt.title}
+                </div>
+                <div style={{ fontSize: 12, color: C.textDim }}>
+                    {kt.message}
+                </div>
+                {retryError && (
+                    <div style={{ fontSize: 11, color: C.errorBright, marginTop: 4 }}>
+                        {retryError}
+                    </div>
+                )}
+            </div>
+            <button
+                onClick={handleRetryKyc}
+                disabled={retryLoading}
+                style={{
+                    background: GRADIENT.primary,
+                    border: 'none',
+                    borderRadius: 8,
+                    padding: '8px 14px',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: '#fff',
+                    cursor: retryLoading ? 'wait' : 'pointer',
+                    fontFamily: FONT.body,
+                    flexShrink: 0,
+                    opacity: retryLoading ? 0.7 : 1,
+                }}
+            >
+                {retryLoading ? kt.retrying : kt.retryBtn}
+            </button>
+        </div>
+    ) : null
 
     if (isDesktop) {
         return (
@@ -199,6 +327,7 @@ export default function AppShell() {
                     overflowX: 'hidden',
                     paddingTop: isFs ? 0 : 8,
                 }}>
+                    {kycBanner}
                     {renderContent()}
                 </div>
             </div>
@@ -229,6 +358,7 @@ export default function AppShell() {
                     paddingBottom: showNav ? 96 : 0,
                 }}
             >
+                {kycBanner}
                 {renderContent()}
             </div>
 

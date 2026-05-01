@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSearchParams, useNavigate, Link } from 'react-router-dom'
 import { supabase, supabasePublic } from '../lib/supabase'
 import { C, FONT, GRADIENT } from '../stitch'
@@ -238,6 +238,7 @@ export default function Join() {
 
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
+  const redirectTimerRef = useRef(null)
   const urlRefCode = searchParams.get('ref')
   const paidParam = searchParams.get('paid')
   const emailParam = searchParams.get('email')
@@ -276,6 +277,13 @@ export default function Join() {
       setStep(3) // KYC
     }
   }, [paidParam, emailParam])
+
+  // Cleanup redirect timer on unmount
+  useEffect(() => {
+    return () => {
+      if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current)
+    }
+  }, [])
 
   // Fetch referrer when refCode is available
   useEffect(() => {
@@ -431,7 +439,8 @@ export default function Join() {
         }
         setError(r.status === 404 ? t.paymentProcessing : mapErrorCode(data, t))
         if (data?.code === 'registration_complete') {
-          setTimeout(() => navigate('/login'), 3000)
+          if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current)
+          redirectTimerRef.current = setTimeout(() => navigate('/login'), 3000)
         }
         return
       }

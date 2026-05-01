@@ -21,13 +21,22 @@ const SPLIT_L1 = 0.50;
 const SPLIT_L2 = 0.35;
 const SPLIT_L3 = 0.15;
 
-function generateRefCode(): string {
+async function generateUniqueRefCode(): Promise<string> {
+  const MAX_ATTEMPTS = 10;
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  let code = "CNG-";
-  for (let i = 0; i < 6; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    let code = "CNG-";
+    for (let i = 0; i < 6; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    const { data: collision } = await supabase
+      .from("identity_profiles")
+      .select("id")
+      .eq("ref_code", code)
+      .maybeSingle();
+    if (!collision) return code;
   }
-  return code;
+  throw new Error("Failed to generate unique ref_code after " + MAX_ATTEMPTS + " attempts");
 }
 
 async function creditChilliums(
@@ -243,7 +252,7 @@ serve(async (req) => {
             .from("identity_profiles")
             .update({
               user_id: authUserId,
-              ref_code: existing.ref_code || generateRefCode(),
+              ref_code: existing.ref_code || await generateUniqueRefCode(),
               referred_by: existing.referred_by || referredBy,
               payment_status: "active",
               account_type: "member",
@@ -273,7 +282,7 @@ serve(async (req) => {
             .insert({
               user_id: authUserId,
               email,
-              ref_code: generateRefCode(),
+              ref_code: await generateUniqueRefCode(),
               referred_by: referredBy,
               payment_status: "active",
               account_type: "member",
@@ -304,7 +313,7 @@ serve(async (req) => {
           .update({
             payment_status: "active",
             account_type: "member",
-            ref_code: existing.ref_code || generateRefCode(),
+            ref_code: existing.ref_code || await generateUniqueRefCode(),
             stripe_customer_id: customerId,
             updated_at: new Date().toISOString(),
           })

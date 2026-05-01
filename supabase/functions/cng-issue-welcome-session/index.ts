@@ -48,6 +48,13 @@ serve(async (req) => {
       });
     }
 
+    if (session.payment_status !== "paid" && session.payment_status !== "no_payment_required") {
+      return new Response(JSON.stringify({ error: "Payment not completed", code: "payment_not_completed" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const customerId = session.customer;
     if (!customerId || typeof customerId !== "string") {
       return new Response(JSON.stringify({ error: "No customer on checkout session", code: "no_customer" }), {
