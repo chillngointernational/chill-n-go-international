@@ -29,14 +29,14 @@ serve(async (req) => {
     const cancel_url = body.cancel_url;
 
     if (!success_url) {
-      return new Response(JSON.stringify({ error: "success_url is required" }), {
+      return new Response(JSON.stringify({ error: "success_url is required", code: "success_url_required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     if (!cancel_url) {
-      return new Response(JSON.stringify({ error: "cancel_url is required" }), {
+      return new Response(JSON.stringify({ error: "cancel_url is required", code: "cancel_url_required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -44,14 +44,14 @@ serve(async (req) => {
 
     if (!ref_code) {
       return new Response(
-        JSON.stringify({ error: "ref_code is required" }),
+        JSON.stringify({ error: "ref_code is required", code: "ref_code_required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return new Response(
-        JSON.stringify({ error: "Valid email is required" }),
+        JSON.stringify({ error: "Valid email is required", code: "invalid_email" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -64,7 +64,7 @@ serve(async (req) => {
 
     if (existing?.payment_status === "active") {
       return new Response(
-        JSON.stringify({ error: "Email already has an active CNG+ membership" }),
+        JSON.stringify({ error: "Email already has an active CNG+ membership", code: "active_account_exists" }),
         { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -77,7 +77,7 @@ serve(async (req) => {
 
     if (!referrer || referrer.payment_status !== "active") {
       return new Response(
-        JSON.stringify({ error: "Invalid or inactive referral code" }),
+        JSON.stringify({ error: "Invalid or inactive referral code", code: "invalid_ref_code" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -118,7 +118,7 @@ serve(async (req) => {
         ref_code,
         stripe_error: session.error,
       });
-      return new Response(JSON.stringify({ error: session.error.message }), {
+      return new Response(JSON.stringify({ error: session.error.message, code: "stripe_error" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -134,7 +134,7 @@ serve(async (req) => {
       ref_code,
       error,
     });
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: error.message, code: "internal_error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

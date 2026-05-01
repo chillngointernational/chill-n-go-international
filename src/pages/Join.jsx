@@ -49,6 +49,23 @@ function getDefaultLang() {
   return browserLang.startsWith('en') ? 'en' : 'es'
 }
 
+function mapErrorCode(data, t) {
+  const code = data?.code
+  switch (code) {
+    case 'invalid_email': return t.enterValidEmail
+    case 'active_account_exists': return t.alreadyActiveMembership
+    case 'invalid_ref_code': return t.invalidLink
+    case 'ref_code_required': return t.invalidLink
+    case 'payment_not_completed': return t.paymentProcessing
+    case 'profile_not_found': return t.paymentProcessing
+    case 'registration_complete': return t.registrationComplete
+    case 'no_customer': return t.invalidSession
+    case 'session_id_required': return t.invalidSession
+    case 'session_issue_failed': return t.paymentProcessing
+    default: return data?.error || 'Error'
+  }
+}
+
 const LANG = {
   es: {
     backToHome: '← Volver al inicio',
@@ -98,6 +115,12 @@ const LANG = {
     paymentError: 'Error al procesar el pago: ',
     invalidSession: 'Sesión inválida. Vuelve a iniciar el registro.',
     paymentProcessing: 'Aún estamos procesando tu pago. Intenta de nuevo en unos segundos.',
+    alreadyActiveMembership: 'Este email ya tiene una membresía CNG+ activa. Inicia sesión.',
+    registrationComplete: 'Tu cuenta ya está lista. Inicia sesión.',
+    stripeKeyMissing: 'Servicio de pagos no configurado. Contacta soporte.',
+    supportTitle: '¿Necesitas ayuda?',
+    supportMessage: 'Si el problema persiste, contáctanos. Tu pago está seguro y podemos ayudarte.',
+    supportButton: 'Contactar soporte',
 
     kycTitle: 'Verifica tu identidad',
     kycDescStart: 'Necesitamos verificar tu identidad con ',
@@ -171,6 +194,12 @@ const LANG = {
     paymentError: 'Error processing payment: ',
     invalidSession: 'Invalid session. Please start registration again.',
     paymentProcessing: 'We\'re still processing your payment. Please try again in a few seconds.',
+    alreadyActiveMembership: 'This email already has an active CNG+ membership. Please sign in.',
+    registrationComplete: 'Your account is ready. Please sign in.',
+    stripeKeyMissing: 'Payment service not configured. Contact support.',
+    supportTitle: 'Need help?',
+    supportMessage: 'If the problem persists, contact us. Your payment is safe and we can help.',
+    supportButton: 'Contact support',
 
     kycTitle: 'Verify your identity',
     kycDescStart: 'We need to verify your identity with ',
@@ -307,7 +336,7 @@ export default function Join() {
       })
       const data = await response.json()
       if (data.error) {
-        setError(data.error)
+        setError(mapErrorCode(data, t))
       } else if (data.url) {
         window.location.href = data.url
       }
@@ -348,7 +377,7 @@ export default function Join() {
         .eq('email', email)
 
       if (!STRIPE_PK) {
-        setError('Stripe key not configured')
+        setError(t.stripeKeyMissing)
         setLoading(false)
         return
       }
@@ -400,7 +429,7 @@ export default function Join() {
           await new Promise(res => setTimeout(res, RETRY_DELAYS[attempt]))
           continue
         }
-        setError(r.status === 404 ? t.paymentProcessing : (data.error || `HTTP ${r.status}`))
+        setError(r.status === 404 ? t.paymentProcessing : mapErrorCode(data, t))
         return
       }
       if (!data?.hashed_token) {
@@ -645,6 +674,19 @@ export default function Join() {
                 <div style={styles.kycNote}>
                   {t.kycSubmittedNote}
                 </div>
+
+                {error && (
+                  <>
+                    <div style={styles.error}>{error}</div>
+                    <div style={styles.supportBox}>
+                      <div style={styles.supportTitle}>{t.supportTitle}</div>
+                      <p style={styles.supportMessage}>{t.supportMessage}</p>
+                      <a href="mailto:support@chillngointernational.com" style={styles.supportButton}>
+                        {t.supportButton}
+                      </a>
+                    </div>
+                  </>
+                )}
 
                 <button onClick={goToWelcome} style={styles.button} disabled={loading}>
                   {loading ? t.processing : t.goToAccountBtn}
@@ -961,5 +1003,35 @@ const styles = {
     textDecoration: 'none',
     fontSize: 14,
     marginTop: 20,
+  },
+  supportBox: {
+    background: 'rgba(127,119,221,0.06)',
+    border: '1px solid rgba(127,119,221,0.2)',
+    borderRadius: 12,
+    padding: '16px',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  supportTitle: {
+    fontSize: 14,
+    fontWeight: 600,
+    color: C.text,
+    marginBottom: 6,
+  },
+  supportMessage: {
+    fontSize: 12,
+    color: C.onSurfaceVariant,
+    lineHeight: 1.5,
+    marginBottom: 12,
+  },
+  supportButton: {
+    display: 'inline-block',
+    background: 'rgba(127,119,221,0.1)',
+    border: '1px solid rgba(127,119,221,0.3)',
+    borderRadius: 8,
+    padding: '8px 16px',
+    fontSize: 13,
+    color: C.tertiary,
+    textDecoration: 'none',
   },
 }

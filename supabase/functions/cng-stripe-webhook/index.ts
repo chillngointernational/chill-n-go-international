@@ -130,12 +130,12 @@ serve(async (req) => {
   try {
     if (!stripe || !STRIPE_WEBHOOK_SECRET) {
       console.error("Webhook misconfigured: missing STRIPE_SECRET_KEY or STRIPE_WEBHOOK_SECRET");
-      return new Response(JSON.stringify({ error: "Server misconfigured" }), { status: 500 });
+      return new Response(JSON.stringify({ error: "Server misconfigured", code: "server_misconfigured" }), { status: 500 });
     }
 
     const signature = req.headers.get("stripe-signature");
     if (!signature) {
-      return new Response(JSON.stringify({ error: "Missing signature" }), { status: 400 });
+      return new Response(JSON.stringify({ error: "Missing signature", code: "missing_signature" }), { status: 400 });
     }
 
     const body = await req.text();
@@ -145,7 +145,7 @@ serve(async (req) => {
       event = await stripe.webhooks.constructEventAsync(body, signature, STRIPE_WEBHOOK_SECRET);
     } catch (_err) {
       console.error("Invalid webhook signature");
-      return new Response(JSON.stringify({ error: "Invalid signature" }), { status: 400 });
+      return new Response(JSON.stringify({ error: "Invalid signature", code: "invalid_signature" }), { status: 400 });
     }
 
     if (event.type === "checkout.session.completed") {
@@ -160,11 +160,11 @@ serve(async (req) => {
       }
 
       const session = event.data.object;
-      const email = session.customer_email || session.customer_details?.email;
+      const email = (session.customer_email || session.customer_details?.email)?.trim()?.toLowerCase();
       const customerId = session.customer;
 
       if (!email) {
-        return new Response(JSON.stringify({ error: "No email found" }), { status: 400 });
+        return new Response(JSON.stringify({ error: "No email found on session", code: "no_email" }), { status: 400 });
       }
 
       let { data: existing } = await supabase
@@ -214,7 +214,7 @@ serve(async (req) => {
             authError,
           });
           return new Response(
-            JSON.stringify({ received: true, error: "auth_user_unavailable", email }),
+            JSON.stringify({ received: true, error: "Could not create or find auth user", code: "auth_user_unavailable", email }),
             { status: 200 }
           );
         }
@@ -229,7 +229,7 @@ serve(async (req) => {
             orphan_ref: existing?.referred_by ?? null,
           });
           return new Response(
-            JSON.stringify({ received: true, error: "self_referral", email }),
+            JSON.stringify({ received: true, error: "Self-referral attempt blocked", code: "self_referral", email }),
             { status: 200 }
           );
         }
@@ -260,7 +260,7 @@ serve(async (req) => {
               updateErr,
             });
             return new Response(
-              JSON.stringify({ received: true, error: "profile_update_failed", email }),
+              JSON.stringify({ received: true, error: "Failed to update orphan profile", code: "profile_update_failed", email }),
               { status: 200 }
             );
           }
@@ -288,7 +288,7 @@ serve(async (req) => {
               insertError,
             });
             return new Response(
-              JSON.stringify({ received: true, error: "profile_insert_failed", email }),
+              JSON.stringify({ received: true, error: "Failed to insert profile", code: "profile_insert_failed", email }),
               { status: 200 }
             );
           }
@@ -405,7 +405,7 @@ serve(async (req) => {
           event_id: event.id, txn_id: txn?.id, err: distErr.message,
         });
         return new Response(
-          JSON.stringify({ error: "distribute_failed", event_id: event.id }),
+          JSON.stringify({ error: "Chilliums distribution failed", code: "distribute_failed", event_id: event.id }),
           { status: 500 }
         );
       }
@@ -500,7 +500,7 @@ serve(async (req) => {
             event_id: event.id, txn_id: txn?.id, err: distErr.message,
           });
           return new Response(
-            JSON.stringify({ error: "distribute_failed", event_id: event.id }),
+            JSON.stringify({ error: "Chilliums distribution failed", code: "distribute_failed", event_id: event.id }),
             { status: 500 }
           );
         }
@@ -513,6 +513,6 @@ serve(async (req) => {
 
   } catch (error) {
     console.error("Webhook error:", error);
-    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+    return new Response(JSON.stringify({ error: error.message, code: "internal_error" }), { status: 500 });
   }
 });

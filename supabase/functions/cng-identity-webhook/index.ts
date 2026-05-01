@@ -18,12 +18,12 @@ serve(async (req) => {
       console.error(
         "[cng-identity-webhook] Misconfigured: missing STRIPE_SECRET_KEY or STRIPE_IDENTITY_WEBHOOK_SECRET"
       );
-      return new Response(JSON.stringify({ error: "Server misconfigured" }), { status: 500 });
+      return new Response(JSON.stringify({ error: "Server misconfigured", code: "server_misconfigured" }), { status: 500 });
     }
 
     const signature = req.headers.get("stripe-signature");
     if (!signature) {
-      return new Response(JSON.stringify({ error: "Missing signature" }), { status: 400 });
+      return new Response(JSON.stringify({ error: "Missing signature", code: "missing_signature" }), { status: 400 });
     }
 
     const body = await req.text();
@@ -37,7 +37,7 @@ serve(async (req) => {
       );
     } catch (_err) {
       console.error("[cng-identity-webhook] Invalid webhook signature");
-      return new Response(JSON.stringify({ error: "Invalid signature" }), { status: 400 });
+      return new Response(JSON.stringify({ error: "Invalid signature", code: "invalid_signature" }), { status: 400 });
     }
 
     if (event.type === "identity.verification_session.verified") {
@@ -100,7 +100,7 @@ serve(async (req) => {
   } catch (error) {
     console.error("[cng-identity-webhook] Unexpected error", { error });
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: error.message, code: "internal_error" }),
       { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }

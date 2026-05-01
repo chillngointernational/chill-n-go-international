@@ -24,7 +24,7 @@ serve(async (req) => {
   try {
     if (!stripe) {
       console.error("[cng-issue-welcome-session] Misconfigured: missing STRIPE_SECRET_KEY");
-      return new Response(JSON.stringify({ error: "Server misconfigured" }), {
+      return new Response(JSON.stringify({ error: "Server misconfigured", code: "server_misconfigured" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -34,7 +34,7 @@ serve(async (req) => {
     const session_id = body.session_id;
 
     if (!session_id) {
-      return new Response(JSON.stringify({ error: "session_id is required" }), {
+      return new Response(JSON.stringify({ error: "session_id is required", code: "session_id_required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -42,7 +42,7 @@ serve(async (req) => {
 
     const session = await stripe.checkout.sessions.retrieve(session_id);
     if (session.status !== "complete") {
-      return new Response(JSON.stringify({ error: "Payment not completed" }), {
+      return new Response(JSON.stringify({ error: "Payment not completed", code: "payment_not_completed" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -50,7 +50,7 @@ serve(async (req) => {
 
     const customerId = session.customer;
     if (!customerId || typeof customerId !== "string") {
-      return new Response(JSON.stringify({ error: "No customer on checkout session" }), {
+      return new Response(JSON.stringify({ error: "No customer on checkout session", code: "no_customer" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -65,14 +65,14 @@ serve(async (req) => {
 
     if (!profile) {
       console.error("[cng-issue-welcome-session] no profile for stripe_customer_id", { customerId, session_id });
-      return new Response(JSON.stringify({ error: "Profile not found" }), {
+      return new Response(JSON.stringify({ error: "Profile not found", code: "profile_not_found" }), {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     if (profile.registration_completed === true) {
-      return new Response(JSON.stringify({ error: "Registration already complete" }), {
+      return new Response(JSON.stringify({ error: "Registration already complete", code: "registration_complete" }), {
         status: 409,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -85,7 +85,7 @@ serve(async (req) => {
 
     if (error || !data?.properties?.hashed_token) {
       console.error("[cng-issue-welcome-session] generateLink failed", { email: profile.email, error });
-      return new Response(JSON.stringify({ error: "Failed to issue session" }), {
+      return new Response(JSON.stringify({ error: "Failed to issue session", code: "session_issue_failed" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -97,7 +97,7 @@ serve(async (req) => {
     );
   } catch (err) {
     console.error("[cng-issue-welcome-session] unexpected error", err);
-    return new Response(JSON.stringify({ error: err.message }), {
+    return new Response(JSON.stringify({ error: err.message, code: "internal_error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
