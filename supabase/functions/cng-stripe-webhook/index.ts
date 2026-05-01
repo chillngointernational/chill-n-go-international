@@ -315,7 +315,7 @@ serve(async (req) => {
         .eq("user_id", existing.user_id)
         .eq("platform", "cng_app")
         .eq("role", "member")
-        .single();
+        .maybeSingle();
 
       if (!existingRole) {
         await supabase.from("platform_roles").insert({

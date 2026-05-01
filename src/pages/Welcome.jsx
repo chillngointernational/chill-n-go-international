@@ -45,6 +45,9 @@ const LANG = {
     finishError: 'Error al guardar: ',
     avatarUploadError: 'Error subiendo la foto: ',
     profileNotFound: 'No encontramos tu cuenta. Por favor contacta soporte.',
+    sessionRequired: 'Tu sesión expiró. Vuelve a iniciar sesión.',
+    avatarInvalidType: 'El archivo debe ser una imagen.',
+    avatarTooLarge: 'La imagen no debe pesar más de 5 MB.',
   },
   en: {
     stepPassword: 'Password',
@@ -81,6 +84,9 @@ const LANG = {
     finishError: 'Error saving: ',
     avatarUploadError: 'Error uploading photo: ',
     profileNotFound: 'Account not found. Please contact support.',
+    sessionRequired: 'Your session expired. Please sign in again.',
+    avatarInvalidType: 'File must be an image.',
+    avatarTooLarge: 'Image must be smaller than 5 MB.',
   },
 }
 
@@ -151,6 +157,15 @@ export default function Welcome() {
   function handleAvatarPick(e) {
     const file = e.target.files?.[0]
     if (!file) return
+    if (!file.type.startsWith('image/')) {
+      setError(t.avatarInvalidType)
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError(t.avatarTooLarge)
+      return
+    }
+    setError('')
     if (avatarPreviewUrl) URL.revokeObjectURL(avatarPreviewUrl)
     setAvatarFile(file)
     setAvatarPreviewUrl(URL.createObjectURL(file))
@@ -161,7 +176,10 @@ export default function Welcome() {
     if (!acceptedTerms) return setError(t.termsRequired)
     if (!acceptedPrivacy) return setError(t.privacyRequired)
     if (!acceptedTruthful) return setError(t.truthfulRequired)
-    if (!user) return
+    if (!user) {
+      setError(t.sessionRequired)
+      return
+    }
 
     setLoading(true)
     try {

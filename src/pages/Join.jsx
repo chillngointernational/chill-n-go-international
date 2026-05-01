@@ -3,6 +3,8 @@ import { useSearchParams, useNavigate, Link } from 'react-router-dom'
 import { supabase, supabasePublic } from '../lib/supabase'
 import { C, FONT, GRADIENT } from '../stitch'
 
+const STRIPE_PK = import.meta.env.VITE_STRIPE_PK
+
 const REF_STORAGE_KEY = 'cng_ref_code'
 const REF_TTL_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
 
@@ -262,7 +264,7 @@ export default function Join() {
         .select('user_id, full_name, email, ref_code, avatar_url, created_at')
         .eq('ref_code', code)
         .eq('payment_status', 'active')
-        .single()
+        .maybeSingle()
       if (error || !data) {
         setInvalidRef(true)
       } else {
@@ -345,7 +347,12 @@ export default function Join() {
         })
         .eq('email', email)
 
-      const stripe = window.Stripe('pk_test_51Rvx4iClWFP3vllVGpXmK95SXNw6SGUhcObbEZIIG1Sl1hlh6iszofr1Xl2FLTpXWpz6yL1Pvt9Dma1OHhv6VVE800RZSbAarS')
+      if (!STRIPE_PK) {
+        setError('Stripe key not configured')
+        setLoading(false)
+        return
+      }
+      const stripe = window.Stripe(STRIPE_PK)
       const result = await stripe.verifyIdentity(data.client_secret)
 
       if (result.error) {

@@ -48,9 +48,9 @@ serve(async (req) => {
       });
     }
 
-    const email = session.customer_email || session.customer_details?.email;
-    if (!email) {
-      return new Response(JSON.stringify({ error: "No email on checkout session" }), {
+    const customerId = session.customer;
+    if (!customerId || typeof customerId !== "string") {
+      return new Response(JSON.stringify({ error: "No customer on checkout session" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -59,12 +59,12 @@ serve(async (req) => {
     // Replay guard: don't issue a session if the user already completed onboarding.
     const { data: profile } = await supabase
       .from("identity_profiles")
-      .select("registration_completed")
-      .eq("email", email)
+      .select("email, registration_completed")
+      .eq("stripe_customer_id", customerId)
       .maybeSingle();
 
     if (!profile) {
-      console.error("[cng-issue-welcome-session] no identity_profile for email", { email, session_id });
+      console.error("[cng-issue-welcome-session] no profile for stripe_customer_id", { customerId, session_id });
       return new Response(JSON.stringify({ error: "Profile not found" }), {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -80,11 +80,11 @@ serve(async (req) => {
 
     const { data, error } = await supabase.auth.admin.generateLink({
       type: "magiclink",
-      email,
+      email: profile.email,
     });
 
     if (error || !data?.properties?.hashed_token) {
-      console.error("[cng-issue-welcome-session] generateLink failed", { email, error });
+      console.error("[cng-issue-welcome-session] generateLink failed", { email: profile.email, error });
       return new Response(JSON.stringify({ error: "Failed to issue session" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -92,7 +92,7 @@ serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ hashed_token: data.properties.hashed_token, email }),
+      JSON.stringify({ hashed_token: data.properties.hashed_token, email: profile.email }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {

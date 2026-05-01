@@ -49,19 +49,24 @@ serve(async (req) => {
       );
     }
 
-    if (email) {
-      const { data: existing } = await supabase
-        .from("identity_profiles")
-        .select("payment_status")
-        .eq("email", email)
-        .maybeSingle();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return new Response(
+        JSON.stringify({ error: "Valid email is required" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
-      if (existing?.payment_status === "active") {
-        return new Response(
-          JSON.stringify({ error: "Email already has an active CNG+ membership" }),
-          { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
+    const { data: existing } = await supabase
+      .from("identity_profiles")
+      .select("payment_status")
+      .eq("email", email)
+      .maybeSingle();
+
+    if (existing?.payment_status === "active") {
+      return new Response(
+        JSON.stringify({ error: "Email already has an active CNG+ membership" }),
+        { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const { data: referrer } = await supabase

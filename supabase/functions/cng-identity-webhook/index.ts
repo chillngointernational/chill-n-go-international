@@ -44,7 +44,7 @@ serve(async (req) => {
       const session = event.data.object;
       const email = session.metadata?.email;
       if (email) {
-        await supabase
+        const { data: updated, error: updErr } = await supabase
           .from("identity_profiles")
           .update({
             identity_verification_status: "verified",
@@ -53,7 +53,13 @@ serve(async (req) => {
             last_kyc_error: null,
             updated_at: new Date().toISOString(),
           })
-          .eq("email", email);
+          .eq("email", email)
+          .select();
+        if (updErr || !updated || updated.length === 0) {
+          console.error("[cng-identity-webhook] verified UPDATE missed", {
+            email, event_id: event.id, rows: updated?.length ?? 0, updErr,
+          });
+        }
       }
       return new Response(
         JSON.stringify({ received: true, status: "verified" }),
@@ -65,7 +71,7 @@ serve(async (req) => {
       const session = event.data.object;
       const email = session.metadata?.email;
       if (email) {
-        await supabase
+        const { data: updated, error: updErr } = await supabase
           .from("identity_profiles")
           .update({
             identity_verification_status: "failed",
@@ -73,7 +79,13 @@ serve(async (req) => {
             last_kyc_error: session.last_error?.code || "unknown",
             updated_at: new Date().toISOString(),
           })
-          .eq("email", email);
+          .eq("email", email)
+          .select();
+        if (updErr || !updated || updated.length === 0) {
+          console.error("[cng-identity-webhook] requires_input UPDATE missed", {
+            email, event_id: event.id, rows: updated?.length ?? 0, updErr,
+          });
+        }
       }
       return new Response(
         JSON.stringify({ received: true, status: "failed" }),
