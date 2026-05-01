@@ -6,3 +6,6 @@ verify_jwt = false
 
 [functions.cng-issue-welcome-session]
 verify_jwt = false
+
+[functions.cng-create-checkout]
+verify_jwt = false
