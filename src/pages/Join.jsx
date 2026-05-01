@@ -95,6 +95,7 @@ const LANG = {
     stripeNote: 'Pago seguro con Stripe. Primer mes $10, después $7/mes. Cancela cuando quieras.',
     paymentError: 'Error al procesar el pago: ',
     invalidSession: 'Sesión inválida. Vuelve a iniciar el registro.',
+    paymentProcessing: 'Aún estamos procesando tu pago. Intenta de nuevo en unos segundos.',
 
     kycTitle: 'Verifica tu identidad',
     kycDescStart: 'Necesitamos verificar tu identidad con ',
@@ -167,6 +168,7 @@ const LANG = {
     stripeNote: 'Secure payment via Stripe. First month $10, then $7/mo. Cancel anytime.',
     paymentError: 'Error processing payment: ',
     invalidSession: 'Invalid session. Please start registration again.',
+    paymentProcessing: 'We\'re still processing your payment. Please try again in a few seconds.',
 
     kycTitle: 'Verify your identity',
     kycDescStart: 'We need to verify your identity with ',
@@ -376,15 +378,26 @@ export default function Join() {
     }
     setLoading(true)
     setError('')
+    const RETRY_DELAYS = [500, 1500, 3000, 5000]
     try {
-      const r = await fetch('https://jahnlhzbjcbmjnuzxsvj.supabase.co/functions/v1/cng-issue-welcome-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionIdParam }),
-      })
-      const data = await r.json()
-      if (data.error) {
-        setError(data.error)
+      let data = null
+      for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
+        const r = await fetch('https://jahnlhzbjcbmjnuzxsvj.supabase.co/functions/v1/cng-issue-welcome-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: sessionIdParam }),
+        })
+        data = await r.json()
+        if (data.hashed_token) break
+        if (r.status === 404 && attempt < RETRY_DELAYS.length) {
+          await new Promise(res => setTimeout(res, RETRY_DELAYS[attempt]))
+          continue
+        }
+        setError(r.status === 404 ? t.paymentProcessing : (data.error || `HTTP ${r.status}`))
+        return
+      }
+      if (!data?.hashed_token) {
+        setError(t.paymentProcessing)
         return
       }
       const { error: otpErr } = await supabase.auth.verifyOtp({
