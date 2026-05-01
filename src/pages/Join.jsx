@@ -592,7 +592,7 @@ export default function Join() {
 
             <h1 style={styles.title}>{t.startTitle}</h1>
 
-            <div style={styles.field}>
+            <div style={{ ...styles.field, marginBottom: 24 }}>
               <label style={styles.label}>{t.emailLabel}</label>
               <input
                 type="email"
@@ -611,8 +611,8 @@ export default function Join() {
                 <span style={styles.priceNumber}>10</span>
                 <span style={styles.pricePeriod}>{t.perMonth}</span>
               </div>
-              <div style={{ fontSize: 12, color: C.onSurfaceVariant, marginTop: 4, textAlign: 'center' }}>{t.firstMonthNote}</div>
-              <div style={{ fontSize: 12, color: C.primary, textAlign: 'center', marginBottom: 8 }}>{t.afterFirstMonth}</div>
+              <div style={{ fontSize: 12, color: C.onSurfaceVariant, marginTop: 4, textAlign: 'center', lineHeight: 1.6 }}>{t.firstMonthNote}</div>
+              <div style={{ fontSize: 12, color: C.primary, textAlign: 'center', marginBottom: 8, lineHeight: 1.6 }}>{t.afterFirstMonth}</div>
               <div style={styles.priceFeatures}>
                 <div style={styles.priceFeature}>{t.feature1}</div>
                 <div style={styles.priceFeature}>{t.feature2}</div>
@@ -910,6 +910,7 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
+    lineHeight: 1.6,
   },
   error: {
     background: 'rgba(224,49,49,0.1)',
