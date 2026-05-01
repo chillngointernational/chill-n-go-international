@@ -44,6 +44,7 @@ const LANG = {
     truthfulRequired: 'Debes confirmar la veracidad de tu información',
     finishError: 'Error al guardar: ',
     avatarUploadError: 'Error subiendo la foto: ',
+    profileNotFound: 'No encontramos tu cuenta. Por favor contacta soporte.',
   },
   en: {
     stepPassword: 'Password',
@@ -79,6 +80,7 @@ const LANG = {
     truthfulRequired: 'You must confirm the truthfulness of your information',
     finishError: 'Error saving: ',
     avatarUploadError: 'Error uploading photo: ',
+    profileNotFound: 'Account not found. Please contact support.',
   },
 }
 
@@ -188,13 +190,20 @@ export default function Welcome() {
       }
       if (avatarUrl) updatePayload.avatar_url = avatarUrl
 
-      const { error: updateErr } = await supabase
+      const { data: updated, error: updateErr } = await supabase
         .from('identity_profiles')
         .update(updatePayload)
         .eq('user_id', user.id)
+        .select()
 
       if (updateErr) {
         setError(t.finishError + updateErr.message)
+        setLoading(false)
+        return
+      }
+
+      if (!updated || updated.length === 0) {
+        setError(t.profileNotFound)
         setLoading(false)
         return
       }
