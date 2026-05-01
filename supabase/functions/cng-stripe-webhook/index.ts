@@ -56,6 +56,7 @@ async function creditChilliums(
       type,
       error,
     });
+    throw new Error(`apply_chilliums failed for ${profileId}: ${error.message}`);
   }
 }
 
@@ -70,7 +71,7 @@ async function distributeChilliums(
     .from("identity_profiles")
     .select("id, referred_by")
     .eq("user_id", memberAuthUserId)
-    .single();
+    .maybeSingle();
 
   if (!member) {
     console.error("distributeChilliums: member profile not found", { memberAuthUserId });
@@ -95,7 +96,7 @@ async function distributeChilliums(
     .from("identity_profiles")
     .select("id, referred_by")
     .eq("user_id", member.referred_by)
-    .single();
+    .maybeSingle();
 
   if (!l1Profile) return;
 
@@ -113,7 +114,7 @@ async function distributeChilliums(
     .from("identity_profiles")
     .select("id")
     .eq("user_id", l1Profile.referred_by)
-    .single();
+    .maybeSingle();
 
   if (!l2Profile) return;
 
@@ -386,10 +387,28 @@ serve(async (req) => {
         .select("id")
         .single();
 
-      await distributeChilliums(
-        existing.user_id, email, DISTRIBUTABLE,
-        "Membresia CNG+", txn?.id || null
-      );
+      try {
+        await distributeChilliums(
+          existing.user_id, email, DISTRIBUTABLE,
+          "Membresia CNG+", txn?.id || null
+        );
+      } catch (distErr) {
+        if (txn?.id) {
+          const { error: delErr } = await supabase.from("transactions").delete().eq("id", txn.id);
+          if (delErr) {
+            console.error("[cng-stripe-webhook] CRITICAL: rollback of transactions failed", {
+              event_id: event.id, txn_id: txn.id, delErr,
+            });
+          }
+        }
+        console.error("[cng-stripe-webhook] distributeChilliums failed; rolled back for retry", {
+          event_id: event.id, txn_id: txn?.id, err: distErr.message,
+        });
+        return new Response(
+          JSON.stringify({ error: "distribute_failed", event_id: event.id }),
+          { status: 500 }
+        );
+      }
 
       return new Response(JSON.stringify({ received: true }), { status: 200 });
     }
@@ -463,10 +482,28 @@ serve(async (req) => {
           .select("id")
           .single();
 
-        await distributeChilliums(
-          member.user_id, member.email, DISTRIBUTABLE,
-          "Renovacion CNG+", txn?.id || null
-        );
+        try {
+          await distributeChilliums(
+            member.user_id, member.email, DISTRIBUTABLE,
+            "Renovacion CNG+", txn?.id || null
+          );
+        } catch (distErr) {
+          if (txn?.id) {
+            const { error: delErr } = await supabase.from("transactions").delete().eq("id", txn.id);
+            if (delErr) {
+              console.error("[cng-stripe-webhook] CRITICAL: rollback of renewal transactions failed", {
+                event_id: event.id, txn_id: txn.id, delErr,
+              });
+            }
+          }
+          console.error("[cng-stripe-webhook] renewal distributeChilliums failed; rolled back for retry", {
+            event_id: event.id, txn_id: txn?.id, err: distErr.message,
+          });
+          return new Response(
+            JSON.stringify({ error: "distribute_failed", event_id: event.id }),
+            { status: 500 }
+          );
+        }
       }
 
       return new Response(JSON.stringify({ received: true }), { status: 200 });
