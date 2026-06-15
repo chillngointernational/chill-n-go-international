@@ -86,11 +86,10 @@ const LANG = {
     perMonth: '/mes',
     firstMonthNote: 'Primer mes $10 USD (incluye activación y verificación)',
     afterFirstMonth: 'Después $7 USD/mes',
-    feature1: '50% cashback en Chilliums',
-    feature2: '35% de compras de referidos',
-    feature3: '15% de compras nivel 2',
-    feature4: 'Acceso a todo el ecosistema',
-    feature5: '1 Chillium = 1 USD',
+    feature1: 'Cashback en Chilliums en cada compra',
+    feature2: 'Recompensas por las compras reales de tus referidos',
+    feature3: 'Acceso a todo el ecosistema',
+    feature4: 'Chilliums: saldo de recompensas para descuentos',
     processing: 'Procesando...',
     payBtn: 'Pagar $10 USD (primer mes)',
     stripeNote: 'Pago seguro con Stripe. Primer mes $10, después $7/mes. Cancela cuando quieras.',
@@ -157,11 +156,10 @@ const LANG = {
     perMonth: '/mo',
     firstMonthNote: 'First month $10 USD (includes activation and verification)',
     afterFirstMonth: 'Then $7 USD/mo',
-    feature1: '50% cashback in Chilliums',
-    feature2: '35% from referral purchases',
-    feature3: '15% from level 2 purchases',
-    feature4: 'Access to the entire ecosystem',
-    feature5: '1 Chillium = 1 USD',
+    feature1: 'Cashback in Chilliums on every purchase',
+    feature2: 'Rewards from your referrals\' real purchases',
+    feature3: 'Access to the entire ecosystem',
+    feature4: 'Chilliums: rewards balance for discounts',
     processing: 'Processing...',
     payBtn: 'Pay $10 USD (first month)',
     stripeNote: 'Secure payment via Stripe. First month $10, then $7/mo. Cancel anytime.',
@@ -594,7 +592,6 @@ export default function Join() {
                 <div style={styles.priceFeature}>{t.feature2}</div>
                 <div style={styles.priceFeature}>{t.feature3}</div>
                 <div style={styles.priceFeature}>{t.feature4}</div>
-                <div style={styles.priceFeature}>{t.feature5}</div>
               </div>
 
               {error && <div style={{ ...styles.error, marginTop: 16 }}>{error}</div>}

@@ -8,7 +8,6 @@ const TAGS = [
   { label: 'Nutrition', value: 'nutrition', color: '#B8956A', text: '#E7C092' },
   { label: 'Store', value: 'store', color: '#FF7F50', text: '#FF7F50' },
   { label: 'Real Estate', value: 'realestate', color: '#41379B', text: '#C5C0FF' },
-  { label: 'CandyStakes', value: 'candystakes', color: '#7F77DD', text: '#7F77DD' },
   { label: 'Online', value: 'online', color: '#8c84eb', text: '#C5C0FF' },
 ]
 

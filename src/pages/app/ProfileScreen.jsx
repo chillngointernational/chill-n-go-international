@@ -138,7 +138,7 @@ export default function ProfileScreen({ onNavigate }) {
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, padding: '4px 12px', background: 'rgba(49,53,60,0.5)', borderRadius: 99, width: 'fit-content' }}>
               <Icon name="auto_awesome" size={14} style={{ color: C.primary }} />
-              <span style={{ fontSize: 10, fontWeight: 700, color: C.primary }}>1 Chillium = 1 USD</span>
+              <span style={{ fontSize: 10, fontWeight: 700, color: C.primary }}>Saldo de recompensas</span>
             </div>
           </div>
         </div>
@@ -148,7 +148,7 @@ export default function ProfileScreen({ onNavigate }) {
       {refLink && (<div style={{ padding: '0 24px', marginTop: 24 }}>
         <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: 20 }}>
           <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8, fontFamily: FONT.headline }}>Tu link de referido</h3>
-          <p style={{ fontSize: 12, color: '#888', lineHeight: 1.5, marginBottom: 12 }}>Comparte para ganar .50/mes + 35% de compras en Chilliums.</p>
+          <p style={{ fontSize: 12, color: '#888', lineHeight: 1.5, marginBottom: 12 }}>Comparte para ganar recompensas en Chilliums sobre las compras reales de tus referidos.</p>
           <div style={{ display: 'flex', gap: 8 }}>
             <div style={{ flex: 1, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '10px 12px', fontSize: 11, color: '#5DCAA5', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{refLink}</div>
             <button onClick={() => navigator.clipboard.writeText(refLink)} style={{ background: 'rgba(29,158,117,0.15)', border: '1px solid rgba(29,158,117,0.3)', borderRadius: 8, padding: '10px 18px', fontSize: 12, color: '#5DCAA5', cursor: 'pointer', fontWeight: 600, fontFamily: FONT.body, whiteSpace: 'nowrap' }}>Copy</button>

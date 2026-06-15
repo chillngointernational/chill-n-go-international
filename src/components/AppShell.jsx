@@ -10,7 +10,6 @@ import MessagesScreen from '../pages/app/MessagesScreen'
 import ProfileScreen from '../pages/app/ProfileScreen'
 import ChatScreen from '../pages/app/ChatScreen'
 import TravelScreen from '../pages/app/TravelScreen'
-import CandyStakesScreen from '../pages/app/CandyStakesScreen'
 import RealEstateScreen from '../pages/app/RealEstateScreen'
 import NutritionScreen from '../pages/app/NutritionScreen'
 import StoreScreen from '../pages/app/StoreScreen'
@@ -26,7 +25,7 @@ const TABS = [
 ]
 
 const MAIN_SCREENS = ['feed', 'explore', 'create', 'messages', 'profile']
-const SUB_SCREENS = ['travel', 'candystakes', 'realestate', 'nutrition', 'store', 'store-local', 'network']
+const SUB_SCREENS = ['travel', 'realestate', 'nutrition', 'store', 'store-local', 'network']
 export default function AppShell() {
     const location = useLocation()
     const navigate = useNavigate()
@@ -91,7 +90,6 @@ export default function AppShell() {
             case 'messages': return <MessagesScreen onOpenChat={openChat} />
             case 'profile': return <ProfileScreen onNavigate={navSub} />
             case 'travel': return <TravelScreen onBack={goBack} />
-            case 'candystakes': return <CandyStakesScreen onBack={goBack} />
             case 'realestate': return <RealEstateScreen onBack={goBack} />
             case 'nutrition': return <NutritionScreen onBack={goBack} />
             case 'store': return <StoreScreen onBack={goBack} />
