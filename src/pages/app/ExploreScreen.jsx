@@ -63,19 +63,6 @@ const CATEGORIES = [
     subtitle: 'MX & US',
     img: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=400&q=80&auto=format&fit=crop',
   },
-  {
-    name: 'CandyStakes',
-    sub: 'candystakes',
-    value: 'candystakes',
-    color: '#c5c0ff',
-    border: 'rgba(197,192,255,0.25)',
-    badge: 'ROI 18–24%',
-    badgeColor: 'rgba(197,192,255,0.15)',
-    badgeBorder: 'rgba(197,192,255,0.3)',
-    badgeText: '#c5c0ff',
-    subtitle: '4 campañas activas',
-    img: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400&q=80&auto=format&fit=crop',
-  },
 ]
 
 export default function ExploreScreen({ onNavigate, isDesktop }) {

@@ -54,29 +54,8 @@ export default function NetworkScreen({ onBack, isDesktop }) {
             const profileMap = {}
             ;(profiles || []).forEach(p => { profileMap[p.user_id] = p })
 
-            // 4. Also find L2 referrals (people referred by my direct referrals)
-            const { data: l2Data } = await supabase
-                .from('referral_tree')
-                .select('*')
-                .in('referred_by', memberIds)
-                .order('created_at', { ascending: false })
-
-            let allL2MemberIds = []
-            if (l2Data && l2Data.length > 0) {
-                allL2MemberIds = l2Data.map(r => r.member_id).filter(Boolean)
-                const { data: l2Profiles } = await supabase
-                    .from('identity_profiles')
-                    .select('user_id, email, full_name, ref_code, payment_status, chilliums_balance, created_at, direct_referrals_count')
-                    .in('user_id', allL2MemberIds)
-
-                ;(l2Profiles || []).forEach(p => { profileMap[p.user_id] = p })
-            }
-
-            // 5. Build combined list with level info
-            const combined = [
-                ...treeData.map(r => ({ ...r, level: 1, referred_member: profileMap[r.member_id] || null })),
-                ...(l2Data || []).map(r => ({ ...r, level: 2, referred_member: profileMap[r.member_id] || null })),
-            ]
+            // 4. Build referral list — single level (only people you directly invited)
+            const combined = treeData.map(r => ({ ...r, level: 1, referred_member: profileMap[r.member_id] || null }))
 
             setReferrals(combined)
         } catch (e) {
@@ -110,22 +89,19 @@ export default function NetworkScreen({ onBack, isDesktop }) {
     }
 
     const l1 = referrals.filter(r => r.level === 1)
-    const l2 = referrals.filter(r => r.level === 2)
 
     const earnings = {
         cashback: ledger.filter(l => l.type === 'earn_referral_level_0').reduce((s, l) => s + Number(l.amount), 0),
-        referral_l1: ledger.filter(l => l.type === 'earn_referral_level_1' && l.referral_level === 1).reduce((s, l) => s + Number(l.amount), 0),
-        referral_l2: ledger.filter(l => l.type === 'earn_referral_level_2' && l.referral_level === 2).reduce((s, l) => s + Number(l.amount), 0),
+        referrals: ledger.filter(l => l.type === 'earn_referral_level_1').reduce((s, l) => s + Number(l.amount), 0),
         bonus: ledger.filter(l => l.type === 'bonus').reduce((s, l) => s + Number(l.amount), 0),
-        redeemed: member?.chilliums_total_spent || 0,
     }
 
     const typeLabels = {
         earn_referral_level_0: 'Cashback',
-        earn_referral_level_1: 'Referido L1',
-        earn_referral_level_2: 'Referido L2',
+        earn_referral_level_1: 'Referido',
+        earn_referral_level_2: 'Referido',
         bonus: 'Bono',
-        redemption: 'Redención',
+        redemption: 'Descuento aplicado',
         adjustment: 'Ajuste',
     }
 
@@ -164,7 +140,7 @@ export default function NetworkScreen({ onBack, isDesktop }) {
                     </div>
 
                     {/* Earnings breakdown */}
-                    <div style={{ ...s.earningsGrid, gridTemplateColumns: isDesktop ? 'repeat(4, 1fr)' : 'repeat(2, 1fr)' }}>
+                    <div style={{ ...s.earningsGrid, gridTemplateColumns: isDesktop ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)' }}>
                         <div style={s.earningItem}>
                             <div style={s.earningDot(C.primaryBright)} />
                             <div style={s.earningInfo}>
@@ -175,15 +151,8 @@ export default function NetworkScreen({ onBack, isDesktop }) {
                         <div style={s.earningItem}>
                             <div style={s.earningDot(C.tertiaryContainer)} />
                             <div style={s.earningInfo}>
-                                <span style={s.earningLabel}>Nivel 1</span>
-                                <span style={s.earningValue}>{formatChilliums(earnings.referral_l1)}</span>
-                            </div>
-                        </div>
-                        <div style={s.earningItem}>
-                            <div style={s.earningDot('#D85A30')} />
-                            <div style={s.earningInfo}>
-                                <span style={s.earningLabel}>Nivel 2</span>
-                                <span style={s.earningValue}>{formatChilliums(earnings.referral_l2)}</span>
+                                <span style={s.earningLabel}>Referidos</span>
+                                <span style={s.earningValue}>{formatChilliums(earnings.referrals)}</span>
                             </div>
                         </div>
                         <div style={s.earningItem}>
@@ -201,8 +170,7 @@ export default function NetworkScreen({ onBack, isDesktop }) {
                     <div style={s.refCardHeader}>
                         <h3 style={s.refCardTitle}>Tu link de referido</h3>
                         <div style={s.refStats}>
-                            <span style={s.refStatBadge(C.tertiaryContainer)}>{l1.length} nivel 1</span>
-                            <span style={s.refStatBadge('#D85A30')}>{l2.length} nivel 2</span>
+                            <span style={s.refStatBadge(C.tertiaryContainer)}>{l1.length} referidos</span>
                         </div>
                     </div>
                     {refLink ? (
@@ -249,7 +217,7 @@ export default function NetworkScreen({ onBack, isDesktop }) {
                                 <>
                                     <div style={s.treeLine} />
                                     <div style={s.treeLevelLabel}>
-                                        <span style={s.treeLevelBadge(C.tertiaryContainer)}>Nivel 1 — {l1.length} referidos</span>
+                                        <span style={s.treeLevelBadge(C.tertiaryContainer)}>Tus referidos — {l1.length}</span>
                                     </div>
                                     <div style={{ ...s.treeRow, ...(!isDesktop ? { gap: 8 } : {}) }}>
                                         {l1.map((ref) => (
@@ -274,33 +242,8 @@ export default function NetworkScreen({ onBack, isDesktop }) {
                                 </>
                             )}
 
-                            {/* Level 2 */}
-                            {l2.length > 0 && (
-                                <>
-                                    <div style={s.treeLine} />
-                                    <div style={s.treeLevelLabel}>
-                                        <span style={s.treeLevelBadge('#D85A30')}>Nivel 2 — {l2.length} referidos</span>
-                                    </div>
-                                    <div style={{ ...s.treeRow, ...(!isDesktop ? { gap: 8 } : {}) }}>
-                                        {l2.map((ref) => (
-                                            <div key={ref.id} style={s.treeNode('#D85A30', '#FAECE7', '#712B13')}>
-                                                <div style={s.treeNodeAvatar('#D85A30')}>
-                                                    {(ref.referred_member?.full_name || ref.referred_member?.email || '?')[0].toUpperCase()}
-                                                </div>
-                                                <div style={s.treeNodeName}>
-                                                    {ref.referred_member?.full_name || ref.referred_member?.email?.split('@')[0]}
-                                                </div>
-                                                <div style={s.treeNodeStatus(ref.referred_member?.payment_status)}>
-                                                    {ref.referred_member?.payment_status === 'active' ? 'Activo' : 'Pendiente'}
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </>
-                            )}
-
                             {/* Empty state */}
-                            {l1.length === 0 && l2.length === 0 && (
+                            {l1.length === 0 && (
                                 <div style={s.emptyState}>
                                     <div style={s.emptyIcon}>
                                         <svg width="60" height="60" viewBox="0 0 60 60" fill="none">
@@ -324,22 +267,14 @@ export default function NetworkScreen({ onBack, isDesktop }) {
                         </div>
 
                         {/* Network summary cards */}
-                        <div style={{ ...s.summaryGrid, gridTemplateColumns: isDesktop ? 'repeat(4, 1fr)' : 'repeat(2, 1fr)' }}>
+                        <div style={{ ...s.summaryGrid, gridTemplateColumns: isDesktop ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)' }}>
                             <div style={s.summaryCard}>
                                 <div style={s.summaryIcon(C.tertiaryContainer)}>
                                     <Icon name="group" size={20} style={{ color: C.tertiaryContainer }} />
                                 </div>
                                 <div style={s.summaryNumber}>{member?.direct_referrals_count || 0}</div>
                                 <div style={s.summaryLabel}>Referidos directos</div>
-                                <div style={s.summarySub}>$3.00/mes c/u</div>
-                            </div>
-                            <div style={s.summaryCard}>
-                                <div style={s.summaryIcon('#D85A30')}>
-                                    <Icon name="groups" size={20} style={{ color: '#D85A30' }} />
-                                </div>
-                                <div style={s.summaryNumber}>{l2.length}</div>
-                                <div style={s.summaryLabel}>Red extendida</div>
-                                <div style={s.summarySub}>$2.10/mes c/u</div>
+                                <div style={s.summarySub}>Sobre sus compras</div>
                             </div>
                             <div style={s.summaryCard}>
                                 <div style={s.summaryIcon('#EF9F27')}>

@@ -2,7 +2,7 @@
  * Formateo y helpers para Chilliums.
  *
  * Toda la persistencia de Chilliums vive en centi-chilliums (enteros):
- *   1 Chillium = 100 centi-chilliums = 1 USD
+ *   1 Chillium = 100 centi-chilliums (saldo de recompensas interno, sin valor en efectivo)
  *
  * El frontend SIEMPRE recibe centi-chilliums desde la DB y debe usar
  * formatChilliums() para convertir a display humano.

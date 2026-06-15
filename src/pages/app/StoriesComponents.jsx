@@ -444,7 +444,6 @@ export function CreateStory({ onClose, onPost, currentUserId }) {
         { id: 'nutrition', label: 'Nutrition', color: '#E09F3E' },
         { id: 'store', label: 'Store', color: '#E5484D' },
         { id: 'realestate', label: 'Real Estate', color: '#3B82F6' },
-        { id: 'candystakes', label: 'CandyStakes', color: C.tertiary || '#8c84eb' },
     ]
 
     const handleFileSelect = (e) => {

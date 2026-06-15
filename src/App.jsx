@@ -26,7 +26,6 @@ export default function App() {
             <Route path="messages" element={null} />
             <Route path="profile" element={null} />
             <Route path="travel" element={null} />
-            <Route path="candystakes" element={null} />
             <Route path="realestate" element={null} />
             <Route path="nutrition" element={null} />
             <Route path="store-local" element={null} />

@@ -194,7 +194,7 @@ export default function Dashboard() {
           <div style={styles.balanceAmount}>
             {formatChilliums(member?.chilliums_balance)}
           </div>
-          <div style={styles.balanceSub}>1 Chillium = 1 USD</div>
+          <div style={styles.balanceSub}>Saldo de recompensas</div>
         </div>
 
         {/* Fully-active features */}
@@ -226,7 +226,7 @@ export default function Dashboard() {
             <div style={styles.refCard}>
               <h3 style={styles.refTitle}>Tu link de referido</h3>
               <p style={styles.refDesc}>
-                Comparte este link para invitar personas a CNG+. Ganas $3.50/mes + 35% de sus compras en Chilliums.
+                Comparte este link para invitar personas a CNG+. Ganas recompensas en Chilliums sobre las compras reales de quienes invitas.
               </p>
               {refLink ? (
                 <div style={styles.refLinkBox}>
@@ -266,12 +266,7 @@ export default function Dashboard() {
               <div style={styles.networkCard}>
                 <div style={styles.networkNumber}>{member?.referrals_level1 || 0}</div>
                 <div style={styles.networkLabel}>Referidos directos</div>
-                <div style={styles.networkSub}>Nivel 1</div>
-              </div>
-              <div style={styles.networkCard}>
-                <div style={styles.networkNumber}>{member?.referrals_level2 || 0}</div>
-                <div style={styles.networkLabel}>Red extendida</div>
-                <div style={styles.networkSub}>Nivel 2</div>
+                <div style={styles.networkSub}>Sobre sus compras</div>
               </div>
               <div style={styles.networkCard}>
                 <div style={styles.networkNumber}>{formatChilliums(member?.chilliums_total_earned)}</div>
@@ -290,7 +285,6 @@ export default function Dashboard() {
                   { name: 'Real Estate', icon: 'domain', color: '#378ADD', url: 'https://chillngorealestate.com' },
                   { name: 'Store', icon: 'shopping_bag', color: '#D85A30', url: 'https://chillngostore.com' },
                   { name: 'Online', icon: 'language', color: '#7F77DD', url: 'https://chillngoonline.com' },
-                  { name: 'CandyStakes', icon: 'military_tech', color: '#D4537E', url: 'https://candystakes.com' },
                 ].map((lob) => (
                   <a
                     key={lob.name}
@@ -570,7 +564,7 @@ const styles = {
   // Network stats (fully_active)
   networkGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(3, 1fr)',
+    gridTemplateColumns: 'repeat(2, 1fr)',
     gap: 12,
     marginBottom: 32,
   },
