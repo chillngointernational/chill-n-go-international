@@ -4,6 +4,7 @@ import Landing from './pages/Landing'
 import Login from './pages/Login'
 import Join from './pages/Join'
 import ResetPassword from './pages/ResetPassword'
+import PostScreen from './pages/PostScreen'
 import Network from './pages/Network'
 import AppShell from './components/AppShell'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -17,6 +18,7 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/join" element={<Join />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/post/:id" element={<PostScreen />} />
           <Route path="/dashboard" element={<ProtectedRoute><Navigate to="/app/feed" replace /></ProtectedRoute>} />
           {/* Paso 1: el shell del marketplace es público; AppShell protege las pantallas de interacción */}
           <Route path="/app" element={<AppShell />}>
@@ -36,6 +38,8 @@ export default function App() {
             <Route path="*" element={<Navigate to="/app/feed" replace />} />
           </Route>
           <Route path="/network" element={<ProtectedRoute><Network /></ProtectedRoute>} />
+          {/* Catch-all raíz: cualquier URL desconocida va a la landing (nunca pantalla negra). */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>
