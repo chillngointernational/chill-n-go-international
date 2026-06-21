@@ -43,11 +43,14 @@ Deno.serve(async (req: Request) => {
   const d = ((await r.json().catch(() => ({})))?.data) || {}
   const status = d.status || null
   const result = (typeof d.result === 'number') ? d.result : null
-  const ine = d?.ine?.data?.status
-  const renapo = d?.renapo?.data?.status
+  // Verificamex anida el boolean de cada validación en .data.result.status
+  // (INE: "La credencial es válida"; RENAPO: "Búsqueda exitosa por curp").
+  const ine = d?.ine?.data?.result?.status
+  const renapo = d?.renapo?.data?.result?.status
   const ineStatus = (typeof ine === 'boolean') ? ine : null
   const renapoStatus = (typeof renapo === 'boolean') ? renapo : null
-  const curp = d?.renapo?.data?.curp || d?.ine?.data?.curp || d?.ine_reading?.curp || null
+  const curp = d?.renapo?.data?.curp || d?.renapo?.data?.result?.registros?.[0]?.curp
+    || d?.ine?.data?.curp || d?.ine_reading?.curp || null
 
   const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
 

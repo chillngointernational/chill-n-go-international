@@ -40,9 +40,12 @@ Deno.serve(async (req: Request) => {
 
   let body: Record<string, unknown> = {}
   try { body = await req.json() } catch { /* opcional */ }
-  const rawOrigin = (typeof body.return_url === 'string' && body.return_url) ? body.return_url : (req.headers.get('origin') || '')
-  const baseOrigin = rawOrigin.endsWith('/') ? rawOrigin.slice(0, -1) : rawOrigin
-  const redirectUrl = baseOrigin ? `${baseOrigin}/app/feed?idv=return` : 'https://chillngointernational.com/app/feed?idv=return'
+  // El redirect SIEMPRE va al dominio de producción (configurable vía SITE_URL),
+  // NUNCA al origin del request -> así no rebota a localhost cuando la sesión se
+  // crea desde un entorno de dev y se termina en el celular. (En dev, define el
+  // secret SITE_URL=http://localhost:5173 solo en tu entorno local.)
+  const SITE_URL = (Deno.env.get('SITE_URL') || 'https://chillngointernational.com').replace(/\/+$/, '')
+  const redirectUrl = `${SITE_URL}/app/feed?idv=return`
   const phoneRaw = (typeof body.phone_number === 'string') ? body.phone_number.replace(/\D/g, '') : ''
   const phoneNumber = phoneRaw.length === 10 ? phoneRaw : ''
 
