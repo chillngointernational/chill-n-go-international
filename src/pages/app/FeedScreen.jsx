@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { C, FONT, Icon, useDesktop } from '../../stitch'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
+import MembersOnly from '../../components/MembersOnly'
 
 /* ── Comments Bottom Sheet ─────────────────────────────────── */
 function CommentsPanel({ post, userId, onClose, onCountUpdate }) {
@@ -429,13 +430,14 @@ export default function FeedScreen() {
   const [commentPost, setCommentPost] = useState(null)
   const [toast, setToast] = useState(null)
   const [isMuted, setIsMuted] = useState(true)
+  const [membersOnly, setMembersOnly] = useState(null) // texto de acción, o null
 
   const fetchPosts = useCallback(async () => {
-    if (!user) { setLoading(false); return }
     try {
+      // Feed abierto: cualquiera (incluido anónimo) ve los posts activos.
       const { data: postsData, error } = await supabase
         .from('cng_posts')
-        .select('*, identity_profiles!cng_posts_member_id_fkey(user_id, full_name, ref_code, avatar_url)')
+        .select('*')
         .eq('is_active', true)
         .order('created_at', { ascending: false })
         .limit(20)
@@ -443,26 +445,36 @@ export default function FeedScreen() {
       if (error) throw error
       if (!postsData || postsData.length === 0) { setPosts([]); setLoading(false); return }
 
-      // Fetch user's likes, bookmarks, and follows
-      const postIds = postsData.map(p => p.id)
-      const authorIds = [...new Set(postsData.map(p => p.identity_profiles?.user_id).filter(Boolean))]
-      const [likesRes, bookmarksRes, followsRes] = await Promise.all([
-        supabase.from('cng_post_likes').select('post_id').eq('user_id', user.id).in('post_id', postIds),
-        supabase.from('cng_post_bookmarks').select('post_id').eq('user_id', user.id).in('post_id', postIds),
-        authorIds.length > 0
-          ? supabase.from('cng_follows').select('following_id').eq('follower_id', user.id).in('following_id', authorIds)
-          : { data: [] },
-      ])
+      // Autor: SOLO campos públicos seguros (vista public_profiles); funciona también para anónimos.
+      const authorIds = [...new Set(postsData.map(p => p.user_id).filter(Boolean))]
+      const { data: authors } = authorIds.length > 0
+        ? await supabase.from('public_profiles').select('user_id, full_name, ref_code, avatar_url').in('user_id', authorIds)
+        : { data: [] }
+      const authorMap = {}
+      ;(authors || []).forEach(a => { authorMap[a.user_id] = a })
 
-      const likedSet = new Set((likesRes.data || []).map(l => l.post_id))
-      const bookmarkedSet = new Set((bookmarksRes.data || []).map(b => b.post_id))
-      const followedSet = new Set((followsRes.data || []).map(f => f.following_id))
+      // Estado personalizado (like/guardado/seguido) SOLO para usuarios con sesión.
+      let likedSet = new Set(), bookmarkedSet = new Set(), followedSet = new Set()
+      if (user) {
+        const postIds = postsData.map(p => p.id)
+        const [likesRes, bookmarksRes, followsRes] = await Promise.all([
+          supabase.from('cng_post_likes').select('post_id').eq('user_id', user.id).in('post_id', postIds),
+          supabase.from('cng_post_bookmarks').select('post_id').eq('user_id', user.id).in('post_id', postIds),
+          authorIds.length > 0
+            ? supabase.from('cng_follows').select('following_id').eq('follower_id', user.id).in('following_id', authorIds)
+            : { data: [] },
+        ])
+        likedSet = new Set((likesRes.data || []).map(l => l.post_id))
+        bookmarkedSet = new Set((bookmarksRes.data || []).map(b => b.post_id))
+        followedSet = new Set((followsRes.data || []).map(f => f.following_id))
+      }
 
       setPosts(postsData.map(p => ({
         ...p,
+        identity_profiles: authorMap[p.user_id] || {},
         _liked: likedSet.has(p.id),
         _bookmarked: bookmarkedSet.has(p.id),
-        _followed: followedSet.has(p.identity_profiles?.user_id),
+        _followed: followedSet.has(p.user_id),
       })))
     } catch (e) {
       console.error('Error fetching posts:', e)
@@ -474,7 +486,7 @@ export default function FeedScreen() {
   useEffect(() => { fetchPosts() }, [fetchPosts])
 
   const handleLike = async (post) => {
-    if (!user) return
+    if (!user) { setMembersOnly('dar like'); return }
     const wasLiked = post._liked
     // Optimistic update
     setPosts(prev => prev.map(p => p.id === post.id ? {
@@ -503,7 +515,7 @@ export default function FeedScreen() {
   }
 
   const handleBookmark = async (post) => {
-    if (!user) return
+    if (!user) { setMembersOnly('guardar'); return }
     const wasBookmarked = post._bookmarked
     setPosts(prev => prev.map(p => p.id === post.id ? { ...p, _bookmarked: !wasBookmarked } : p))
 
@@ -522,7 +534,7 @@ export default function FeedScreen() {
   }
 
   const handleFollow = async (post) => {
-    if (!user) return
+    if (!user) { setMembersOnly('seguir'); return }
     const authorId = post.identity_profiles?.user_id
     if (!authorId || authorId === user.id) return
     const wasFollowed = post._followed
@@ -547,7 +559,10 @@ export default function FeedScreen() {
     }
   }
 
-  const handleComment = (post) => setCommentPost(post)
+  const handleComment = (post) => {
+    if (!user) { setMembersOnly('comentar'); return }
+    setCommentPost(post)
+  }
 
   const handleCommentCountUpdate = (postId, delta) => {
     setPosts(prev => prev.map(p => p.id === postId ? { ...p, comments_count: Math.max((p.comments_count || 0) + delta, 0) } : p))
@@ -565,9 +580,11 @@ export default function FeedScreen() {
         setToast('Link copiado')
         setTimeout(() => setToast(null), 2000)
       }
-      // increment shares_count
-      supabase.from('cng_posts').update({ shares_count: (post.shares_count || 0) + 1 }).eq('id', post.id).then()
-      setPosts(prev => prev.map(p => p.id === post.id ? { ...p, shares_count: (p.shares_count || 0) + 1 } : p))
+      // increment shares_count (solo miembros con sesión pueden escribir; anon comparte igual)
+      if (user) {
+        supabase.from('cng_posts').update({ shares_count: (post.shares_count || 0) + 1 }).eq('id', post.id).then()
+        setPosts(prev => prev.map(p => p.id === post.id ? { ...p, shares_count: (p.shares_count || 0) + 1 } : p))
+      }
     } catch (e) {
       // user cancelled share dialog — ignore
       if (e.name !== 'AbortError') console.error('Share error:', e)
@@ -632,6 +649,8 @@ export default function FeedScreen() {
       )}
 
       {toast && <ShareToast message={toast} />}
+
+      <MembersOnly open={!!membersOnly} action={membersOnly} onClose={() => setMembersOnly(null)} />
     </div>
   )
 }

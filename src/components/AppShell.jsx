@@ -99,23 +99,28 @@ export default function AppShell() {
     }
 
     const renderContent = () => {
-        const isMemberArea = isChat || !PUBLIC_SCREENS.includes(currentScreen)
+        // Aparador abierto: el FEED y el marketplace son visibles para ANÓNIMOS.
+        // publicForAnon = lo que un visitante sin cuenta puede ver (feed + marketplace).
+        // walledForPending = lo que un usuario logueado-sin-activar ve tras el muro de activación
+        //   (todo menos el marketplace; el feed SÍ los manda al muro para empujar la activación).
+        const publicForAnon = !isChat && (currentScreen === 'feed' || PUBLIC_SCREENS.includes(currentScreen))
+        const walledForPending = isChat || !PUBLIC_SCREENS.includes(currentScreen)
 
-        // Cargando sesión/perfil: evitar parpadeo del gate en áreas de miembro.
-        if (loading && isMemberArea) {
+        // Mientras carga la sesión, esperar solo en pantallas que dependen del estado de auth.
+        if (loading && walledForPending) {
             return (
                 <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.textFaint, fontFamily: FONT.body, fontSize: 14 }}>
                     Cargando...
                 </div>
             )
         }
-        // Paso 1: marketplace público; las pantallas de interacción requieren sesión.
-        if (!user && isMemberArea) {
+        // Anónimo: feed + marketplace abiertos; el resto (mensajería, perfil, crear, chat) pide sesión.
+        if (!user && !publicForAnon) {
             return <AuthGate onExplore={() => nav('explore')} />
         }
-        // Gating de membresía: logueado pero sin activar -> muro de activación
-        // (1° verificar identidad, 2° pagar). El marketplace (PUBLIC_SCREENS) sigue accesible.
-        if (user && member && !isFullyActive(member) && isMemberArea) {
+        // Logueado pero sin activar -> muro de activación (1° verificar, 2° pagar).
+        // El marketplace sigue accesible; el feed los lleva al muro (incentivo a activarse).
+        if (user && member && !isFullyActive(member) && walledForPending) {
             return <ActivateScreen />
         }
         if (isChat) {
