@@ -4,6 +4,7 @@ import { C, FONT, Icon } from '../../stitch'
 import { LOBS, fetchCategories, fetchListings } from '../../lib/marketplace'
 import ListingCard from '../../components/marketplace/ListingCard'
 import EmptyCatalog from '../../components/marketplace/EmptyCatalog'
+import TravelShowcase, { filterTravelCards } from '../../components/marketplace/TravelShowcase'
 import MembersOnly from '../../components/MembersOnly'
 import TopBar from '../../components/TopBar'
 
@@ -70,6 +71,9 @@ export default function MarketplaceScreen({ isDesktop }) {
     })
   }, [listings, activeLob, activeCat, q])
 
+  // Travel = escaparate fijo (Expedia), no DB. Filtra por el buscador de texto.
+  const travelCards = useMemo(() => filterTravelCards(q), [q])
+
   const columns = isDesktop ? 3 : 2
 
   return (
@@ -97,8 +101,8 @@ export default function MarketplaceScreen({ isDesktop }) {
           ))}
         </div>
 
-        {/* Chips de categoría (solo al elegir un LOB) */}
-        {activeLob !== 'all' && lobCats.length > 0 && (
+        {/* Chips de categoría (solo al elegir un LOB; Travel es escaparate, sin categorías) */}
+        {activeLob !== 'all' && activeLob !== 'travel' && lobCats.length > 0 && (
           <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'none' }}>
             <Chip label="Todas" small active={activeCat === 'all'} onClick={() => setActiveCat('all')} />
             {lobCats.map((c) => (
@@ -107,34 +111,50 @@ export default function MarketplaceScreen({ isDesktop }) {
           </div>
         )}
 
-        {/* Grid unificado / loading / vacío */}
-        {loading ? (
+        {/* Contenido */}
+        {activeLob === 'travel' ? (
+          // Travel = escaparate inspiracional (Expedia), no depende de la DB.
+          <TravelShowcase cards={travelCards} columns={columns} />
+        ) : loading ? (
           <div style={{ display: 'flex', justifyContent: 'center', padding: '52px 0' }}>
             <div style={{ width: 26, height: 26, border: `3px solid ${C.primary}33`, borderTopColor: C.primary, borderRadius: 99, animation: 'cngspin 0.8s linear infinite' }} />
             <style>{`@keyframes cngspin { to { transform: rotate(360deg) } }`}</style>
           </div>
         ) : failed ? (
           <EmptyCatalog accent={C.primary} icon="cloud_off" title="No pudimos cargar GoShop" subtitle="Revisa tu conexión e inténtalo de nuevo en un momento." />
-        ) : visible.length === 0 ? (
-          <EmptyCatalog
-            accent={C.primary}
-            icon="storefront"
-            title={q.trim() ? 'Sin resultados' : 'GoShop está por abrir'}
-            subtitle={q.trim()
-              ? 'No encontramos productos para tu búsqueda. Prueba con otra palabra.'
-              : 'Aún no hay productos publicados. Pronto los vendedores de CNG llenarán GoShop.'}
-          />
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${columns}, 1fr)`, gap: 12 }}>
-            {visible.map((l) => (
-              <ListingCard
-                key={l.id}
-                listing={l}
+          <>
+            {/* Grid de productos reales (hoy vacío) */}
+            {visible.length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: `repeat(${columns}, 1fr)`, gap: 12 }}>
+                {visible.map((l) => (
+                  <ListingCard
+                    key={l.id}
+                    listing={l}
+                    accent={C.primary}
+                    onOpen={(item) => setMembersOnly(item?.type === 'quote' ? 'contactar' : 'comprar')}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* En "Todos": sección Travel (único contenido vivo hoy) */}
+            {activeLob === 'all' && travelCards.length > 0 && (
+              <TravelShowcase cards={travelCards} columns={columns} />
+            )}
+
+            {/* Estado vacío: solo cuando no hay NADA que mostrar */}
+            {visible.length === 0 && !(activeLob === 'all' && travelCards.length > 0) && (
+              <EmptyCatalog
                 accent={C.primary}
-                onOpen={(item) => setMembersOnly(item?.type === 'quote' ? 'contactar' : 'comprar')}
+                icon="storefront"
+                title={q.trim() ? 'Sin resultados' : 'GoShop está por abrir'}
+                subtitle={q.trim()
+                  ? 'No encontramos productos para tu búsqueda. Prueba con otra palabra.'
+                  : 'Aún no hay productos publicados. Pronto los vendedores de CNG llenarán GoShop.'}
               />
-            ))}
-          </div>
+            )}
+          </>
         )}
 
       </div>
