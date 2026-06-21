@@ -327,7 +327,7 @@ export default function Landing() {
           </FadeIn>
           <FadeIn delay={0.15}>
             <Link
-              to="/join"
+              to="/app/explore"
               className="cng-cta"
               style={{
                 display: 'inline-block', padding: '15px 30px', borderRadius: 50,
@@ -336,10 +336,10 @@ export default function Landing() {
                 boxShadow: '0 12px 28px -18px rgba(15,46,38,0.7)',
               }}
             >
-              Empieza tu membresía — $7 USD/mes
+              Explorar el marketplace
             </Link>
             <div style={{ fontSize: 13, color: L.inkFaint, marginTop: 14 }}>
-              Se renueva cada mes. Cancela cuando quieras.
+              El acceso de miembros es por invitación (próximamente).
             </div>
           </FadeIn>
           <FadeIn delay={0.2} style={{ width: '100%', maxWidth: 520, marginTop: 48 }}>
@@ -481,7 +481,7 @@ export default function Landing() {
                 ))}
               </ul>
               <Link
-                to="/join"
+                to="/app/explore"
                 className="cng-cta"
                 style={{
                   display: 'block', textAlign: 'center', padding: '15px 24px', borderRadius: 50,
@@ -489,10 +489,10 @@ export default function Landing() {
                   color: '#fff', fontWeight: 600, fontSize: 15.5, textDecoration: 'none',
                 }}
               >
-                Empieza tu membresía — $7 USD/mes
+                Explorar el marketplace
               </Link>
               <div style={{ fontSize: 13, color: L.inkFaint, textAlign: 'center', marginTop: 14 }}>
-                Se renueva cada mes. Cancela cuando quieras.
+                El acceso de miembros es por invitación (próximamente).
               </div>
             </div>
           </FadeIn>

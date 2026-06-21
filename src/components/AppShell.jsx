@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
-import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, Link } from 'react-router-dom'
 import { C, FONT, Icon, GRADIENT, GLASS_NAV, useDesktop } from '../stitch'
 import FeedScreen from '../pages/app/FeedScreen'
 import ExploreScreen from '../pages/app/ExploreScreen'
@@ -15,6 +15,8 @@ import NutritionScreen from '../pages/app/NutritionScreen'
 import StoreScreen from '../pages/app/StoreScreen'
 import StoreLocalScreen from '../pages/app/StoreLocalScreen'
 import NetworkScreen from '../pages/app/NetworkScreen'
+import ActivateScreen from '../pages/app/ActivateScreen'
+import { isFullyActive } from '../utils/memberStatus'
 
 const TABS = [
     { id: 'feed', icon: 'home', label: 'Feed' },
@@ -26,12 +28,29 @@ const TABS = [
 
 const MAIN_SCREENS = ['feed', 'explore', 'create', 'messages', 'profile']
 const SUB_SCREENS = ['travel', 'realestate', 'nutrition', 'store', 'store-local', 'network']
+
+// Paso 1 (quitar Stripe): pantallas del marketplace abiertas a visitantes anónimos.
+// El resto (feed, mensajería, perfil, red, chat, crear) requiere sesión.
+const PUBLIC_SCREENS = ['explore', 'travel', 'realestate', 'nutrition', 'store', 'store-local']
+
+function AuthGate({ onExplore }) {
+    return (
+        <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 32, gap: 16, background: C.bg }}>
+            <Icon name="lock" size={40} style={{ color: C.primary }} />
+            <h2 style={{ fontFamily: FONT.headline, color: C.text, fontSize: 20, fontWeight: 800, margin: 0 }}>Inicia sesión para continuar</h2>
+            <p style={{ color: C.textFaint, fontSize: 14, maxWidth: 300, lineHeight: 1.5, margin: 0 }}>Esta sección es solo para miembros. Puedes explorar el marketplace sin cuenta.</p>
+            <Link to="/login" style={{ background: GRADIENT.primary, color: '#fff', textDecoration: 'none', borderRadius: 10, padding: '12px 28px', fontWeight: 700, fontSize: 14, fontFamily: FONT.body }}>Iniciar sesión</Link>
+            <button onClick={onExplore} style={{ background: 'transparent', border: '1px solid ' + C.textFaint, color: C.textDim, borderRadius: 10, padding: '11px 24px', fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: FONT.body }}>Explorar el marketplace</button>
+        </div>
+    )
+}
+
 export default function AppShell() {
     const location = useLocation()
     const navigate = useNavigate()
     const scrollRef = useRef(null)
     const isDesktop = useDesktop()
-    const { user } = useAuth()
+    const { user, member, loading } = useAuth()
     const [unreadCount, setUnreadCount] = useState(0)
 
     useEffect(() => {
@@ -80,6 +99,25 @@ export default function AppShell() {
     }
 
     const renderContent = () => {
+        const isMemberArea = isChat || !PUBLIC_SCREENS.includes(currentScreen)
+
+        // Cargando sesión/perfil: evitar parpadeo del gate en áreas de miembro.
+        if (loading && isMemberArea) {
+            return (
+                <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.textFaint, fontFamily: FONT.body, fontSize: 14 }}>
+                    Cargando...
+                </div>
+            )
+        }
+        // Paso 1: marketplace público; las pantallas de interacción requieren sesión.
+        if (!user && isMemberArea) {
+            return <AuthGate onExplore={() => nav('explore')} />
+        }
+        // Gating de membresía: logueado pero sin activar -> muro de activación
+        // (1° verificar identidad, 2° pagar). El marketplace (PUBLIC_SCREENS) sigue accesible.
+        if (user && member && !isFullyActive(member) && isMemberArea) {
+            return <ActivateScreen />
+        }
         if (isChat) {
             return <ChatScreen conversationId={chatConversationId} onBack={goBack} />
         }

@@ -43,21 +43,13 @@ export default function ProfileScreen({ onNavigate }) {
 
   async function handleSignOut() { await signOut(); navigate('/') }
 
-  async function handleManageBilling() {
-    try {
-      const r = await fetch('https://jahnlhzbjcbmjnuzxsvj.supabase.co/functions/v1/cng-create-portal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customer_email: user.email, return_url: window.location.origin + '/app' }) })
-      const d = await r.json()
-      if (d.url) window.location.href = d.url
-    } catch (e) { console.error(e) }
-  }
-
   async function handleAvatarUpload(e) {
     const file = e.target.files?.[0]
     if (!file || !user) return
     setUploadingAvatar(true)
     try {
       const path = `${user.id}/avatar-${Date.now()}.${file.name.split('.').pop()}`
-      const { error: uploadErr } = await supabase.storage.from('cng-media').upload(path, file, { contentType: file.type, upsert: true })
+      const { error: uploadErr } = await supabase.storage.from('cng-media').upload(path, file, { contentType: file.type, upsert: false })
       if (uploadErr) throw uploadErr
 
       const { data: urlData } = supabase.storage.from('cng-media').getPublicUrl(path)
@@ -119,7 +111,6 @@ export default function ProfileScreen({ onNavigate }) {
         </div>
 
         <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
-          <button onClick={handleManageBilling} style={{ flex: 1, height: 48, background: GRADIENT.primary, color: '#003827', borderRadius: 12, fontWeight: 700, fontSize: 14, border: 'none', cursor: 'pointer', fontFamily: FONT.body }}>Manage Plan</button>
           <button onClick={() => onNavigate('network')} style={{ flex: 1, height: 48, border: '2px solid ' + C.secondary, color: C.secondary, borderRadius: 12, fontWeight: 700, fontSize: 14, background: 'transparent', cursor: 'pointer', fontFamily: FONT.body }}>My Network</button>
         </div>
       </div>

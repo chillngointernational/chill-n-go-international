@@ -1,702 +1,232 @@
 import { useState, useEffect } from 'react'
-import { useSearchParams, Link } from 'react-router-dom'
-import { supabase, supabasePublic } from '../lib/supabase'
-import RegistrationWizard from '../components/RegistrationWizard'
+import { useSearchParams, useNavigate, Link } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
+import { supabase } from '../lib/supabase'
 import { C, FONT, GRADIENT } from '../stitch'
 
-const REF_STORAGE_KEY = 'cng_ref_code'
-const REF_TTL_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
+// Alta SOLO por invitación (link de referido reutilizable: /join?ref=CODE).
+// El registro público de Supabase Auth está APAGADO: NO se usa supabase.auth.signUp.
+// Las cuentas se crean en la edge function de administrador `cng-accept-invitation`.
 
-function readStoredRefCode() {
-  try {
-    const raw = localStorage.getItem(REF_STORAGE_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw)
-    if (!parsed.code || !parsed.timestamp) return null
-    if (Date.now() - parsed.timestamp > REF_TTL_MS) {
-      localStorage.removeItem(REF_STORAGE_KEY)
-      return null
-    }
-    return parsed
-  } catch {
-    return null
+async function callInvite(action, payload) {
+  const { data, error } = await supabase.functions.invoke('cng-accept-invitation', {
+    body: { action, ...payload },
+  })
+  if (error) {
+    let msg = 'No se pudo conectar con el servidor. Intenta de nuevo.'
+    let code = null
+    try {
+      const b = await error.context?.json?.()
+      if (b?.error) msg = b.error
+      if (b?.code) code = b.code
+    } catch { /* sin cuerpo legible */ }
+    return { ok: false, error: msg, code }
   }
-}
-
-function storeRefCode(code, referrerEmail) {
-  try {
-    localStorage.setItem(REF_STORAGE_KEY, JSON.stringify({
-      code,
-      timestamp: Date.now(),
-      referrer_email: referrerEmail,
-    }))
-  } catch {
-    // localStorage disabled — ignore
-  }
-}
-
-function clearStoredRefCode() {
-  try {
-    localStorage.removeItem(REF_STORAGE_KEY)
-  } catch {
-    // ignore
-  }
-}
-
-function getDefaultLang() {
-  const browserLang = (navigator.language || '').toLowerCase()
-  return browserLang.startsWith('en') ? 'en' : 'es'
-}
-
-const LANG = {
-  es: {
-    backToHome: '← Volver al inicio',
-    inviteAccess: 'Acceso por invitación',
-    inviteAccessDesc: 'Solo puedes unirte a CNG+ a través del link de un miembro activo. Si alguien te compartió un enlace, úsalo para acceder.',
-    verifyingInvite: 'Verificando invitación...',
-    invalidLink: 'Link inválido',
-    invalidLinkDesc: 'El código de referido no existe o la cuenta del referidor no está activa. Pide un link nuevo a quien te invitó.',
-
-    stepRegister: 'Registro',
-    stepPayment: 'Pago',
-    stepVerify: 'Verificar',
-
-    invitedTitle: 'Te han invitado a CNG+',
-    invitedSubtitle: 'Verifica que conoces a esta persona antes de continuar',
-    memberSince: 'Miembro desde',
-    code: 'Código',
-    importantTitle: 'Importante — Lee antes de continuar',
-    acceptWarning: (name) => `Al aceptar esta invitación, ${name} será tu referidor permanente dentro del ecosistema CNG+. Esta relación no se puede cambiar después. Solo se permite una cuenta por persona.`,
-    acceptBtn: (name) => `Sí, acepto la invitación de ${name}`,
-    dontKnow: '¿No conoces a esta persona? No continúes y pide un link a alguien de tu confianza.',
-
-    invitedBy: 'Invitado por:',
-    startTitle: 'Empieza tu registro',
-    startSubtitle: 'Ingresa tu correo para comenzar. Te pediremos tus datos antes de pagar.',
-    emailLabel: 'Tu correo electrónico',
-    startBtn: 'Empezar registro',
-    validatingEmail: 'Validando...',
-    enterEmail: 'Ingresa tu correo electrónico',
-    enterValidEmail: 'Ingresa un correo válido',
-    selfReferral: 'No puedes usar tu propio código de referido',
-    emailAlreadyRegistered: 'Este email ya está registrado. Inicia sesión.',
-
-    readyTitle: (name) => `¡Listo, ${name}!`,
-    readySubtitle: 'Tu información quedó registrada. Ahora paga $10 para activar tu membresía.',
-    perMonth: '/mes',
-    firstMonthNote: 'Primer mes $10 USD (incluye activación y verificación)',
-    afterFirstMonth: 'Después $7 USD/mes',
-    feature1: 'Cashback en Chilliums en cada compra',
-    feature2: 'Recompensas por las compras reales de tus referidos',
-    feature3: 'Acceso a todo el ecosistema',
-    feature4: 'Chilliums: saldo de recompensas para descuentos',
-    processing: 'Procesando...',
-    payBtn: 'Pagar $10 USD (primer mes)',
-    stripeNote: 'Pago seguro con Stripe. Primer mes $10, después $7/mes. Cancela cuando quieras.',
-    paymentError: 'Error al procesar el pago: ',
-
-    kycTitle: 'Verifica tu identidad',
-    kycDescStart: 'Necesitamos verificar tu identidad con ',
-    kycDescEnd: ' para completar tu membresía. Es un proceso rápido y seguro.',
-    kycFeature1: 'Fotos de tu identificación oficial',
-    kycFeature2: 'Selfie para comparar con la identificación',
-    kycFeature3: 'Verificación de email (Stripe envía código)',
-    kycFeature4: 'Verificación de teléfono (Stripe envía SMS)',
-    kycSecurityNote: 'Tus documentos se almacenan cifrados en Stripe. ',
-    kycSecurityDesc: 'Chill N Go solo recibe el resultado (verificado o fallido), nunca las imágenes.',
-    kycStartBtn: 'Iniciar verificación',
-    kycStartingBtn: 'Iniciando...',
-    kycSubmittedTitle: '¡Documentos enviados!',
-    kycSubmittedDesc: 'Stripe está validando tu información. Puede tomar unos minutos. Te notificaremos cuando esté listo.',
-    kycSubmittedNote: 'Mientras tanto, ya puedes entrar a tu cuenta.',
-    goToAccountBtn: 'Ir a mi cuenta CNG+',
-    kycErrorTitle: 'Hubo un error',
-    kycErrorDesc: 'No pudimos iniciar tu verificación. Inténtalo de nuevo.',
-    retryBtn: 'Reintentar',
-    kycSkipBtn: 'Completar después',
-    kycStartError: 'Error iniciando verificación: ',
-
-    alreadyHaveAccount: '¿Ya tienes cuenta? ',
-    login: 'Iniciar sesión',
-  },
-  en: {
-    backToHome: '← Back to home',
-    inviteAccess: 'Invitation only',
-    inviteAccessDesc: 'You can only join CNG+ through an active member\'s referral link. If someone shared a link with you, use it to sign up.',
-    verifyingInvite: 'Verifying invitation...',
-    invalidLink: 'Invalid link',
-    invalidLinkDesc: 'The referral code doesn\'t exist or the referrer\'s account is not active. Ask for a new link from whoever invited you.',
-
-    stepRegister: 'Register',
-    stepPayment: 'Payment',
-    stepVerify: 'Verify',
-
-    invitedTitle: 'You\'ve been invited to CNG+',
-    invitedSubtitle: 'Verify that you know this person before continuing',
-    memberSince: 'Member since',
-    code: 'Code',
-    importantTitle: 'Important — Read before continuing',
-    acceptWarning: (name) => `By accepting this invitation, ${name} will be your permanent referrer within the CNG+ ecosystem. This relationship cannot be changed later. Only one account per person is allowed.`,
-    acceptBtn: (name) => `Yes, I accept the invitation from ${name}`,
-    dontKnow: 'Don\'t know this person? Do not continue and ask someone you trust for a link.',
-
-    invitedBy: 'Invited by:',
-    startTitle: 'Start your registration',
-    startSubtitle: 'Enter your email to begin. We\'ll collect your info before payment.',
-    emailLabel: 'Your email address',
-    startBtn: 'Start registration',
-    validatingEmail: 'Validating...',
-    enterEmail: 'Enter your email address',
-    enterValidEmail: 'Enter a valid email',
-    selfReferral: 'You cannot use your own referral code',
-    emailAlreadyRegistered: 'This email is already registered. Please sign in.',
-
-    readyTitle: (name) => `You're all set, ${name}!`,
-    readySubtitle: 'Your info is saved. Now pay $10 to activate your membership.',
-    perMonth: '/mo',
-    firstMonthNote: 'First month $10 USD (includes activation and verification)',
-    afterFirstMonth: 'Then $7 USD/mo',
-    feature1: 'Cashback in Chilliums on every purchase',
-    feature2: 'Rewards from your referrals\' real purchases',
-    feature3: 'Access to the entire ecosystem',
-    feature4: 'Chilliums: rewards balance for discounts',
-    processing: 'Processing...',
-    payBtn: 'Pay $10 USD (first month)',
-    stripeNote: 'Secure payment via Stripe. First month $10, then $7/mo. Cancel anytime.',
-    paymentError: 'Error processing payment: ',
-
-    kycTitle: 'Verify your identity',
-    kycDescStart: 'We need to verify your identity with ',
-    kycDescEnd: ' to complete your membership. It\'s a quick and secure process.',
-    kycFeature1: 'Photos of your government ID',
-    kycFeature2: 'Selfie to compare with your ID',
-    kycFeature3: 'Email verification (Stripe sends a code)',
-    kycFeature4: 'Phone verification (Stripe sends an SMS)',
-    kycSecurityNote: 'Your documents are stored encrypted by Stripe. ',
-    kycSecurityDesc: 'Chill N Go only receives the result (verified or failed), never the images.',
-    kycStartBtn: 'Start verification',
-    kycStartingBtn: 'Starting...',
-    kycSubmittedTitle: 'Documents submitted!',
-    kycSubmittedDesc: 'Stripe is validating your info. It may take a few minutes. We\'ll notify you when done.',
-    kycSubmittedNote: 'Meanwhile, you can already sign in to your account.',
-    goToAccountBtn: 'Go to my CNG+ account',
-    kycErrorTitle: 'Something went wrong',
-    kycErrorDesc: 'We couldn\'t start your verification. Please try again.',
-    retryBtn: 'Retry',
-    kycSkipBtn: 'Complete later',
-    kycStartError: 'Error starting verification: ',
-
-    alreadyHaveAccount: 'Already have an account? ',
-    login: 'Sign in',
-  },
+  if (data?.error) return { ok: false, error: data.error, code: data.code || null }
+  return { ok: true, data }
 }
 
 export default function Join() {
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
-  useEffect(() => {
-    const mq = window.matchMedia('(max-width: 767px)')
-    const handler = (e) => setIsMobile(e.matches)
-    mq.addEventListener('change', handler)
-    return () => mq.removeEventListener('change', handler)
-  }, [])
+  const [searchParams] = useSearchParams()
+  const refCode = (searchParams.get('ref') || '').trim()
+  const navigate = useNavigate()
+  const { signIn, user, loading: authLoading } = useAuth()
 
-  const [searchParams, setSearchParams] = useSearchParams()
-  const urlRefCode = searchParams.get('ref')
-  const paidParam = searchParams.get('paid')
-  const emailParam = searchParams.get('email')
+  // 'loading' | 'valid' | 'invalid' (incluye sin código)
+  const [status, setStatus] = useState('loading')
+  const [inviterName, setInviterName] = useState('')
 
-  const [refCode, setRefCode] = useState(urlRefCode || null)
-  const [step, setStep] = useState(1) // 1=welcome/wizard, 2=pay, 3=kyc
-  const [email, setEmail] = useState('')
-  const [emailSubmitted, setEmailSubmitted] = useState(false)
-  const [emailValidating, setEmailValidating] = useState(false)
-  const [wizardCompleted, setWizardCompleted] = useState(false)
   const [fullName, setFullName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [referrer, setReferrer] = useState(null)
-  const [invalidRef, setInvalidRef] = useState(false)
-  const [loadingRef, setLoadingRef] = useState(true)
-  const [acceptedInvite, setAcceptedInvite] = useState(false)
-  const [lang, setLang] = useState(getDefaultLang)
-  const [verificationStatus, setVerificationStatus] = useState(null) // null, 'pending', 'error'
+  const [submitting, setSubmitting] = useState(false)
+  const [accountExists, setAccountExists] = useState(false)
 
-  const t = LANG[lang]
-
-  // Restore from localStorage if URL lacks ref
+  // Si ya hay sesión, no tiene sentido "crear cuenta": retomar en la app (el gate lleva al paso pendiente).
   useEffect(() => {
-    if (!urlRefCode) {
-      const stored = readStoredRefCode()
-      if (stored && stored.code) {
-        setRefCode(stored.code)
-        setSearchParams({ ref: stored.code }, { replace: true })
+    if (!authLoading && user) navigate('/app/feed', { replace: true })
+  }, [authLoading, user, navigate])
+
+  useEffect(() => {
+    let cancelled = false
+    async function validate() {
+      if (!refCode) { setStatus('invalid'); return }
+      const res = await callInvite('validate', { ref_code: refCode })
+      if (cancelled) return
+      if (res.ok && res.data?.valid) {
+        setInviterName(res.data.inviter_name || '')
+        setStatus('valid')
+      } else {
+        setStatus('invalid')
       }
     }
-  }, [])
-
-  // Handle return from Stripe Checkout
-  useEffect(() => {
-    if (paidParam === 'true' && emailParam) {
-      setEmail(decodeURIComponent(emailParam))
-      setEmailSubmitted(true)
-      setAcceptedInvite(true)
-      setWizardCompleted(true)
-      setStep(3) // KYC
-    }
-  }, [paidParam, emailParam])
-
-  // Fetch referrer when refCode is available
-  useEffect(() => {
-    if (refCode) {
-      fetchReferrer(refCode)
-    } else {
-      setLoadingRef(false)
-    }
+    validate()
+    return () => { cancelled = true }
   }, [refCode])
 
-  async function fetchReferrer(code) {
-    try {
-      const { data, error } = await supabasePublic
-        .from('identity_profiles')
-        .select('user_id, full_name, email, ref_code, avatar_url, created_at')
-        .eq('ref_code', code)
-        .eq('payment_status', 'active')
-        .single()
-      if (error || !data) {
-        setInvalidRef(true)
-      } else {
-        setReferrer(data)
-        storeRefCode(code, data.email)
-      }
-    } catch (_e) {
-      setInvalidRef(true)
-    } finally {
-      setLoadingRef(false)
-    }
-  }
-
-  async function handleEmailSubmit() {
+  async function handleSubmit(e) {
+    e.preventDefault()
     setError('')
-    const trimmed = email.trim().toLowerCase()
-    if (!trimmed) {
-      setError(t.enterEmail)
-      return
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
-      setError(t.enterValidEmail)
-      return
-    }
-    // Self-referral guard
-    if (referrer && trimmed === referrer.email.toLowerCase()) {
-      setError(t.selfReferral)
-      return
-    }
-    setEmailValidating(true)
-    try {
-      const { data: existing } = await supabasePublic
-        .from('identity_profiles')
-        .select('email')
-        .eq('email', trimmed)
-        .maybeSingle()
-      if (existing) {
-        setError(t.emailAlreadyRegistered)
-        setEmailValidating(false)
-        return
-      }
-      setEmail(trimmed)
-      setEmailSubmitted(true)
-    } catch (e) {
-      setError(e.message || t.enterValidEmail)
-    } finally {
-      setEmailValidating(false)
-    }
-  }
 
-  function handleWizardComplete({ fullName: name }) {
-    setFullName(name)
-    setWizardCompleted(true)
-    setStep(2) // ready to pay
-  }
+    if (!fullName.trim()) { setError('Ingresa tu nombre completo.'); return }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setError('Ingresa un correo válido.'); return }
+    if (password.length < 6) { setError('La contraseña debe tener al menos 6 caracteres.'); return }
+    if (password !== confirm) { setError('Las contraseñas no coinciden.'); return }
 
-  async function handlePayment() {
-    setLoading(true)
-    setError('')
+    setSubmitting(true)
     try {
-      const response = await fetch('https://jahnlhzbjcbmjnuzxsvj.supabase.co/functions/v1/cng-create-checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email,
-          ref_code: refCode,
-          success_url: window.location.origin + '/join?paid=true&ref=' + refCode + '&email=' + encodeURIComponent(email),
-          cancel_url: window.location.origin + '/join?ref=' + refCode,
-        }),
+      const res = await callInvite('accept', {
+        ref_code: refCode,
+        email: email.trim(),
+        password,
+        full_name: fullName.trim(),
       })
-      const data = await response.json()
-      if (data.error) {
-        setError(data.error)
-      } else if (data.url) {
-        window.location.href = data.url
-      }
-    } catch (err) {
-      setError(t.paymentError + err.message)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function startIdentityVerification() {
-    setLoading(true)
-    setError('')
-    try {
-      const response = await fetch(
-        'https://jahnlhzbjcbmjnuzxsvj.supabase.co/functions/v1/cng-create-verification',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email,
-            return_url: window.location.origin + '/join?verify=complete&ref=' + refCode + '&email=' + encodeURIComponent(email),
-          }),
-        }
-      )
-      const data = await response.json()
-      if (data.error) {
-        setError(data.error)
-        setLoading(false)
+      if (!res.ok) {
+        // Cuenta a medias: el correo ya existe -> ofrecer retomar por login, sin error rojo.
+        if (res.code === 'account_exists') { setAccountExists(true); return }
+        setError(res.error)
         return
       }
-      await supabase
-        .from('identity_profiles')
-        .update({
-          stripe_verification_session_id: data.session_id,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('email', email)
 
-      const stripe = window.Stripe('pk_test_51Rvx4iClWFP3vllVGpXmK95SXNw6SGUhcObbEZIIG1Sl1hlh6iszofr1Xl2FLTpXWpz6yL1Pvt9Dma1OHhv6VVE800RZSbAarS')
-      const result = await stripe.verifyIdentity(data.client_secret)
-
-      if (result.error) {
-        setError(result.error.message)
-        setVerificationStatus('error')
-      } else {
-        setVerificationStatus('pending')
-        await supabase
-          .from('identity_profiles')
-          .update({
-            identity_verification_status: 'processing',
-            updated_at: new Date().toISOString(),
-          })
-          .eq('email', email)
-        // Registration flow complete — clean up local ref code
-        clearStoredRefCode()
-      }
+      // Cuenta creada (email ya confirmado): iniciar sesión y entrar a la app.
+      await signIn(email.trim(), password)
+      navigate('/app/feed')
     } catch (err) {
-      setError(t.kycStartError + err.message)
-      setVerificationStatus('error')
+      setError(err?.message || 'No se pudo iniciar sesión tras crear la cuenta.')
     } finally {
-      setLoading(false)
+      setSubmitting(false)
     }
   }
-
-  const dateLocale = lang === 'en' ? 'en-US' : 'es-MX'
-
-  // No ref code = no access
-  if (!refCode) {
-    return (
-      <div style={{ ...styles.container, ...(isMobile ? { padding: '16px 12px' } : {}) }}>
-        <div style={{ ...styles.card, ...(isMobile ? { padding: '24px 16px', maxWidth: '100%' } : {}) }}>
-          <div style={styles.logoRow}>
-            <div style={styles.logo}>C</div>
-            <span style={styles.logoText}>CHILL N GO</span>
-          </div>
-          <h1 style={styles.title}>{t.inviteAccess}</h1>
-          <p style={styles.subtitle}>{t.inviteAccessDesc}</p>
-          <Link to="/" style={styles.linkBtn}>{t.backToHome}</Link>
-        </div>
-      </div>
-    )
-  }
-
-  if (loadingRef) {
-    return (
-      <div style={{ ...styles.container, ...(isMobile ? { padding: '16px 12px' } : {}) }}>
-        <div style={{ ...styles.card, ...(isMobile ? { padding: '24px 16px', maxWidth: '100%' } : {}) }}>
-          <div style={styles.logoRow}>
-            <div style={styles.logo}>C</div>
-            <span style={styles.logoText}>CHILL N GO</span>
-          </div>
-          <p style={{ ...styles.subtitle, marginTop: 20 }}>{t.verifyingInvite}</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (invalidRef) {
-    return (
-      <div style={{ ...styles.container, ...(isMobile ? { padding: '16px 12px' } : {}) }}>
-        <div style={{ ...styles.card, ...(isMobile ? { padding: '24px 16px', maxWidth: '100%' } : {}) }}>
-          <div style={styles.logoRow}>
-            <div style={styles.logo}>C</div>
-            <span style={styles.logoText}>CHILL N GO</span>
-          </div>
-          <h1 style={styles.title}>{t.invalidLink}</h1>
-          <p style={styles.subtitle}>{t.invalidLinkDesc}</p>
-          <a href="/" style={{ ...styles.button, display: 'block', textAlign: 'center', textDecoration: 'none', marginTop: 20 }}>{t.backToHome}</a>
-        </div>
-      </div>
-    )
-  }
-
-  const referrerDisplayName = referrer?.full_name || referrer?.email?.split('@')[0]
 
   return (
-    <div style={{ ...styles.container, ...(isMobile ? { padding: '16px 12px' } : {}) }}>
-      <Link to="/" style={styles.backLink}>{t.backToHome}</Link>
+    <div style={styles.container}>
+      <Link to="/" style={styles.backLink}>← Volver al inicio</Link>
 
-      {/* Progress steps */}
-      <div style={styles.steps}>
-        <div style={{ ...styles.step, ...(step >= 1 ? styles.stepActive : {}) }}>
-          <div style={{ ...styles.stepDot, ...(step >= 1 ? styles.stepDotActive : {}), ...(isMobile ? { width: 24, height: 24, fontSize: 11 } : {}) }}>1</div>
-          <span style={{ ...styles.stepLabel, ...(isMobile ? { fontSize: 10 } : {}) }}>{t.stepRegister}</span>
-        </div>
-        <div style={styles.stepLine} />
-        <div style={{ ...styles.step, ...(step >= 2 ? styles.stepActive : {}) }}>
-          <div style={{ ...styles.stepDot, ...(step >= 2 ? styles.stepDotActive : {}), ...(isMobile ? { width: 24, height: 24, fontSize: 11 } : {}) }}>2</div>
-          <span style={{ ...styles.stepLabel, ...(isMobile ? { fontSize: 10 } : {}) }}>{t.stepPayment}</span>
-        </div>
-        <div style={styles.stepLine} />
-        <div style={{ ...styles.step, ...(step >= 3 ? styles.stepActive : {}) }}>
-          <div style={{ ...styles.stepDot, ...(step >= 3 ? styles.stepDotActive : {}), ...(isMobile ? { width: 24, height: 24, fontSize: 11 } : {}) }}>3</div>
-          <span style={{ ...styles.stepLabel, ...(isMobile ? { fontSize: 10 } : {}) }}>{t.stepVerify}</span>
-        </div>
-      </div>
-
-      <div style={{ ...styles.card, ...(isMobile ? { padding: '24px 16px', maxWidth: '100%' } : {}) }}>
+      <div style={styles.card}>
         <div style={styles.logoRow}>
           <div style={styles.logo}>C</div>
           <span style={styles.logoText}>CHILL N GO</span>
         </div>
 
-        {/* STEP 1a: Invitation confirmation */}
-        {step === 1 && !acceptedInvite && referrer && (
+        {status === 'loading' && (
+          <p style={styles.subtitle}>Validando tu invitación…</p>
+        )}
+
+        {status === 'invalid' && (
           <>
-            <h1 style={styles.title}>{t.invitedTitle}</h1>
-            <p style={styles.subtitle}>{t.invitedSubtitle}</p>
-
-            <div style={{ background: 'rgba(127,119,221,0.08)', border: '1px solid rgba(127,119,221,0.2)', borderRadius: 16, padding: isMobile ? 16 : 24, textAlign: 'center', marginBottom: isMobile ? 16 : 24 }}>
-              <div style={{ width: 64, height: 64, borderRadius: '50%', background: GRADIENT.candy, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, fontWeight: 700, color: 'white', margin: '0 auto 12px' }}>
-                {(referrer.full_name || referrer.email)[0].toUpperCase()}
-              </div>
-              <div style={{ fontSize: 18, fontWeight: 600, color: C.text, marginBottom: 4 }}>
-                {referrer.full_name || referrer.email.split('@')[0]}
-              </div>
-              <div style={{ fontSize: 13, color: C.tertiary, marginBottom: 8 }}>
-                {referrer.email}
-              </div>
-              <div style={{ fontSize: 11, color: C.onSurfaceVariant, marginTop: 8 }}>
-                {t.memberSince} {new Date(referrer.created_at).toLocaleDateString(dateLocale, { month: 'long', year: 'numeric' })}
-              </div>
-              <div style={{ fontSize: 12, color: C.onSurfaceVariant, marginTop: 6 }}>{t.code}: {referrer.ref_code}</div>
-            </div>
-
-            <div style={{ background: 'rgba(224,49,49,0.08)', border: '2px solid rgba(224,49,49,0.35)', borderRadius: 12, padding: isMobile ? 14 : 20, marginBottom: isMobile ? 16 : 24, textAlign: 'center' }}>
-              <div style={{ fontSize: 15, color: C.errorBright, fontWeight: 600, marginBottom: 10, letterSpacing: 1, textTransform: 'uppercase' }}>{t.importantTitle}</div>
-              <div style={{ width: 40, height: 2, background: 'rgba(224,49,49,0.3)', margin: '0 auto 12px', borderRadius: 1 }}></div>
-              <div style={{ fontSize: isMobile ? 12 : 14, color: C.error, lineHeight: 1.7 }}>
-                {t.acceptWarning(referrerDisplayName)}
-              </div>
-            </div>
-
-            <button onClick={() => setAcceptedInvite(true)} style={styles.button}>
-              {t.acceptBtn(referrerDisplayName)}
-            </button>
-
-            <p style={{ fontSize: 12, color: C.textFaint, textAlign: 'center', marginTop: 16, lineHeight: 1.5 }}>
-              {t.dontKnow}
+            <h1 style={styles.title}>Necesitas una invitación</h1>
+            <p style={styles.subtitle}>
+              Solo puedes unirte con el enlace de invitación de un miembro activo de Chill N Go.
+              Pídele su enlace personal para crear tu cuenta.
             </p>
+            <Link to="/login" style={styles.button}>Ya tengo cuenta · Iniciar sesión</Link>
+            <Link to="/app/explore" style={styles.linkBtn}>Explorar el marketplace</Link>
           </>
         )}
 
-        {/* STEP 1b: Email capture */}
-        {step === 1 && acceptedInvite && !emailSubmitted && (
+        {status === 'valid' && accountExists && (
           <>
-            <div style={{ ...styles.refBadge, background: 'rgba(29,158,117,0.1)', borderColor: 'rgba(29,158,117,0.3)', color: C.primary }}>
-              {t.invitedBy} {referrerDisplayName}
-            </div>
+            <h1 style={styles.title}>Ya empezaste tu registro</h1>
+            <p style={styles.subtitle}>
+              Ya existe una cuenta con <b>{email}</b>. No necesitas crear otra — inicia sesión
+              para continuar donde te quedaste (verificación o pago).
+            </p>
+            <Link to={`/login?email=${encodeURIComponent(email)}`} style={styles.button}>Iniciar sesión y continuar</Link>
+            <button type="button" onClick={() => setAccountExists(false)} style={{ ...styles.linkBtn, background: 'none', border: 'none', cursor: 'pointer', width: '100%' }}>Usar otro correo</button>
+          </>
+        )}
 
-            <h1 style={styles.title}>{t.startTitle}</h1>
-            <p style={styles.subtitle}>{t.startSubtitle}</p>
+        {status === 'valid' && !accountExists && (
+          <>
+            <h1 style={styles.title}>Crea tu cuenta</h1>
+            <p style={styles.subtitle}>
+              Te invitó: <span style={styles.inviter}>{inviterName}</span>
+            </p>
 
             {error && <div style={styles.error}>{error}</div>}
 
-            <div style={styles.field}>
-              <label style={styles.label}>{t.emailLabel}</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && !emailValidating) handleEmailSubmit() }}
-                style={styles.input}
-                placeholder="tu@email.com"
-                autoFocus
-              />
-            </div>
-
-            <button onClick={handleEmailSubmit} style={{ ...styles.button, marginTop: 16 }} disabled={emailValidating}>
-              {emailValidating ? t.validatingEmail : t.startBtn}
-            </button>
-          </>
-        )}
-
-        {/* STEP 1c: Wizard */}
-        {step === 1 && acceptedInvite && emailSubmitted && !wizardCompleted && (
-          <>
-            <div style={{ ...styles.refBadge, background: 'rgba(29,158,117,0.1)', borderColor: 'rgba(29,158,117,0.3)', color: C.primary }}>
-              {t.invitedBy} {referrerDisplayName}
-            </div>
-
-            <RegistrationWizard
-              email={email}
-              refCode={refCode}
-              referrerName={referrerDisplayName}
-              referrerUserId={referrer?.user_id || null}
-              onLangChange={(newLang) => setLang(newLang)}
-              onWizardComplete={handleWizardComplete}
-            />
-          </>
-        )}
-
-        {/* STEP 2: Ready to pay */}
-        {step === 2 && (
-          <>
-            <div style={{ ...styles.refBadge, background: 'rgba(29,158,117,0.1)', borderColor: 'rgba(29,158,117,0.3)', color: C.primary }}>
-              {t.invitedBy} {referrerDisplayName}
-            </div>
-
-            <h1 style={styles.title}>{t.readyTitle(fullName || referrerDisplayName)}</h1>
-            <p style={styles.subtitle}>{t.readySubtitle}</p>
-
-            <div style={styles.priceCard}>
-              <div style={styles.priceName}>CNG+</div>
-              <div style={styles.priceAmount}>
-                <span style={styles.priceCurrency}>$</span>
-                <span style={styles.priceNumber}>10</span>
-                <span style={styles.pricePeriod}>{t.perMonth}</span>
-              </div>
-              <div style={{ fontSize: 12, color: C.onSurfaceVariant, marginTop: 4, textAlign: 'center' }}>{t.firstMonthNote}</div>
-              <div style={{ fontSize: 12, color: C.primary, textAlign: 'center', marginBottom: 8 }}>{t.afterFirstMonth}</div>
-              <div style={styles.priceFeatures}>
-                <div style={styles.priceFeature}>{t.feature1}</div>
-                <div style={styles.priceFeature}>{t.feature2}</div>
-                <div style={styles.priceFeature}>{t.feature3}</div>
-                <div style={styles.priceFeature}>{t.feature4}</div>
+            <form onSubmit={handleSubmit} style={styles.form}>
+              <div style={styles.field}>
+                <label style={styles.label}>Nombre completo</label>
+                <input
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  style={styles.input}
+                  placeholder="Tu nombre y apellido"
+                  autoComplete="name"
+                  required
+                />
               </div>
 
-              {error && <div style={{ ...styles.error, marginTop: 16 }}>{error}</div>}
+              <div style={styles.field}>
+                <label style={styles.label}>Correo electrónico</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  style={styles.input}
+                  placeholder="tu@email.com"
+                  autoComplete="email"
+                  required
+                />
+              </div>
 
-              <button onClick={handlePayment} style={{ ...styles.button, marginTop: 16 }} disabled={loading}>
-                {loading ? t.processing : t.payBtn}
+              <div style={styles.field}>
+                <label style={styles.label}>Contraseña</label>
+                <div style={styles.passwordWrapper}>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    style={{ ...styles.input, width: '100%', paddingRight: 44 }}
+                    placeholder="Mínimo 6 caracteres"
+                    autoComplete="new-password"
+                    required
+                  />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
+                    {showPassword ? (
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.onSurfaceVariant} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24" />
+                        <line x1="1" y1="1" x2="23" y2="23" />
+                      </svg>
+                    ) : (
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.onSurfaceVariant} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div style={styles.field}>
+                <label style={styles.label}>Confirmar contraseña</label>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={confirm}
+                  onChange={(e) => setConfirm(e.target.value)}
+                  style={styles.input}
+                  placeholder="Repite tu contraseña"
+                  autoComplete="new-password"
+                  required
+                />
+              </div>
+
+              <button type="submit" style={{ ...styles.button, opacity: submitting ? 0.6 : 1 }} disabled={submitting}>
+                {submitting ? 'Creando cuenta…' : 'Crear cuenta'}
               </button>
+            </form>
 
-              <p style={{ fontSize: 11, color: C.textFaint, textAlign: 'center', marginTop: 12 }}>{t.stripeNote}</p>
-            </div>
-          </>
-        )}
-
-        {/* STEP 3: KYC */}
-        {step === 3 && (
-          <>
-            {!verificationStatus && (
-              <>
-                <div style={styles.verifyIcon}>
-                  <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
-                    <circle cx="28" cy="28" r="26" stroke={C.primary} strokeWidth="2" />
-                    <path d="M28 16v4M28 36v4M16 28h4M36 28h4" stroke={C.primary} strokeWidth="2" strokeLinecap="round" />
-                    <circle cx="28" cy="28" r="8" stroke={C.primary} strokeWidth="2" />
-                  </svg>
-                </div>
-                <h1 style={styles.title}>{t.kycTitle}</h1>
-                <p style={styles.subtitle}>
-                  {t.kycDescStart}<strong style={{ color: C.text }}>Stripe</strong>{t.kycDescEnd}
-                </p>
-
-                <div style={styles.kycFeatures}>
-                  <div style={styles.kycFeature}><span style={styles.kycFeatureIcon}>📄</span><span>{t.kycFeature1}</span></div>
-                  <div style={styles.kycFeature}><span style={styles.kycFeatureIcon}>🤳</span><span>{t.kycFeature2}</span></div>
-                  <div style={styles.kycFeature}><span style={styles.kycFeatureIcon}>📧</span><span>{t.kycFeature3}</span></div>
-                  <div style={styles.kycFeature}><span style={styles.kycFeatureIcon}>📱</span><span>{t.kycFeature4}</span></div>
-                </div>
-
-                <div style={styles.kycNote}>
-                  <strong>{t.kycSecurityNote}</strong>{t.kycSecurityDesc}
-                </div>
-
-                {error && <div style={styles.error}>{error}</div>}
-
-                <button onClick={startIdentityVerification} style={styles.button} disabled={loading}>
-                  {loading ? t.kycStartingBtn : t.kycStartBtn}
-                </button>
-
-                <Link to="/login" style={{ ...styles.btnSkip, marginTop: 12, display: 'block', textAlign: 'center', textDecoration: 'none' }}>
-                  {t.kycSkipBtn}
-                </Link>
-              </>
-            )}
-
-            {verificationStatus === 'pending' && (
-              <>
-                <div style={styles.verifyIcon}>
-                  <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
-                    <circle cx="28" cy="28" r="26" stroke={C.primary} strokeWidth="2" />
-                    <path d="M20 28L26 34L38 22" stroke={C.primary} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </div>
-                <h1 style={styles.title}>{t.kycSubmittedTitle}</h1>
-                <p style={styles.subtitle}>{t.kycSubmittedDesc}</p>
-
-                <div style={styles.kycNote}>
-                  {t.kycSubmittedNote}
-                </div>
-
-                <Link to="/dashboard" style={{ ...styles.button, display: 'block', textAlign: 'center', textDecoration: 'none' }}>
-                  {t.goToAccountBtn}
-                </Link>
-              </>
-            )}
-
-            {verificationStatus === 'error' && (
-              <>
-                <div style={styles.verifyIcon}>
-                  <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
-                    <circle cx="28" cy="28" r="26" stroke={C.errorBright} strokeWidth="2" />
-                    <path d="M22 22L34 34M34 22L22 34" stroke={C.errorBright} strokeWidth="2.5" strokeLinecap="round" />
-                  </svg>
-                </div>
-                <h1 style={styles.title}>{t.kycErrorTitle}</h1>
-                <p style={styles.subtitle}>{t.kycErrorDesc}</p>
-
-                {error && <div style={styles.error}>{error}</div>}
-
-                <button onClick={() => { setVerificationStatus(null); setError('') }} style={styles.button}>
-                  {t.retryBtn}
-                </button>
-
-                <Link to="/login" style={{ ...styles.btnSkip, marginTop: 12, display: 'block', textAlign: 'center', textDecoration: 'none' }}>
-                  {t.kycSkipBtn}
-                </Link>
-              </>
-            )}
+            <p style={styles.footerText}>
+              ¿Ya tienes cuenta? <Link to="/login" style={styles.footerLink}>Inicia sesión</Link>
+            </p>
           </>
         )}
       </div>
-
-      {step === 1 && !emailSubmitted && (
-        <p style={styles.loginLink}>
-          {t.alreadyHaveAccount}<Link to="/login" style={{ color: C.primary, textDecoration: 'none' }}>{t.login}</Link>
-        </p>
-      )}
     </div>
   )
 }
@@ -716,51 +246,8 @@ const styles = {
     color: C.onSurfaceVariant,
     textDecoration: 'none',
     fontSize: 13,
-    marginBottom: 20,
-  },
-  steps: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 0,
-    marginBottom: 28,
-  },
-  step: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: 6,
-    opacity: 0.4,
-  },
-  stepActive: {
-    opacity: 1,
-  },
-  stepDot: {
-    width: 28,
-    height: 28,
-    borderRadius: '50%',
-    background: 'rgba(255,255,255,0.06)',
-    border: '1px solid rgba(255,255,255,0.1)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: 12,
-    fontWeight: 600,
-    color: C.onSurfaceVariant,
-  },
-  stepDotActive: {
-    background: 'rgba(29,158,117,0.15)',
-    border: '1px solid rgba(29,158,117,0.4)',
-    color: C.primary,
-  },
-  stepLabel: {
-    fontSize: 11,
-    color: C.onSurfaceVariant,
-  },
-  stepLine: {
-    width: 40,
-    height: 1,
-    background: 'rgba(255,255,255,0.08)',
-    marginBottom: 18,
+    marginBottom: 24,
+    alignSelf: 'center',
   },
   card: {
     background: 'rgba(255,255,255,0.02)',
@@ -768,108 +255,50 @@ const styles = {
     borderRadius: 16,
     padding: '40px 36px',
     width: '100%',
-    maxWidth: 560,
+    maxWidth: 420,
   },
   logoRow: {
     display: 'flex',
     alignItems: 'center',
     gap: 10,
-    marginBottom: 20,
+    marginBottom: 32,
     justifyContent: 'center',
   },
   logo: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
+    width: 32,
+    height: 32,
+    borderRadius: 8,
     background: GRADIENT.primary,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: 700,
     color: C.surface,
   },
   logoText: {
     fontWeight: 700,
-    fontSize: 14,
+    fontSize: 15,
     color: C.text,
     letterSpacing: 1,
   },
-  refBadge: {
-    background: 'rgba(127,119,221,0.1)',
-    border: '1px solid rgba(127,119,221,0.2)',
-    borderRadius: 20,
-    padding: '6px 16px',
-    fontSize: 12,
-    color: C.tertiary,
-    textAlign: 'center',
-    marginBottom: 24,
-    fontWeight: 500,
-  },
   title: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: 600,
     color: C.text,
     textAlign: 'center',
     marginBottom: 6,
   },
   subtitle: {
-    fontSize: 13,
+    fontSize: 14,
     color: C.onSurfaceVariant,
     textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 1.5,
+    marginBottom: 28,
+    lineHeight: 1.6,
   },
-  priceCard: {
-    background: 'rgba(29,158,117,0.06)',
-    border: '1px solid rgba(29,158,117,0.2)',
-    borderRadius: 12,
-    padding: '28px',
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  priceName: {
-    fontSize: 14,
-    fontWeight: 600,
+  inviter: {
     color: C.primary,
-    letterSpacing: 2,
-    marginBottom: 8,
-  },
-  priceAmount: {
-    display: 'flex',
-    alignItems: 'baseline',
-    justifyContent: 'center',
-    gap: 2,
-    marginBottom: 16,
-  },
-  priceCurrency: {
-    fontSize: 18,
-    color: C.text,
-    fontWeight: 500,
-  },
-  priceNumber: {
-    fontSize: 42,
     fontWeight: 700,
-    color: C.text,
-    lineHeight: 1,
-  },
-  pricePeriod: {
-    fontSize: 14,
-    color: C.onSurfaceVariant,
-    marginLeft: 4,
-  },
-  priceFeatures: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 8,
-  },
-  priceFeature: {
-    fontSize: 13,
-    color: C.onSurfaceVariant,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
   },
   error: {
     background: 'rgba(224,49,49,0.1)',
@@ -878,13 +307,32 @@ const styles = {
     padding: '10px 14px',
     fontSize: 13,
     color: C.error,
-    marginBottom: 16,
+    marginBottom: 20,
     textAlign: 'center',
+  },
+  form: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 18,
   },
   field: {
     display: 'flex',
     flexDirection: 'column',
     gap: 6,
+  },
+  passwordWrapper: {
+    position: 'relative',
+  },
+  eyeBtn: {
+    position: 'absolute',
+    right: 12,
+    top: '50%',
+    transform: 'translateY(-50%)',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: 18,
+    padding: 0,
   },
   label: {
     fontSize: 13,
@@ -900,8 +348,10 @@ const styles = {
     color: C.text,
     outline: 'none',
     fontFamily: 'inherit',
+    transition: 'border-color 0.2s',
   },
   button: {
+    display: 'block',
     background: GRADIENT.primary,
     border: 'none',
     borderRadius: 8,
@@ -910,70 +360,30 @@ const styles = {
     fontWeight: 600,
     color: 'white',
     cursor: 'pointer',
+    marginTop: 8,
     fontFamily: 'inherit',
-    width: '100%',
-    boxSizing: 'border-box',
-  },
-  btnSkip: {
-    background: 'none',
-    border: '1px solid rgba(255,255,255,0.1)',
-    borderRadius: 8,
-    padding: '12px',
-    fontSize: 13,
-    color: C.onSurfaceVariant,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    width: '100%',
-    boxSizing: 'border-box',
-  },
-  verifyIcon: {
-    display: 'flex',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  kycFeatures: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 12,
-    marginBottom: 20,
-    background: 'rgba(255,255,255,0.02)',
-    border: '1px solid rgba(255,255,255,0.06)',
-    borderRadius: 12,
-    padding: 16,
-  },
-  kycFeature: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    fontSize: 13,
-    color: '#ccc',
-  },
-  kycFeatureIcon: {
-    fontSize: 18,
-    flexShrink: 0,
-  },
-  kycNote: {
-    background: 'rgba(29,158,117,0.08)',
-    border: '1px solid rgba(29,158,117,0.2)',
-    borderRadius: 8,
-    padding: '12px 14px',
-    fontSize: 12,
-    color: C.primary,
-    marginBottom: 20,
-    lineHeight: 1.5,
     textAlign: 'center',
-  },
-  loginLink: {
-    fontSize: 13,
-    color: C.onSurfaceVariant,
-    marginTop: 20,
+    textDecoration: 'none',
+    transition: 'opacity 0.2s',
   },
   linkBtn: {
     display: 'block',
-    textAlign: 'center',
     color: C.primary,
     textDecoration: 'none',
     fontSize: 14,
-    marginTop: 20,
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  footerText: {
+    fontSize: 12,
+    color: C.textFaint,
+    textAlign: 'center',
+    marginTop: 24,
+    lineHeight: 1.5,
+  },
+  footerLink: {
+    color: C.primary,
+    textDecoration: 'none',
+    fontWeight: 600,
   },
 }

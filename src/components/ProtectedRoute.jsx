@@ -27,7 +27,8 @@ export default function ProtectedRoute({ children }) {
     return <Navigate to="/login" replace />
   }
 
-  // Intermediate states (payment_pending, kyc_pending, kyc_failed, etc.)
-  // are handled inside each protected page (Dashboard shows state-specific CTAs).
+  // Paso 1 (quitar Stripe): ya no hay estados intermedios de pago/KYC.
+  // Las rutas de interacción (feed, mensajería, perfil, red) requieren sesión;
+  // las del marketplace son públicas (ver AppShell).
   return children
 }

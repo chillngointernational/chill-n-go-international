@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../lib/supabase'
 import { C, FONT, GRADIENT } from '../stitch'
 
 const COUNTRIES = [
@@ -269,7 +268,10 @@ const LANG = {
   },
 }
 
-export default function RegistrationWizard({ email, refCode, referrerName, referrerUserId, onWizardComplete, onLangChange }) {
+// Paso 1 (quitar Stripe): el wizard está deshabilitado (Join.jsx no lo monta) y la
+// creación de cuenta (handleFinalSubmit) está neutralizada. Los props del flujo de alta
+// (refCode, referrerUserId, onWizardComplete) se reintroducen en el Paso 2 (invitaciones).
+export default function RegistrationWizard({ email, referrerName, onLangChange }) {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 767px)')
@@ -280,7 +282,7 @@ export default function RegistrationWizard({ email, refCode, referrerName, refer
 
   const [subStep, setSubStep] = useState(1)
   const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [loading] = useState(false)
   const [lang, setLang] = useState('es')
 
   // Step 1: Identity
@@ -373,87 +375,11 @@ export default function RegistrationWizard({ email, refCode, referrerName, refer
   }
 
   async function handleFinalSubmit() {
-    if (validateStep() !== true) return
-
-    setLoading(true)
-    setError('')
-
-    try {
-      // 1. Create auth user
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: { ref_code: refCode },
-          emailRedirectTo: window.location.origin + '/login'
-        }
-      })
-
-      if (authError) {
-        if (authError.message.includes('already registered')) {
-          setError(t.emailAlreadyRegistered)
-        } else {
-          setError(authError.message)
-        }
-        setLoading(false)
-        return
-      }
-
-      // 2. Generate own ref_code and upsert identity_profile with complete data
-      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-      let myRefCode = 'CNG-'
-      for (let i = 0; i < 6; i++) {
-        myRefCode += chars.charAt(Math.floor(Math.random() * chars.length))
-      }
-
-      const profileData = {
-        user_id: authData?.user?.id || null,
-        email,
-        first_name: firstName,
-        last_name: lastName,
-        maternal_last_name: maternalLastName || null,
-        full_name: fullName,
-        date_of_birth: dob,
-        phone,
-        phone_country_code: phoneCountryCode,
-        nationality,
-        country_of_residence: countryOfResidence,
-        address_street: addressStreet,
-        address_unit: addressUnit || null,
-        address_city: addressCity,
-        address_state: addressState,
-        address_zip: addressZip,
-        address_country: countryOfResidence,
-        accepted_terms: true,
-        accepted_privacy: true,
-        accepted_truthful: true,
-        ref_code: myRefCode,
-        referred_by: referrerUserId || null,
-        payment_status: 'pending',
-        registration_completed: false,
-        account_type: 'member',
-        updated_at: new Date().toISOString(),
-      }
-
-      const { error: upsertError } = await supabase
-        .from('identity_profiles')
-        .upsert(profileData, { onConflict: 'email' })
-
-      if (upsertError) {
-        setError(t.accountCreateError + upsertError.message)
-        setLoading(false)
-        return
-      }
-
-      // 3. Notify parent to advance to payment step
-      if (onWizardComplete) {
-        onWizardComplete({ email, fullName })
-      }
-    } catch (err) {
-      setError(t.accountCreateError + err.message)
-    } finally {
-      setLoading(false)
-    }
+    // Paso 1 (quitar Stripe): el registro está DESHABILITADO. Este wizard ya no se
+    // monta (Join.jsx muestra "registro cerrado"), y aquí se neutraliza la creación de
+    // cuenta para que no se pueda auto-registrar: NO se llama a supabase.auth.signUp ni
+    // se escribe payment_status. El alta por invitación se reconstruye en el Paso 2.
+    setError('El registro está cerrado por el momento.')
   }
 
   const SUB_STEPS = [

@@ -1,16 +1,33 @@
 import { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { supabase } from '../lib/supabase'
 import { C, FONT, GRADIENT } from '../stitch'
 
 export default function Login() {
-  const [email, setEmail] = useState('')
+  const [searchParams] = useSearchParams()
+  const [email, setEmail] = useState(searchParams.get('email') || '')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+  const [resetMsg, setResetMsg] = useState('')
   const [loading, setLoading] = useState(false)
   const { signIn } = useAuth()
   const navigate = useNavigate()
+
+  async function handleForgot() {
+    setError('')
+    setResetMsg('')
+    if (!email.trim()) {
+      setError('Escribe tu correo arriba y te enviaremos el enlace para restablecer tu contraseña.')
+      return
+    }
+    const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: window.location.origin + '/reset-password',
+    })
+    if (resetErr) { setError(resetErr.message); return }
+    setResetMsg('Te enviamos un correo para restablecer tu contraseña. Revisa tu bandeja (y spam).')
+  }
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -46,6 +63,7 @@ export default function Login() {
         <p style={styles.subtitle}>Accede a tu cuenta CNG+</p>
 
         {error && <div style={styles.error}>{error}</div>}
+        {resetMsg && <div style={styles.success}>{resetMsg}</div>}
 
         <form onSubmit={handleSubmit} style={styles.form}>
           <div style={styles.field}>
@@ -89,6 +107,10 @@ export default function Login() {
 
           <button type="submit" style={styles.button} disabled={loading}>
             {loading ? 'Entrando...' : 'Entrar'}
+          </button>
+
+          <button type="button" onClick={handleForgot} style={styles.forgotLink}>
+            ¿Olvidaste tu contraseña?
           </button>
         </form>
 
@@ -173,6 +195,27 @@ const styles = {
     color: C.error,
     marginBottom: 20,
     textAlign: 'center',
+  },
+  success: {
+    background: 'rgba(29,158,117,0.12)',
+    border: '1px solid rgba(29,158,117,0.3)',
+    borderRadius: 8,
+    padding: '10px 14px',
+    fontSize: 13,
+    color: C.primary,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  forgotLink: {
+    background: 'none',
+    border: 'none',
+    color: C.onSurfaceVariant,
+    fontSize: 13,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    textAlign: 'center',
+    textDecoration: 'underline',
+    marginTop: 4,
   },
   form: {
     display: 'flex',

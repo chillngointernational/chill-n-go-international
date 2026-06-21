@@ -51,7 +51,7 @@ export default function Network() {
 
             const { data: profiles } = await supabase
                 .from('identity_profiles')
-                .select('user_id, email, full_name, ref_code, payment_status, chilliums_balance, created_at, direct_referrals_count')
+                .select('user_id, email, full_name, ref_code, membership_status, chilliums_balance, created_at, direct_referrals_count')
                 .in('user_id', memberIds)
 
             const profileMap = {}
@@ -246,8 +246,8 @@ export default function Network() {
                                                 <div style={s.treeNodeName}>
                                                     {ref.referred_member?.full_name || ref.referred_member?.email?.split('@')[0]}
                                                 </div>
-                                                <div style={s.treeNodeStatus(ref.referred_member?.payment_status)}>
-                                                    {ref.referred_member?.payment_status === 'active' ? 'Activo' : 'Pendiente'}
+                                                <div style={s.treeNodeStatus(ref.referred_member?.membership_status)}>
+                                                    {ref.referred_member?.membership_status === 'active' ? 'Activo' : 'Pendiente'}
                                                 </div>
                                                 {ref.referred_member?.direct_referrals_count > 0 && (
                                                     <div style={s.treeNodeSubs}>
