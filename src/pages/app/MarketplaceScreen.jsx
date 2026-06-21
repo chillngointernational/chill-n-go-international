@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { C, FONT, Icon } from '../../stitch'
+import { useAuth } from '../../context/AuthContext'
+import { isFullyActive } from '../../utils/memberStatus'
 import { LOBS, fetchCategories, fetchListings } from '../../lib/marketplace'
 import ListingCard from '../../components/marketplace/ListingCard'
 import EmptyCatalog from '../../components/marketplace/EmptyCatalog'
@@ -16,6 +18,9 @@ import TopBar from '../../components/TopBar'
 const LOB_ORDER = ['store', 'store_local', 'nutrition', 'real_estate', 'travel']
 
 export default function MarketplaceScreen({ isDesktop }) {
+  const { member } = useAuth()
+  // Expedia TAAP es beneficio SOLO para miembros activos (verificados + pagados).
+  const canTravel = isFullyActive(member)
   const [searchParams, setSearchParams] = useSearchParams()
   const lobParam = searchParams.get('lob')
   const [activeLob, setActiveLob] = useState(LOBS[lobParam] ? lobParam : 'all')
@@ -114,7 +119,13 @@ export default function MarketplaceScreen({ isDesktop }) {
         {/* Contenido */}
         {activeLob === 'travel' ? (
           // Travel = escaparate inspiracional (Expedia), no depende de la DB.
-          <TravelShowcase cards={travelCards} columns={columns} />
+          // La ACCIÓN de ir a Expedia se gatea: solo miembros activos.
+          <TravelShowcase
+            cards={travelCards}
+            columns={columns}
+            canAccess={canTravel}
+            onLocked={() => setMembersOnly('reservar tus viajes con Expedia')}
+          />
         ) : loading ? (
           <div style={{ display: 'flex', justifyContent: 'center', padding: '52px 0' }}>
             <div style={{ width: 26, height: 26, border: `3px solid ${C.primary}33`, borderTopColor: C.primary, borderRadius: 99, animation: 'cngspin 0.8s linear infinite' }} />
@@ -140,7 +151,12 @@ export default function MarketplaceScreen({ isDesktop }) {
 
             {/* En "Todos": sección Travel (único contenido vivo hoy) */}
             {activeLob === 'all' && travelCards.length > 0 && (
-              <TravelShowcase cards={travelCards} columns={columns} />
+              <TravelShowcase
+                cards={travelCards}
+                columns={columns}
+                canAccess={canTravel}
+                onLocked={() => setMembersOnly('reservar tus viajes con Expedia')}
+              />
             )}
 
             {/* Estado vacío: solo cuando no hay NADA que mostrar */}

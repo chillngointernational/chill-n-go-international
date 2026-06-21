@@ -27,18 +27,32 @@ export function AuthProvider({ children }) {
     return () => subscription.unsubscribe()
   }, [])
 
-  async function fetchMember(userId) {
+  async function fetchMember(userId, attempt = 0) {
     try {
       const { data, error } = await supabase
         .from('identity_profiles')
         .select('*')
         .eq('user_id', userId)
-        .single()
+        .maybeSingle()
 
-      if (data) setMember(data)
+      if (error) throw error
+
+      // Éxito: data = perfil del usuario, o null si la fila no existe (sin perfil).
+      // "Sin perfil" se trata como no-activo; el muro de activación lo atrapa.
+      setMember(data ?? null)
+      setLoading(false)
     } catch (e) {
-      console.error('Error fetching member:', e)
-    } finally {
+      // Error transitorio (red/servidor): reintenta hasta 2 veces con backoff y
+      // NO degrada a null un member ya cargado (no atrapar a un activo por un
+      // fallo de red puntual). Se hace AWAIT del reintento para que quien llame
+      // `await fetchMember()` (ActivateScreen/SubscriptionScreen/ProfileScreen)
+      // no resuelva antes de que el reintento termine. Si persiste, deja el
+      // member como estaba.
+      if (attempt < 2) {
+        await new Promise((r) => setTimeout(r, 800 * (attempt + 1)))
+        return fetchMember(userId, attempt + 1)
+      }
+      console.error('Error fetching member (tras reintentos):', e)
       setLoading(false)
     }
   }

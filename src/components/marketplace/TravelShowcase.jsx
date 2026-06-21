@@ -28,7 +28,33 @@ export function filterTravelCards(search) {
   return TRAVEL_CARDS.filter((c) => c.title.toLowerCase().includes(needle))
 }
 
-export default function TravelShowcase({ cards = TRAVEL_CARDS, columns = 2 }) {
+// Abre Expedia TAAP en pestaña nueva SOLO si es miembro activo; si no, dispara
+// onLocked (modal de miembros). Mismo gate que las acciones comprar/contactar.
+function ExpediaLink({ canAccess, onLocked, style, children }) {
+  if (canAccess) {
+    return (
+      <a href={EXPEDIA_TAAP_URL} target="_blank" rel="noopener noreferrer" style={style}>
+        {children}
+      </a>
+    )
+  }
+  return (
+    <button
+      type="button"
+      onClick={onLocked}
+      style={{
+        ...style,
+        border: 'none', margin: 0, font: 'inherit', textAlign: 'left',
+        cursor: 'pointer', boxSizing: 'border-box',
+        width: style?.display === 'block' ? '100%' : undefined,
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
+export default function TravelShowcase({ cards = TRAVEL_CARDS, columns = 2, canAccess = false, onLocked }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       {/* Banner de honestidad: Expedia es nuestro socio + mismo correo/contraseña */}
@@ -45,9 +71,9 @@ export default function TravelShowcase({ cards = TRAVEL_CARDS, columns = 2 }) {
           <strong style={{ color: C.onSurface }}>mismo correo y contraseña de Chill N Go</strong>{' '}
           al registrarte como agente.
         </p>
-        <a href={EXPEDIA_TAAP_URL} target="_blank" rel="noopener noreferrer" style={S.cta}>
+        <ExpediaLink canAccess={canAccess} onLocked={onLocked} style={S.cta}>
           Ir a Expedia <Icon name="open_in_new" size={15} style={{ verticalAlign: 'middle' }} />
-        </a>
+        </ExpediaLink>
       </div>
 
       {/* Tarjetas inspiracionales (foto real + overlay; gradiente = fallback) */}
@@ -59,11 +85,10 @@ export default function TravelShowcase({ cards = TRAVEL_CARDS, columns = 2 }) {
         <>
           <div style={{ display: 'grid', gridTemplateColumns: `repeat(${columns}, 1fr)`, gap: 12 }}>
             {cards.map((c) => (
-              <a
+              <ExpediaLink
                 key={c.key}
-                href={EXPEDIA_TAAP_URL}
-                target="_blank"
-                rel="noopener noreferrer"
+                canAccess={canAccess}
+                onLocked={onLocked}
                 style={{ ...S.card, background: c.grad }}
               >
                 {c.img && (
@@ -82,7 +107,7 @@ export default function TravelShowcase({ cards = TRAVEL_CARDS, columns = 2 }) {
                   <p style={S.cardTitle}>{c.title}</p>
                   <span style={S.cardCta}>Ir a Expedia →</span>
                 </div>
-              </a>
+              </ExpediaLink>
             ))}
           </div>
           <p style={{ fontSize: 10, color: C.textGhost, textAlign: 'center', margin: 0 }}>Fotos: Unsplash</p>
@@ -99,7 +124,7 @@ const S = {
   title: { fontSize: 15, color: C.onSurface, fontWeight: 800, margin: 0, fontFamily: FONT.headline, lineHeight: 1.25 },
   text: { fontSize: 13, color: C.textDim, lineHeight: 1.6, margin: '0 0 14px' },
   cta: { display: 'inline-block', background: 'linear-gradient(135deg, #1D9E75, #0F6E56)', color: '#fff', textDecoration: 'none', borderRadius: 10, padding: '11px 18px', fontSize: 14, fontWeight: 700, fontFamily: FONT.body },
-  card: { textDecoration: 'none', position: 'relative', height: 150, borderRadius: 16, overflow: 'hidden', display: 'block', cursor: 'pointer' },
+  card: { textDecoration: 'none', position: 'relative', height: 150, borderRadius: 16, overflow: 'hidden', display: 'block', cursor: 'pointer', padding: 0 },
   cardShade: { position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.10) 55%, rgba(0,0,0,0.28) 100%)' },
   cardTitle: { fontSize: 14, fontWeight: 800, color: '#fff', margin: '0 0 4px', fontFamily: FONT.headline, lineHeight: 1.2, textShadow: '0 1px 6px rgba(0,0,0,0.5)' },
   cardCta: { fontSize: 11, fontWeight: 700, color: '#fff', opacity: 0.92, textShadow: '0 1px 5px rgba(0,0,0,0.5)' },

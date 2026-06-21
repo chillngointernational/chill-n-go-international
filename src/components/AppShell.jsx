@@ -129,7 +129,9 @@ export default function AppShell() {
         }
         // Logueado pero sin activar -> muro de activación (1° verificar, 2° pagar).
         // El marketplace sigue accesible; el feed los lleva al muro (incentivo a activarse).
-        if (user && member && !isFullyActive(member) && walledForPending) {
+        // OJO: sin "member &&". Un logueado con member null (sin perfil o fetch fallido)
+        // NO debe colarse a pantallas walled -> isFullyActive(null) es false = cerrado por defecto.
+        if (user && !isFullyActive(member) && walledForPending) {
             return <ActivateScreen />
         }
         if (isChat) {
