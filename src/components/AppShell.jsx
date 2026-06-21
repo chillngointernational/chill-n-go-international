@@ -1,19 +1,14 @@
 import { useRef, useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
-import { useLocation, useNavigate, Link } from 'react-router-dom'
+import { useLocation, useNavigate, Navigate, Link } from 'react-router-dom'
 import { C, FONT, Icon, GRADIENT, GLASS_NAV, useDesktop } from '../stitch'
 import FeedScreen from '../pages/app/FeedScreen'
-import ExploreScreen from '../pages/app/ExploreScreen'
+import MarketplaceScreen from '../pages/app/MarketplaceScreen'
 import CreateScreen from '../pages/app/CreateScreen'
 import MessagesScreen from '../pages/app/MessagesScreen'
 import ProfileScreen from '../pages/app/ProfileScreen'
 import ChatScreen from '../pages/app/ChatScreen'
-import TravelScreen from '../pages/app/TravelScreen'
-import RealEstateScreen from '../pages/app/RealEstateScreen'
-import NutritionScreen from '../pages/app/NutritionScreen'
-import StoreScreen from '../pages/app/StoreScreen'
-import StoreLocalScreen from '../pages/app/StoreLocalScreen'
 import NetworkScreen from '../pages/app/NetworkScreen'
 import ActivateScreen from '../pages/app/ActivateScreen'
 import { isFullyActive } from '../utils/memberStatus'
@@ -22,16 +17,26 @@ const TABS = [
     { id: 'feed', icon: 'home', label: 'Feed' },
     { id: 'messages', icon: 'chat_bubble', label: 'Messages' },
     { id: 'create', icon: 'add', label: 'Create', special: true },
-    { id: 'explore', icon: 'explore', label: 'Explore' },
+    { id: 'explore', icon: 'storefront', label: 'GoShop' },
     { id: 'profile', icon: 'person', label: 'Profile' },
 ]
 
 const MAIN_SCREENS = ['feed', 'explore', 'create', 'messages', 'profile']
-const SUB_SCREENS = ['travel', 'realestate', 'nutrition', 'store', 'store-local', 'network']
+const SUB_SCREENS = ['network']
 
-// Paso 1 (quitar Stripe): pantallas del marketplace abiertas a visitantes anónimos.
-// El resto (feed, mensajería, perfil, red, chat, crear) requiere sesión.
-const PUBLIC_SCREENS = ['explore', 'travel', 'realestate', 'nutrition', 'store', 'store-local']
+// El marketplace unificado (GoShop, /app/explore) está abierto a visitantes anónimos,
+// junto con el feed. El resto (mensajería, perfil, red, chat, crear) requiere sesión.
+const PUBLIC_SCREENS = ['explore']
+
+// 1d: las verticales se colapsaron en GoShop. Las rutas viejas redirigen a la
+// vista única con el LOB pre-aplicado como filtro (sin pantalla negra).
+const LEGACY_LOB_REDIRECT = {
+    store: 'store',
+    'store-local': 'store_local',
+    travel: 'travel',
+    nutrition: 'nutrition',
+    realestate: 'real_estate',
+}
 
 function AuthGate({ onExplore }) {
     return (
@@ -99,6 +104,10 @@ export default function AppShell() {
     }
 
     const renderContent = () => {
+        // Rutas viejas de verticales -> GoShop unificado con el LOB pre-aplicado.
+        const legacyLob = LEGACY_LOB_REDIRECT[currentScreen]
+        if (legacyLob) return <Navigate to={`/app/explore?lob=${legacyLob}`} replace />
+
         // Aparador abierto: el FEED y el marketplace son visibles para ANÓNIMOS.
         // publicForAnon = lo que un visitante sin cuenta puede ver (feed + marketplace).
         // walledForPending = lo que un usuario logueado-sin-activar ve tras el muro de activación
@@ -128,15 +137,10 @@ export default function AppShell() {
         }
         switch (currentScreen) {
             case 'feed': return <FeedScreen />
-            case 'explore': return <ExploreScreen onNavigate={navSub} isDesktop={isDesktop} />
+            case 'explore': return <MarketplaceScreen isDesktop={isDesktop} />
             case 'create': return <CreateScreen onDone={() => nav('feed')} />
             case 'messages': return <MessagesScreen onOpenChat={openChat} />
             case 'profile': return <ProfileScreen onNavigate={navSub} />
-            case 'travel': return <TravelScreen onBack={goBack} />
-            case 'realestate': return <RealEstateScreen onBack={goBack} />
-            case 'nutrition': return <NutritionScreen onBack={goBack} />
-            case 'store': return <StoreScreen onBack={goBack} />
-            case 'store-local': return <StoreLocalScreen onBack={goBack} />
             case 'network': return <NetworkScreen onBack={goBack} isDesktop={isDesktop} />
             default: return <FeedScreen />
         }

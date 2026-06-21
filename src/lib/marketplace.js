@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 
-// Líneas de negocio (LOB) del marketplace. La verdad del LOB vive en listings.lob;
-// las categorías solo etiquetan y filtran dentro de cada LOB.
+// Líneas de negocio (LOB) del marketplace unificado (GoShop). La verdad del LOB
+// vive en listings.lob; en la vista única los LOB son FILTROS, no secciones.
 export const LOBS = {
   store: { key: 'store', label: 'Store', behavior: 'buy_now' },
   store_local: { key: 'store_local', label: 'Store Local', behavior: 'buy_now' },
@@ -10,22 +10,25 @@ export const LOBS = {
   travel: { key: 'travel', label: 'Travel', behavior: 'travel' },
 }
 
-// Categorías activas de un LOB (lectura pública: anónimos incluidos vía RLS).
-export async function fetchCategoriesByLob(lob) {
-  const { data, error } = await supabase
+// Categorías activas. Sin lob => TODAS (vista unificada); con lob => solo ese LOB.
+// Lectura pública (anónimos incluidos) vía RLS.
+export async function fetchCategories(lob) {
+  let query = supabase
     .from('categories')
     .select('id, slug, name, lob, default_type, sort_order')
-    .eq('lob', lob)
     .eq('is_active', true)
     .order('sort_order', { ascending: true })
+  if (lob) query = query.eq('lob', lob)
+  const { data, error } = await query
   if (error) throw error
   return data || []
 }
 
-// Listings activos de un LOB, con variantes, imágenes, categoría y tienda.
+// Listings activos con variantes, imágenes, categoría y tienda.
+// Sin lob => TODOS mezclados (catálogo unificado); con lob => solo ese LOB.
 // Lectura pública vía RLS (status='active'). Hoy regresa [] (catálogo vacío).
-export async function fetchListingsByLob(lob) {
-  const { data, error } = await supabase
+export async function fetchListings(lob) {
+  let query = supabase
     .from('listings')
     .select(`
       id, title, description, type, lob, currency, external_url, status, created_at,
@@ -34,22 +37,12 @@ export async function fetchListingsByLob(lob) {
       listing_variants(id, name, price, stock, is_active),
       listing_images(id, url, sort_order)
     `)
-    .eq('lob', lob)
     .eq('status', 'active')
     .order('created_at', { ascending: false })
+  if (lob) query = query.eq('lob', lob)
+  const { data, error } = await query
   if (error) throw error
   return data || []
-}
-
-// Conteo de listings activos por LOB (para los badges del hub Explore).
-export async function countListingsByLob(lob) {
-  const { count, error } = await supabase
-    .from('listings')
-    .select('id', { count: 'exact', head: true })
-    .eq('lob', lob)
-    .eq('status', 'active')
-  if (error) throw error
-  return count || 0
 }
 
 // Precio mínimo entre variantes activas con precio (null si no hay).

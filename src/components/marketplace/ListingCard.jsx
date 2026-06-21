@@ -1,12 +1,12 @@
 import { C, FONT, Icon } from '../../stitch'
 import { listingMinPrice, listingCoverImage, formatPrice } from '../../lib/marketplace'
 
-// Tarjeta genérica de un listing real, tematizada por LOB (accent).
+// Tarjeta genérica de un listing real, tematizada por accent.
 // El comportamiento del botón depende de listing.type:
-//  - travel -> abre external_url (p.ej. Expedia) en pestaña nueva
-//  - quote  -> "Cotizar" (onOpen)
-//  - buy_now -> precio + "Ver" (onOpen)
-// Las páginas públicas detalladas y el checkout llegan en sub-pasos posteriores (1d).
+//  - travel -> "Ir a Expedia": abre external_url en pestaña nueva (sin gate)
+//  - quote  -> "Contactar" (onOpen -> modal MembersOnly si anónimo)
+//  - buy_now -> precio + "Comprar" (onOpen -> modal MembersOnly si anónimo)
+// El detalle de producto y el checkout llegan en sub-pasos posteriores.
 export default function ListingCard({ listing, accent = C.primary, onOpen }) {
   const img = listingCoverImage(listing)
   const price = listingMinPrice(listing)
@@ -45,12 +45,12 @@ export default function ListingCard({ listing, accent = C.primary, onOpen }) {
           {isTravel && listing.external_url ? (
             <a href={listing.external_url} target="_blank" rel="noopener noreferrer"
               style={{ textDecoration: 'none', padding: '7px 12px', background: accent, borderRadius: 9, fontSize: 11, color: '#06140d', fontWeight: 800, fontFamily: FONT.body }}>
-              Ver oferta
+              Ir a Expedia
             </a>
           ) : (
             <button onClick={() => onOpen && onOpen(listing)}
               style={{ padding: '7px 14px', background: `${accent}1f`, border: `1px solid ${accent}55`, borderRadius: 9, fontSize: 11, color: accent, fontWeight: 800, cursor: 'pointer', fontFamily: FONT.body }}>
-              {isQuote ? 'Cotizar' : 'Ver'}
+              {isQuote ? 'Contactar' : 'Comprar'}
             </button>
           )}
         </div>
