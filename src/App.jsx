@@ -4,6 +4,7 @@ import Landing from './pages/Landing'
 import Login from './pages/Login'
 import Join from './pages/Join'
 import ResetPassword from './pages/ResetPassword'
+import SellerSignup from './pages/SellerSignup'
 import PostScreen from './pages/PostScreen'
 import Network from './pages/Network'
 import AppShell from './components/AppShell'
@@ -18,6 +19,8 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/join" element={<Join />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          {/* Onboarding público de vendedor (sin invitación ni membresía; fuera del muro). */}
+          <Route path="/vender" element={<SellerSignup />} />
           <Route path="/post/:id" element={<PostScreen />} />
           <Route path="/dashboard" element={<ProtectedRoute><Navigate to="/app/feed" replace /></ProtectedRoute>} />
           {/* Paso 1: el shell del marketplace es público; AppShell protege las pantallas de interacción */}

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { C, FONT, GRADIENT, Icon } from '../../stitch'
@@ -114,6 +115,9 @@ export default function SubscriptionScreen() {
         </button>
 
         <button onClick={signOut} style={styles.signout}>Cerrar sesión</button>
+        <Link to="/vender" style={{ ...styles.signout, display: 'block', marginTop: 12 }}>
+          ¿Solo quieres vender en GoShop? Ve a tu panel de vendedor →
+        </Link>
       </div>
     </div>
   )
