@@ -10,23 +10,23 @@ const SUPPORT_EMAIL = 'contact@chillngointernational.com'
 
 const COLUMNS = [
   { title: 'Acerca de Chill N Go', links: [
-    { label: 'Sobre nosotros', soon: true },
-    { label: 'Cómo funciona', soon: true },
-    { label: 'Preguntas frecuentes', soon: true },
+    { label: 'Sobre nosotros', to: '/sobre-nosotros' },
+    { label: 'Cómo funciona', to: '/como-funciona' },
+    { label: 'Preguntas frecuentes', to: '/preguntas-frecuentes' },
   ] },
   { title: 'Vender', links: [
-    { label: 'Vender en GoShop', to: '/vender' },          // FUNCIONAL
-    { label: 'Cómo ser vendedor', soon: true },
-    { label: 'Requisitos de vendedor', soon: true },
+    { label: 'Vender en GoShop', to: '/vender' },
+    { label: 'Cómo ser vendedor', to: '/como-ser-vendedor' },
+    { label: 'Requisitos de vendedor', to: '/requisitos-vendedor' },
   ] },
   { title: 'Comprar', links: [
-    { label: 'Explorar GoShop', to: '/app/explore' },       // FUNCIONAL (público para anónimos)
-    { label: 'Travel', soon: true },
+    { label: 'Explorar GoShop', to: '/app/explore' },
+    { label: 'Travel', to: '/app/explore?lob=travel' },     // FUNCIONAL (escaparate Travel en GoShop)
   ] },
   { title: 'Legal y soporte', links: [
-    { label: 'Términos y condiciones', soon: true },
-    { label: 'Aviso de privacidad', soon: true },
-    { label: 'Contacto', href: `mailto:${SUPPORT_EMAIL}`, sub: SUPPORT_EMAIL },  // FUNCIONAL
+    { label: 'Términos y condiciones', soon: true },         // pendiente (revisión legal, paso aparte)
+    { label: 'Aviso de privacidad', soon: true },            // pendiente (revisión legal, paso aparte)
+    { label: 'Contacto', href: `mailto:${SUPPORT_EMAIL}`, sub: SUPPORT_EMAIL },
   ] },
 ]
 

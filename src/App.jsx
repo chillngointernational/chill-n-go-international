@@ -6,6 +6,11 @@ import Join from './pages/Join'
 import ResetPassword from './pages/ResetPassword'
 import SellerSignup from './pages/SellerSignup'
 import PostScreen from './pages/PostScreen'
+import SobreNosotros from './pages/info/SobreNosotros'
+import ComoFunciona from './pages/info/ComoFunciona'
+import PreguntasFrecuentes from './pages/info/PreguntasFrecuentes'
+import ComoSerVendedor from './pages/info/ComoSerVendedor'
+import RequisitosVendedor from './pages/info/RequisitosVendedor'
 import Network from './pages/Network'
 import AppShell from './components/AppShell'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -32,6 +37,12 @@ export default function App() {
             {/* Onboarding público de vendedor (sin invitación ni membresía; fuera del muro). */}
             <Route path="/vender" element={<SellerSignup />} />
             <Route path="/post/:id" element={<PostScreen />} />
+            {/* Páginas informativas del sitio (contenido aprobado). */}
+            <Route path="/sobre-nosotros" element={<SobreNosotros />} />
+            <Route path="/como-funciona" element={<ComoFunciona />} />
+            <Route path="/preguntas-frecuentes" element={<PreguntasFrecuentes />} />
+            <Route path="/como-ser-vendedor" element={<ComoSerVendedor />} />
+            <Route path="/requisitos-vendedor" element={<RequisitosVendedor />} />
           </Route>
           <Route path="/dashboard" element={<ProtectedRoute><Navigate to="/app/feed" replace /></ProtectedRoute>} />
           {/* Paso 1: el shell del marketplace es público; AppShell protege las pantallas de interacción */}
