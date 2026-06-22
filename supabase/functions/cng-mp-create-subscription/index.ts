@@ -1,6 +1,9 @@
 // cng-mp-create-subscription — crea una suscripción (preapproval) de Mercado Pago para la
 // membresía de Chill N Go (140 MXN/mes). SOLO cobro: NO reparte Chilliums.
 //
+// GATE DE CONSENTIMIENTO: exige terms_accepted=true y registra evidencia en payment_consents
+// (texto canónico v1 + timestamp) ANTES de crear el preapproval. No se puede saltar por API.
+//
 // Llamada por el usuario autenticado (verify_jwt: true). Devuelve el init_point (checkout MP).
 // Secretos del runtime: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY, MP_ACCESS_TOKEN.
 
@@ -17,6 +20,17 @@ function json(body: unknown, status = 200): Response {
 
 const MEMBERSHIP_AMOUNT = 140
 const MEMBERSHIP_CURRENCY = 'MXN'
+
+// Texto CANÓNICO del consentimiento de pago. El backend guarda ESTE texto (no el del cliente)
+// como evidencia. El frontend (sub-paso 3) debe mostrar exactamente lo mismo para la versión 'v1'.
+const CONSENT_VERSION = 'v1'
+const CONSENT_TEXT_V1 = [
+  'Antes de pagar, acepto que:',
+  '• Mi membresía es un cargo mensual recurrente y no es reembolsable.',
+  '• Después de pagar, debo verificar mi identidad con mi INE para activar mi cuenta.',
+  '• Si no completo la verificación (por cualquier motivo), mi pago no se reembolsa y mi cuenta no se activa.',
+  '• Acepto el tratamiento de mis datos según el Aviso de Privacidad.',
+].join('\n')
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -40,6 +54,25 @@ Deno.serve(async (req: Request) => {
 
   let body: Record<string, unknown> = {}
   try { body = await req.json() } catch { /* body opcional */ }
+
+  // GATE DE CONSENTIMIENTO: obligatorio aceptar términos (no-reembolso) antes de cobrar.
+  if (body.terms_accepted !== true) {
+    return json({ error: 'Debes aceptar los términos para continuar.', code: 'terms_required' }, 403)
+  }
+
+  const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
+
+  // Registrar evidencia del consentimiento ANTES de crear el preapproval (texto canónico del servidor).
+  const { error: consentErr } = await admin.from('payment_consents').insert({
+    user_id: user.id,
+    version: CONSENT_VERSION,
+    consent_text: CONSENT_TEXT_V1,
+  })
+  if (consentErr) {
+    console.error('[cng-mp-create-subscription] consent insert fallo:', consentErr.message)
+    return json({ error: 'No se pudo registrar tu aceptación. Intenta de nuevo.' }, 500)
+  }
+
   const rawOrigin = (typeof body.return_url === 'string' && body.return_url) ? body.return_url : (req.headers.get('origin') || '')
   const baseOrigin = rawOrigin.endsWith('/') ? rawOrigin.slice(0, -1) : rawOrigin
   const backUrl = baseOrigin ? `${baseOrigin}/app/feed?sub=return` : 'https://chillngointernational.com/app/feed'
@@ -71,7 +104,6 @@ Deno.serve(async (req: Request) => {
   }
 
   // Registrar la suscripción (service_role; bypassa RLS)
-  const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
   const { error: insErr } = await admin.from('subscriptions').insert({
     user_id: user.id,
     mp_preapproval_id: mpData.id,

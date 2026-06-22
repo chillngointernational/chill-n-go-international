@@ -3,7 +3,13 @@
 // only_mobile_devices=false: el usuario puede verificar en compu O celular (QR nativo para pasar al móvil).
 // phone_number (opcional, 10 dígitos): envía el link de verificación por WhatsApp al celular.
 // Privacidad: with_webhook_binaries=false (NO recibimos imágenes). verify_jwt: true.
-// Secretos: SUPABASE_*, VERIFICAMEX_ACCESS_TOKEN.
+// Secretos: SUPABASE_*, VERIFICAMEX_ACCESS_TOKEN, SITE_URL (opcional).
+//
+// CANDADOS ANTI-FUGA (server-side, ANTES de crear sesión, en este orden):
+//  (8) PAGÓ: suscripción 'authorized' O cuenta de cortesía (membership_override). Si no -> 403.
+//  (5) YA VERIFICADO: identity_verification_status='verified' -> 403 (nunca re-gasta tokens).
+//  (7) LÍMITE 3: >=3 sesiones terminales no-verificadas (FINISHED/FAILED) -> 403.
+//  (6) ANTI-DUPLICADO: sesión no terminal (OPEN/VERIFYING) -> reusar su form_url, nunca crear otra.
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 
@@ -18,6 +24,8 @@ function json(body: unknown, status = 200): Response {
 
 const VM_BASE = 'https://api.verificamex.com/identity/v2/identity/sessions'
 const WEBHOOK_URL = 'https://osbsbrpdwjstvafhzjjj.supabase.co/functions/v1/cng-verificamex-webhook'
+const SUPPORT_EMAIL = 'contact@chillngointernational.com'
+const MAX_ATTEMPTS = 3
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -38,53 +46,120 @@ Deno.serve(async (req: Request) => {
   const { data: { user }, error: userErr } = await userClient.auth.getUser()
   if (userErr || !user) return json({ error: 'No autenticado.' }, 401)
 
+  const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
+
+  // ---- CANDADOS ANTI-FUGA (server-side, antes de gastar tokens) ----
+
+  // Perfil: estado de verificación + flag de cortesía.
+  const { data: profile, error: profErr } = await admin
+    .from('identity_profiles')
+    .select('identity_verification_status, membership_override')
+    .eq('user_id', user.id)
+    .maybeSingle()
+  if (profErr) {
+    console.error('[create-idv] perfil error:', profErr.message)
+    return json({ error: 'No se pudo validar tu cuenta. Intenta de nuevo.' }, 500)
+  }
+  if (!profile) return json({ error: 'No se encontró tu perfil.', code: 'no_profile' }, 403)
+
+  // (8) PAGÓ: suscripción 'authorized' o cuenta de cortesía.
+  const { count: paidCount, error: paidErr } = await admin
+    .from('subscriptions')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', user.id)
+    .eq('status', 'authorized')
+  if (paidErr) {
+    console.error('[create-idv] subs error:', paidErr.message)
+    return json({ error: 'No se pudo validar tu membresía. Intenta de nuevo.' }, 500)
+  }
+  const hasPaid = (paidCount || 0) > 0 || profile.membership_override === true
+  if (!hasPaid) {
+    return json({ error: 'Debes activar tu membresía antes de verificar tu identidad.', code: 'payment_required' }, 403)
+  }
+
+  // (5) YA VERIFICADO: nunca re-gastar tokens.
+  if (profile.identity_verification_status === 'verified') {
+    return json({ error: 'Tu identidad ya está verificada.', code: 'already_verified' }, 403)
+  }
+
+  // (7) LÍMITE 3 INTENTOS: sesiones terminales no-verificadas (si llegamos aquí, ninguna pasó).
+  const { count: terminalCount, error: termErr } = await admin
+    .from('identity_verifications')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', user.id)
+    .in('status', ['FINISHED', 'FAILED'])
+  if (termErr) {
+    console.error('[create-idv] intentos error:', termErr.message)
+    return json({ error: 'No se pudo validar tus intentos. Intenta de nuevo.' }, 500)
+  }
+  if ((terminalCount || 0) >= MAX_ATTEMPTS) {
+    return json({
+      error: `Has alcanzado el límite de intentos de verificación. Escríbenos a ${SUPPORT_EMAIL} para ayudarte.`,
+      code: 'attempts_exhausted',
+    }, 403)
+  }
+
+  // (6) ANTI-DUPLICADO: si hay sesión NO terminal (OPEN/VERIFYING), reusar su form_url
+  //     (re-consultando a Verificamex), NUNCA crear otra. Aplica también con WhatsApp.
+  //     FAIL-CLOSED: si no podemos confirmar/reusar, devolvemos 409 (jamás creamos una 2ª).
+  const { data: inProgress, error: ipErr } = await admin
+    .from('identity_verifications')
+    .select('session_id')
+    .eq('user_id', user.id)
+    .in('status', ['OPEN', 'VERIFYING'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (ipErr) {
+    console.error('[create-idv] inProgress error:', ipErr.message)
+    return json({ error: 'No se pudo validar tu sesión en curso. Intenta de nuevo.' }, 500)
+  }
+  if (inProgress?.session_id) {
+    let chk: Response | null = null
+    try {
+      chk = await fetch(`${VM_BASE}/${inProgress.session_id}`, {
+        headers: { 'Authorization': `Bearer ${vmToken}`, 'Accept': 'application/json' },
+      })
+    } catch (e) {
+      console.error('[create-idv] reuse fetch error:', (e as Error)?.message)
+    }
+    if (chk && chk.ok) {
+      const cd = (await chk.json().catch(() => ({})))?.data
+      // Resumible -> reusar (nunca crear otra).
+      if (cd?.form_url && (cd.status === 'OPEN' || cd.status === 'VERIFYING')) {
+        return json({ form_url: cd.form_url, session_id: cd.id, reused: true })
+      }
+      // VM dice que ya NO está en progreso (terminal/otro): sincroniza nuestra fila para
+      // no quedar atascados; el próximo intento ya no la verá "en curso".
+      if (cd?.status && cd.status !== 'OPEN' && cd.status !== 'VERIFYING') {
+        await admin.from('identity_verifications')
+          .update({ status: cd.status, updated_at: new Date().toISOString() })
+          .eq('session_id', inProgress.session_id)
+      }
+    }
+    // Había una sesión no terminal que NO pudimos reusar (VM transitorio o recién sincronizada):
+    // NUNCA creamos otra ahora. El cliente reintenta en unos segundos.
+    return json({ error: 'Tienes una verificación en curso. Reinténtalo en unos segundos.', code: 'in_progress' }, 409)
+  }
+
+  // ---- Pasó los candados: crear sesión nueva ----
+
   let body: Record<string, unknown> = {}
   try { body = await req.json() } catch { /* opcional */ }
-  // El redirect SIEMPRE va al dominio de producción (configurable vía SITE_URL),
-  // NUNCA al origin del request -> así no rebota a localhost cuando la sesión se
-  // crea desde un entorno de dev y se termina en el celular. (En dev, define el
-  // secret SITE_URL=http://localhost:5173 solo en tu entorno local.)
+  // El redirect SIEMPRE va al dominio de producción (configurable vía SITE_URL), nunca al origin.
   const SITE_URL = (Deno.env.get('SITE_URL') || 'https://chillngointernational.com').replace(/\/+$/, '')
   const redirectUrl = `${SITE_URL}/app/feed?idv=return`
   const phoneRaw = (typeof body.phone_number === 'string') ? body.phone_number.replace(/\D/g, '') : ''
   const phoneNumber = phoneRaw.length === 10 ? phoneRaw : ''
 
-  const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
-
-  // REUSAR sesión pendiente: si el usuario ya tiene una sesión OPEN que sigue vigente
-  // en Verificamex, devolver su form_url en vez de crear otra (evita sesiones huérfanas).
-  // (Si pidieron WhatsApp con phone_number, creamos una nueva para que se envíe el link.)
-  if (!phoneNumber) {
-    const { data: existing } = await admin
-      .from('identity_verifications')
-      .select('session_id')
-      .eq('user_id', user.id)
-      .eq('status', 'OPEN')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    if (existing?.session_id) {
-      const chk = await fetch(`${VM_BASE}/${existing.session_id}`, {
-        headers: { 'Authorization': `Bearer ${vmToken}`, 'Accept': 'application/json' },
-      })
-      if (chk.ok) {
-        const chkData = (await chk.json().catch(() => ({})))?.data
-        if (chkData?.status === 'OPEN' && chkData?.form_url) {
-          return json({ form_url: chkData.form_url, session_id: chkData.id, reused: true })
-        }
-      }
-    }
-  }
-
-  // Crear la sesión hospedada en Verificamex
   const payload: Record<string, unknown> = {
     validations: ['INE', 'CURP'],
-    only_mobile_devices: false, // permite verificar en compu O celular
+    only_mobile_devices: false,
     redirect_url: redirectUrl,
     webhook: WEBHOOK_URL,
     with_webhook_binaries: false,
   }
-  if (phoneNumber) payload.phone_number = phoneNumber // envía el link por WhatsApp al celular
+  if (phoneNumber) payload.phone_number = phoneNumber
 
   const vmRes = await fetch(VM_BASE, {
     method: 'POST',
@@ -98,13 +173,22 @@ Deno.serve(async (req: Request) => {
     return json({ error: 'No se pudo iniciar la verificación de identidad.', vm_status: vmRes.status }, 502)
   }
 
-  // Guardar el mapeo session_id <-> user_id (el webhook resuelve el usuario por aquí)
   const { error: insErr } = await admin.from('identity_verifications').insert({
     user_id: user.id,
     session_id: session.id,
     status: session.status || 'OPEN',
   })
-  if (insErr) console.error('[cng-create-identity-verification] insert fallo:', insErr.message)
+  if (insErr) {
+    // 23505 = el índice único parcial (una sola sesión en curso por usuario) detectó una
+    // CARRERA: otra petición concurrente ya creó la sesión en curso. La sesión VM que
+    // acabamos de crear queda huérfana (el webhook la ignora por session_id desconocido).
+    // No creamos un 2º registro; el cliente reintenta y reusa la sesión ganadora.
+    if ((insErr as { code?: string }).code === '23505') {
+      console.error('[create-idv] carrera (23505); sesión VM huérfana:', session.id)
+      return json({ error: 'Tienes una verificación en curso. Reinténtalo en unos segundos.', code: 'in_progress' }, 409)
+    }
+    console.error('[cng-create-identity-verification] insert fallo:', insErr.message)
+  }
 
   return json({ form_url: session.form_url, session_id: session.id, sent_whatsapp: !!phoneNumber })
 })
