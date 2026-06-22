@@ -15,6 +15,7 @@ function VerifyStep() {
   const [loading, setLoading] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
+  const [lockCode, setLockCode] = useState(null)
 
   const idStatus = member?.identity_verification_status || 'unverified'
 
@@ -34,6 +35,7 @@ function VerifyStep() {
 
   async function handleVerify() {
     setError('')
+    setLockCode(null)
     setLoading(true)
     try {
       const { data, error: fnErr } = await supabase.functions.invoke('cng-create-identity-verification', {
@@ -41,7 +43,7 @@ function VerifyStep() {
       })
       if (fnErr) {
         let msg = 'No se pudo iniciar la verificación. Intenta de nuevo.'
-        try { const b = await fnErr.context?.json?.(); if (b?.error) msg = b.error } catch { /* sin cuerpo */ }
+        try { const b = await fnErr.context?.json?.(); if (b?.error) msg = b.error; if (b?.code) setLockCode(b.code) } catch { /* sin cuerpo */ }
         setError(msg)
         return
       }
@@ -57,13 +59,15 @@ function VerifyStep() {
 
   const failed = idStatus === 'failed'
   const processing = idStatus === 'processing'
+  // Estados sin salida por candado del backend: no invitar reintentos fútiles.
+  const blocked = lockCode === 'attempts_exhausted' || lockCode === 'already_verified'
 
   return (
     <div style={styles.wrap}>
       <div style={styles.card}>
         <div style={styles.stepRow}>
-          <span style={styles.stepActive}>1 · Identidad</span>
-          <span style={styles.stepDim}>2 · Pago</span>
+          <span style={styles.stepDim}>1 · Pago</span>
+          <span style={styles.stepActive}>2 · Identidad</span>
         </div>
         <div style={styles.iconWrap}><Icon name="badge" size={40} style={{ color: C.primary }} /></div>
         <h1 style={styles.title}>Verifica tu identidad</h1>
@@ -114,17 +118,27 @@ function VerifyStep() {
           <span>He leído y acepto el aviso de privacidad y autorizo la verificación de mi identidad.</span>
         </label>
 
-        <button
-          onClick={handleVerify}
-          style={{ ...styles.button, opacity: (loading || !consent) ? 0.5 : 1 }}
-          disabled={loading || !consent}
-        >
-          {loading ? 'Abriendo verificación…' : (processing ? 'Reanudar verificación' : (failed ? 'Reintentar verificación' : 'Verificar mi identidad'))}
-        </button>
+        {blocked ? (
+          // Candado del backend (límite de intentos / ya verificado): sin botón de reintento;
+          // mostramos contacto de soporte para no dejar al usuario en un callejón sin salida.
+          <a href="mailto:contact@chillngointernational.com" style={{ ...styles.button, display: 'block', textAlign: 'center', textDecoration: 'none' }}>
+            Escríbenos: contact@chillngointernational.com
+          </a>
+        ) : (
+          <>
+            <button
+              onClick={handleVerify}
+              style={{ ...styles.button, opacity: (loading || !consent) ? 0.5 : 1 }}
+              disabled={loading || !consent}
+            >
+              {loading ? 'Abriendo verificación…' : (processing ? 'Reanudar verificación' : (failed ? 'Reintentar verificación' : 'Verificar mi identidad'))}
+            </button>
 
-        <button onClick={refresh} style={styles.secondary} disabled={refreshing}>
-          {refreshing ? 'Verificando…' : 'Ya verifiqué · Actualizar estado'}
-        </button>
+            <button onClick={refresh} style={styles.secondary} disabled={refreshing}>
+              {refreshing ? 'Verificando…' : 'Ya verifiqué · Actualizar estado'}
+            </button>
+          </>
+        )}
 
         <button onClick={signOut} style={styles.signout}>Cerrar sesión</button>
       </div>

@@ -13,16 +13,19 @@ export function isIdentityVerified(member) {
   return member?.identity_verification_status === 'verified'
 }
 
-// Paso actual del muro de activación: primero VERIFICAR identidad, luego PAGAR.
+// Paso actual del muro de activación: primero PAGAR, luego VERIFICAR identidad.
+// (membership_paid lo setea _recompute_membership: suscripción 'authorized' o cortesía.)
 export function getActivationStep(member) {
   if (isFullyActive(member)) return 'done'
+  if (!member?.membership_paid) return 'pay'
   if (!isIdentityVerified(member)) return 'verify'
-  return 'pay'
+  return 'done'
 }
 
 export function getMemberState(member) {
   if (!member) return 'no_profile'
   if (member.membership_status === 'active') return 'active'
+  if (!member.membership_paid) return 'pending_payment'
   if (!isIdentityVerified(member)) return 'pending_verification'
-  return 'pending_payment'
+  return 'active'
 }

@@ -73,9 +73,10 @@ Deno.serve(async (req: Request) => {
     return json({ error: 'No se pudo registrar tu aceptación. Intenta de nuevo.' }, 500)
   }
 
-  const rawOrigin = (typeof body.return_url === 'string' && body.return_url) ? body.return_url : (req.headers.get('origin') || '')
-  const baseOrigin = rawOrigin.endsWith('/') ? rawOrigin.slice(0, -1) : rawOrigin
-  const backUrl = baseOrigin ? `${baseOrigin}/app/feed?sub=return` : 'https://chillngointernational.com/app/feed'
+  // back_url SIEMPRE al dominio de producción (configurable vía SITE_URL), nunca al origin
+  // del request -> no rebota a localhost si se paga desde dev y se vuelve en el celular.
+  const SITE_URL = (Deno.env.get('SITE_URL') || 'https://chillngointernational.com').replace(/\/+$/, '')
+  const backUrl = `${SITE_URL}/app/feed?sub=return`
 
   // Crear preapproval en Mercado Pago
   const preapproval = {
