@@ -187,7 +187,10 @@ Deno.serve(async (req: Request) => {
       console.error('[create-idv] carrera (23505); sesión VM huérfana:', session.id)
       return json({ error: 'Tienes una verificación en curso. Reinténtalo en unos segundos.', code: 'in_progress' }, 409)
     }
+    // FAIL-CLOSED: sin la fila de mapeo, el webhook ignoraría la sesión (session_id desconocido).
+    // NO devolvemos éxito (evita un falso OK con sesión huérfana que re-quemaría tokens). El usuario reintenta.
     console.error('[cng-create-identity-verification] insert fallo:', insErr.message)
+    return json({ error: 'No se pudo registrar tu sesión de verificación. Intenta de nuevo.' }, 500)
   }
 
   return json({ form_url: session.form_url, session_id: session.id, sent_whatsapp: !!phoneNumber })
