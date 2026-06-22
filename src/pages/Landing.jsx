@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { Icon } from '../stitch'
+import Footer from '../components/Footer'
 
 /**
  * Landing pública de Chill N Go (marketing).
@@ -294,6 +295,14 @@ export default function Landing() {
                 <a href="#membresia" style={{ color: L.inkSoft, textDecoration: 'none' }}>Membresía</a>
               </div>
             )}
+            <Link
+              to="/vender"
+              style={{
+                padding: '7px 15px', borderRadius: 50,
+                background: `linear-gradient(135deg, ${L.green}, ${L.greenDark})`,
+                color: '#fff', fontWeight: 600, fontSize: 13.5, textDecoration: 'none',
+              }}
+            >Vender</Link>
             <Link to="/login" style={{ color: L.greenDark, textDecoration: 'none', fontWeight: 600 }}>Entrar</Link>
           </div>
         </nav>
@@ -512,27 +521,8 @@ export default function Landing() {
           </FadeIn>
         </section>
 
-        {/* FOOTER */}
-        <footer style={{ background: L.surfaceAlt, borderTop: `1px solid ${L.line}` }}>
-          <div style={{ maxWidth: 880, margin: '0 auto', padding: isMobile ? '40px 20px' : '56px 24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 28 }}>
-              <Logo />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 18, marginBottom: 28 }}>
-              {LEGAL.map((paragraph) => {
-                const [lead, ...rest] = paragraph.split('. ')
-                return (
-                  <p key={lead} style={{ fontSize: 12.5, color: L.inkFaint, lineHeight: 1.65, margin: 0 }}>
-                    <strong style={{ color: L.inkSoft, fontWeight: 600 }}>{lead}.</strong> {rest.join('. ')}
-                  </p>
-                )
-              })}
-            </div>
-            <p style={{ fontSize: 11, color: L.inkFaint, textAlign: 'center', margin: 0 }}>
-              CHILL N GO INTERNATIONAL LLC · Florida, USA — Todos los derechos reservados
-            </p>
-          </div>
-        </footer>
+        {/* FOOTER del sitio (tema claro; conserva los párrafos legales VERBATIM vía prop `legal`) */}
+        <Footer variant="light" legal={LEGAL} />
       </div>
     </div>
   )

@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
@@ -9,6 +9,13 @@ import PostScreen from './pages/PostScreen'
 import Network from './pages/Network'
 import AppShell from './components/AppShell'
 import ProtectedRoute from './components/ProtectedRoute'
+import Footer from './components/Footer'
+
+// Layout de páginas WEB públicas: contenido + footer del sitio.
+// NO envuelve /app/* (AppShell) -> el footer nunca entra en la app interna tipo TikTok.
+function PublicLayout() {
+  return (<><Outlet /><Footer /></>)
+}
 
 export default function App() {
   return (
@@ -16,12 +23,16 @@ export default function App() {
       <AuthProvider>
         <Routes>
           <Route path="/" element={<Landing />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/join" element={<Join />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
-          {/* Onboarding público de vendedor (sin invitación ni membresía; fuera del muro). */}
-          <Route path="/vender" element={<SellerSignup />} />
-          <Route path="/post/:id" element={<PostScreen />} />
+          {/* Páginas WEB públicas con footer del sitio (tema oscuro). La landing integra su
+              propio footer en tema claro, por eso queda fuera de este layout. */}
+          <Route element={<PublicLayout />}>
+            <Route path="/login" element={<Login />} />
+            <Route path="/join" element={<Join />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            {/* Onboarding público de vendedor (sin invitación ni membresía; fuera del muro). */}
+            <Route path="/vender" element={<SellerSignup />} />
+            <Route path="/post/:id" element={<PostScreen />} />
+          </Route>
           <Route path="/dashboard" element={<ProtectedRoute><Navigate to="/app/feed" replace /></ProtectedRoute>} />
           {/* Paso 1: el shell del marketplace es público; AppShell protege las pantallas de interacción */}
           <Route path="/app" element={<AppShell />}>
