@@ -94,6 +94,15 @@ export function Steps({ items }) {
   )
 }
 
+// Aviso destacado (p.ej. "versión preliminar" en páginas legales). Estilo dorado + itálica.
+export function Notice({ children }) {
+  return (
+    <div style={{ background: 'rgba(231,192,146,0.07)', border: '1px solid rgba(231,192,146,0.28)', borderRadius: 12, padding: '14px 16px', margin: '0 0 28px', fontSize: 13.5, color: C.secondary, lineHeight: 1.6, fontStyle: 'italic' }}>
+      {children}
+    </div>
+  )
+}
+
 export function Callout({ title, children }) {
   return (
     <div style={{ background: 'rgba(104,219,174,0.06)', border: '1px solid rgba(104,219,174,0.18)', borderRadius: 14, padding: '20px 22px', margin: '8px 0 24px' }}>

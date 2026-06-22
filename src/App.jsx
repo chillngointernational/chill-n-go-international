@@ -11,6 +11,8 @@ import ComoFunciona from './pages/info/ComoFunciona'
 import PreguntasFrecuentes from './pages/info/PreguntasFrecuentes'
 import ComoSerVendedor from './pages/info/ComoSerVendedor'
 import RequisitosVendedor from './pages/info/RequisitosVendedor'
+import Terminos from './pages/info/Terminos'
+import Privacidad from './pages/info/Privacidad'
 import Network from './pages/Network'
 import AppShell from './components/AppShell'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -43,6 +45,9 @@ export default function App() {
             <Route path="/preguntas-frecuentes" element={<PreguntasFrecuentes />} />
             <Route path="/como-ser-vendedor" element={<ComoSerVendedor />} />
             <Route path="/requisitos-vendedor" element={<RequisitosVendedor />} />
+            {/* Páginas legales (versión preliminar, revisión legal posterior). */}
+            <Route path="/terminos" element={<Terminos />} />
+            <Route path="/privacidad" element={<Privacidad />} />
           </Route>
           <Route path="/dashboard" element={<ProtectedRoute><Navigate to="/app/feed" replace /></ProtectedRoute>} />
           {/* Paso 1: el shell del marketplace es público; AppShell protege las pantallas de interacción */}

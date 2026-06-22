@@ -24,8 +24,8 @@ const COLUMNS = [
     { label: 'Travel', to: '/app/explore?lob=travel' },     // FUNCIONAL (escaparate Travel en GoShop)
   ] },
   { title: 'Legal y soporte', links: [
-    { label: 'Términos y condiciones', soon: true },         // pendiente (revisión legal, paso aparte)
-    { label: 'Aviso de privacidad', soon: true },            // pendiente (revisión legal, paso aparte)
+    { label: 'Términos y condiciones', to: '/terminos' },
+    { label: 'Aviso de privacidad', to: '/privacidad' },
     { label: 'Contacto', href: `mailto:${SUPPORT_EMAIL}`, sub: SUPPORT_EMAIL },
   ] },
 ]
