@@ -1,12 +1,18 @@
-import { useState, useEffect, useCallback } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { C, FONT, GRADIENT, Icon } from '../stitch'
 
 // Registro PÚBLICO de vendedor (/vender). Vender NO requiere membresía ni invitación.
 // Crea cuenta + perfil (membership 'pending') + sellers ('draft') vía cng-seller-signup.
-// Vive FUERA del muro de membresía. Verificación INE/fiscal + cuota = sub-pasos posteriores.
+// Vive FUERA del muro de membresía.
+//
+// 1c-5 — Onboarding tras el registro: (1) pagar la CUOTA (pago único MP, no reembolsable) ->
+// (2) verificar identidad (INE, llama cng-create-seller-verification) -> (3) RFC "próximamente".
+// La pata INE se deriva de identity_profiles.identity_verification_status (sirve también para el
+// rep legal de empresa). ANTIQUEMA: la verificación solo se inicia con el botón explícito; el
+// retorno (?idv=return) solo re-llama la función cuando la persona YA está verificada (0 tokens).
 
 const TERMS_VERSION = 'v1'
 const SELLER_TERMS = [
@@ -17,9 +23,13 @@ const SELLER_TERMS = [
   '(Texto preliminar de vendedor, sujeto a revisión legal.)',
 ]
 
+const MAX_ATTEMPTS = 3
+const SUPPORT_EMAIL = 'contact@chillngointernational.com'
+// Texto canónico del consentimiento de la cuota. DEBE coincidir con cng-mp-create-seller-fee ('seller_fee_v1').
+const FEE_CONSENT_TEXT = 'La cuota de verificación cubre un ciclo de verificación de identidad (hasta 3 intentos) y NO es reembolsable, aun si la verificación no se completa.'
+
 export default function SellerSignup() {
-  const { user, loading: authLoading, signIn } = useAuth()
-  const navigate = useNavigate()
+  const { user, loading: authLoading, signIn, member, fetchMember } = useAuth()
 
   const [checking, setChecking] = useState(true)
   const [seller, setSeller] = useState(null)      // fila sellers del usuario (si existe)
@@ -34,16 +44,59 @@ export default function SellerSignup() {
   const [submitting, setSubmitting] = useState(false)
   const [accountExists, setAccountExists] = useState(false)
   const [doneNew, setDoneNew] = useState(false)   // recién registrado en este flujo
+  // onboarding (cuota + verificación)
+  const [feeConsent, setFeeConsent] = useState(false)
+  const [paying, setPaying] = useState(false)
+  const [verifying, setVerifying] = useState(false)
+  const [lockCode, setLockCode] = useState(null)
+  const advancedRef = useRef(false)               // avanza la pata INE una sola vez por carga
 
-  const loadSeller = useCallback(async () => {
+  const loadSeller = useCallback(async (silent = false) => {
     if (!user) { setSeller(null); setChecking(false); return }
-    setChecking(true)
-    const { data } = await supabase.from('sellers').select('id, status, seller_type').eq('user_id', user.id).maybeSingle()
+    if (!silent) setChecking(true)
+    const { data } = await supabase
+      .from('sellers')
+      .select('id, status, seller_type, verification_fee_paid, verification_attempts')
+      .eq('user_id', user.id)
+      .maybeSingle()
     setSeller(data || null)
-    setChecking(false)
+    if (!silent) setChecking(false)
   }, [user])
 
   useEffect(() => { if (!authLoading) loadSeller() }, [authLoading, loadSeller])
+
+  // Refresco silencioso (no parpadea "Cargando…"): relee seller + member (identidad).
+  const refreshAll = useCallback(async () => {
+    if (!user) return
+    await Promise.all([loadSeller(true), fetchMember(user.id)])
+  }, [user, loadSeller, fetchMember])
+
+  // ANTIQUEMA: avanza la pata INE del vendedor SOLO cuando la PERSONA ya está verificada
+  // (el backend toma la ruta de REÚSO = 0 tokens). Nunca crea sesión aquí.
+  const advanceIneLegIfVerified = useCallback(async () => {
+    if (advancedRef.current || !user) return
+    if (member?.identity_verification_status !== 'verified') return
+    advancedRef.current = true
+    try { await supabase.functions.invoke('cng-create-seller-verification', { body: {} }) } catch { /* noop */ }
+    await refreshAll()
+  }, [user, member?.identity_verification_status, refreshAll])
+
+  // Al volver de pago (?fee=return) o verificación (?idv=return): refrescar de inmediato.
+  useEffect(() => {
+    if (!seller?.id) return
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('fee') === 'return' || params.get('idv') === 'return') refreshAll()
+  }, [seller?.id, refreshAll])
+
+  // Mientras el onboarding no esté verificado, sondear estado cada 6s (solo lecturas).
+  useEffect(() => {
+    if (!seller?.id || seller?.status === 'verified') return
+    const id = setInterval(refreshAll, 6000)
+    return () => clearInterval(id)
+  }, [seller?.id, seller?.status, refreshAll])
+
+  // Cuando la persona quede verificada, marcar la pata INE del vendedor (0 tokens).
+  useEffect(() => { advanceIneLegIfVerified() }, [advanceIneLegIfVerified])
 
   async function callSignup(payload) {
     const { data, error: fnErr } = await supabase.functions.invoke('cng-seller-signup', { body: payload })
@@ -95,7 +148,56 @@ export default function SellerSignup() {
     } finally { setSubmitting(false) }
   }
 
+  // ---- Onboarding: pagar cuota / verificar identidad ----
+  async function handlePayFee() {
+    setError(''); setLockCode(null); setPaying(true)
+    try {
+      const { data, error: fnErr } = await supabase.functions.invoke('cng-mp-create-seller-fee', {
+        body: { fee_consent_accepted: true },
+      })
+      if (fnErr) {
+        let msg = 'No se pudo iniciar el pago. Intenta de nuevo.'
+        try { const b = await fnErr.context?.json?.(); if (b?.error) msg = b.error; if (b?.code) setLockCode(b.code) } catch { /* sin cuerpo */ }
+        setError(msg); return
+      }
+      if (data?.error) { setError(data.error); return }
+      if (data?.init_point) { window.location.href = data.init_point; return }
+      setError('Respuesta inesperada del servidor.')
+    } catch (e) {
+      setError(e?.message || 'Error al iniciar el pago.')
+    } finally { setPaying(false) }
+  }
+
+  async function handleVerifyIdentity() {
+    setError(''); setLockCode(null); setVerifying(true)
+    try {
+      const { data, error: fnErr } = await supabase.functions.invoke('cng-create-seller-verification', { body: {} })
+      if (fnErr) {
+        let msg = 'No se pudo iniciar la verificación. Intenta de nuevo.'
+        try { const b = await fnErr.context?.json?.(); if (b?.error) msg = b.error; if (b?.code) setLockCode(b.code) } catch { /* sin cuerpo */ }
+        setError(msg); return
+      }
+      if (data?.error) { setError(data.error); return }
+      if (data?.ine_verified || data?.reused) { await refreshAll(); return } // ya verificado: 0 tokens
+      if (data?.form_url) { window.location.href = data.form_url; return }
+      setError('Respuesta inesperada del servidor.')
+    } catch (e) {
+      setError(e?.message || 'Error al iniciar la verificación.')
+    } finally { setVerifying(false) }
+  }
+
   const typeLabel = (t) => t === 'company' ? 'Empresa' : 'Persona física'
+  const statusLabel = (s) => ({ draft: 'Borrador', pending_verification: 'En verificación', verified: 'Verificado', rejected: 'Rechazado' }[s] || s)
+
+  // Estados derivados del onboarding
+  const feePaid = !!seller?.verification_fee_paid
+  const ineStatus = member?.identity_verification_status || 'unverified'
+  const ineVerified = ineStatus === 'verified'
+  const ineProcessing = ineStatus === 'processing'
+  const sellerVerified = seller?.status === 'verified'
+  const attemptsLeft = Math.max(0, MAX_ATTEMPTS - (seller?.verification_attempts || 0))
+  const attemptsBlocked = lockCode === 'attempts_exhausted'
+  const feeLabel = seller?.seller_type === 'company' ? '$499 MXN' : '$249 MXN'
 
   return (
     <div style={S.wrap}>
@@ -106,22 +208,97 @@ export default function SellerSignup() {
         {(authLoading || checking) ? (
           <p style={S.subtitle}>Cargando…</p>
         ) : seller ? (
-          // ---- Ya es vendedor ----
+          // ---- Onboarding del vendedor: cuota -> identidad -> RFC ----
           <>
-            <h1 style={S.title}>Tu registro de vendedor está iniciado</h1>
+            <h1 style={S.title}>Verificación de vendedor</h1>
             <p style={S.subtitle}>
-              Tipo: <b style={{ color: C.primary }}>{typeLabel(seller.seller_type)}</b> · Estado: <b style={{ color: C.primary }}>{seller.status}</b>.
+              Tipo: <b style={{ color: C.primary }}>{typeLabel(seller.seller_type)}</b> · Estado: <b style={{ color: C.primary }}>{statusLabel(seller.status)}</b>
             </p>
-            <div style={S.next}>
-              <Icon name="schedule" size={18} style={{ color: C.onSurfaceVariant, flexShrink: 0, marginTop: 1 }} />
-              <span><b>Próximo paso:</b> verificación de identidad y datos fiscales (con la cuota de verificación). Lo habilitaremos muy pronto.</span>
-            </div>
+
+            {sellerVerified ? (
+              <div style={S.successBox}>
+                <Icon name="verified" size={20} style={{ color: C.primary, flexShrink: 0 }} />
+                <span>¡Listo! Tu cuenta de vendedor está <b>verificada</b>. Ya puedes vender en GoShop.</span>
+              </div>
+            ) : (
+              <>
+                {error && <div style={S.error}>{error}</div>}
+
+                {/* Paso 1 — Cuota */}
+                <div style={S.step}>
+                  <div style={S.stepHead}>
+                    <span style={S.stepNum(feePaid)}>{feePaid ? '✓' : '1'}</span>
+                    <span style={S.stepName}>Pagar la cuota de verificación</span>
+                    <span style={S.stepBadge(feePaid)}>{feePaid ? 'Pagada' : feeLabel}</span>
+                  </div>
+                  {!feePaid && (
+                    <div style={S.stepBody}>
+                      <p style={S.stepText}>Pago único. {FEE_CONSENT_TEXT}</p>
+                      <label style={S.consentRow}>
+                        <input type="checkbox" checked={feeConsent} onChange={(e) => setFeeConsent(e.target.checked)} style={{ marginTop: 3 }} />
+                        <span>Acepto que la cuota <b>no es reembolsable</b>.</span>
+                      </label>
+                      <button onClick={handlePayFee} disabled={paying || !feeConsent} style={{ ...S.button, opacity: (paying || !feeConsent) ? 0.5 : 1 }}>
+                        {paying ? 'Abriendo el pago…' : `Pagar cuota (${feeLabel})`}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Paso 2 — Identidad (INE) */}
+                <div style={S.step}>
+                  <div style={S.stepHead}>
+                    <span style={S.stepNum(ineVerified)}>{ineVerified ? '✓' : '2'}</span>
+                    <span style={S.stepName}>Verificar tu identidad (INE)</span>
+                    <span style={S.stepBadge(ineVerified)}>
+                      {ineVerified ? 'Verificada' : (feePaid ? (ineProcessing ? 'En proceso' : 'Pendiente') : 'Bloqueado')}
+                    </span>
+                  </div>
+                  {feePaid && !ineVerified && (
+                    <div style={S.stepBody}>
+                      <div style={S.privacy}>
+                        <Icon name="lock" size={16} style={{ color: C.onSurfaceVariant, flexShrink: 0, marginTop: 2 }} />
+                        <span><b>Privacidad:</b> la captura de tu INE y selfie ocurre en <b>Verificamex</b>. Chill N Go <b>NO almacena</b> tus fotos; solo el resultado.</span>
+                      </div>
+                      {ineProcessing && <p style={S.stepText}>Tu verificación está en proceso. En cuanto se confirme, este paso se marcará completado.</p>}
+                      {attemptsLeft < MAX_ATTEMPTS && attemptsLeft > 0 && <p style={S.stepText}>Te quedan <b>{attemptsLeft}</b> intento(s) en este ciclo.</p>}
+                      {attemptsBlocked ? (
+                        <a href={`mailto:${SUPPORT_EMAIL}`} style={{ ...S.button, display: 'block', textAlign: 'center', textDecoration: 'none' }}>
+                          Escríbenos: {SUPPORT_EMAIL}
+                        </a>
+                      ) : (
+                        <>
+                          <button onClick={handleVerifyIdentity} disabled={verifying} style={{ ...S.button, opacity: verifying ? 0.5 : 1 }}>
+                            {verifying ? 'Abriendo verificación…' : (ineProcessing ? 'Reanudar verificación' : 'Verificar mi identidad')}
+                          </button>
+                          <button onClick={refreshAll} style={S.secondaryBtn}>Ya verifiqué · Actualizar estado</button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {!feePaid && <div style={S.stepBody}><p style={S.stepLocked}>Disponible después de pagar la cuota.</p></div>}
+                </div>
+
+                {/* Paso 3 — RFC (próximamente) */}
+                <div style={S.step}>
+                  <div style={S.stepHead}>
+                    <span style={S.stepNum(false)}>3</span>
+                    <span style={S.stepName}>Datos fiscales (RFC)</span>
+                    <span style={S.stepBadge(false)}>Próximamente</span>
+                  </div>
+                  <div style={S.stepBody}>
+                    <p style={S.stepLocked}>La validación de RFC se habilitará muy pronto. No es necesaria para iniciar la verificación de identidad.</p>
+                  </div>
+                </div>
+              </>
+            )}
+
             <Link to="/" style={S.secondary}>Volver al inicio</Link>
           </>
         ) : doneNew ? (
           <>
             <h1 style={S.title}>¡Listo! Cuenta de vendedor creada</h1>
-            <p style={S.subtitle}>El siguiente paso es la verificación (próximamente).</p>
+            <p style={S.subtitle}>Preparando tu panel de vendedor…</p>
           </>
         ) : accountExists ? (
           <>
@@ -207,6 +384,18 @@ const S = {
   termsList: { margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 6 },
   termsItem: { fontSize: 12.5, color: C.onSurfaceVariant, lineHeight: 1.5 },
   consentRow: { display: 'flex', gap: 10, textAlign: 'left', fontSize: 13.5, color: C.onSurface, lineHeight: 1.5, cursor: 'pointer', fontWeight: 600 },
+  // onboarding (pasos)
+  step: { textAlign: 'left', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '14px 16px', marginBottom: 12 },
+  stepHead: { display: 'flex', alignItems: 'center', gap: 10 },
+  stepNum: (done) => ({ width: 24, height: 24, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, flexShrink: 0, background: done ? C.primary : 'rgba(255,255,255,0.08)', color: done ? '#06140d' : C.onSurfaceVariant }),
+  stepName: { flex: 1, fontSize: 14, fontWeight: 700, color: C.text },
+  stepBadge: (done) => ({ fontSize: 11.5, fontWeight: 700, color: done ? C.primary : C.onSurfaceVariant, background: done ? 'rgba(104,219,174,0.12)' : 'rgba(255,255,255,0.05)', borderRadius: 999, padding: '3px 10px', whiteSpace: 'nowrap' }),
+  stepBody: { marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 },
+  stepText: { fontSize: 13, color: C.onSurfaceVariant, lineHeight: 1.55, margin: 0 },
+  stepLocked: { fontSize: 12.5, color: C.textFaint, lineHeight: 1.5, margin: 0 },
+  privacy: { display: 'flex', gap: 8, fontSize: 12, color: C.onSurfaceVariant, lineHeight: 1.5, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, padding: '10px 12px' },
+  successBox: { display: 'flex', gap: 10, alignItems: 'center', textAlign: 'left', fontSize: 13.5, color: C.onSurface, background: 'rgba(104,219,174,0.08)', border: '1px solid rgba(104,219,174,0.2)', borderRadius: 12, padding: '14px 16px', marginBottom: 16, lineHeight: 1.5 },
+  secondaryBtn: { width: '100%', background: 'transparent', border: '1px solid ' + C.outlineVariant, borderRadius: 10, padding: '12px', fontSize: 14, fontWeight: 600, color: C.onSurface, cursor: 'pointer', fontFamily: 'inherit' },
   next: { display: 'flex', gap: 8, textAlign: 'left', fontSize: 13, color: C.onSurfaceVariant, lineHeight: 1.55, background: 'rgba(104,219,174,0.06)', border: '1px solid rgba(104,219,174,0.18)', borderRadius: 10, padding: '12px 14px', marginBottom: 16 },
   button: { display: 'block', width: '100%', boxSizing: 'border-box', background: GRADIENT.primary, border: 'none', borderRadius: 10, padding: '14px', fontSize: 15, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'center', textDecoration: 'none', marginTop: 4 },
   secondary: { display: 'block', textAlign: 'center', color: C.primary, textDecoration: 'none', fontSize: 14, fontWeight: 600, marginTop: 8 },
