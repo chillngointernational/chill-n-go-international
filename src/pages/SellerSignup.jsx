@@ -220,10 +220,13 @@ export default function SellerSignup() {
             </p>
 
             {sellerVerified ? (
-              <div style={S.successBox}>
-                <Icon name="verified" size={20} style={{ color: C.primary, flexShrink: 0 }} />
-                <span>¡Listo! Tu cuenta de vendedor está <b>verificada</b>. Ya puedes vender en GoShop.</span>
-              </div>
+              <>
+                <div style={S.successBox}>
+                  <Icon name="verified" size={20} style={{ color: C.primary, flexShrink: 0 }} />
+                  <span>¡Listo! Tu cuenta de vendedor está <b>verificada</b>. Ya puedes vender en GoShop.</span>
+                </div>
+                <Link to="/mi-tienda" style={S.button}>Crear / administrar mi tienda</Link>
+              </>
             ) : (
               <>
                 {error && <div style={S.error}>{error}</div>}

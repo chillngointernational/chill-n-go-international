@@ -5,6 +5,7 @@ import Login from './pages/Login'
 import Join from './pages/Join'
 import ResetPassword from './pages/ResetPassword'
 import SellerSignup from './pages/SellerSignup'
+import MiTienda from './pages/MiTienda'
 import PostScreen from './pages/PostScreen'
 import SobreNosotros from './pages/info/SobreNosotros'
 import ComoFunciona from './pages/info/ComoFunciona'
@@ -49,6 +50,8 @@ export default function App() {
             <Route path="/privacidad" element={<Privacidad />} />
           </Route>
           <Route path="/dashboard" element={<ProtectedRoute><Navigate to="/app/feed" replace /></ProtectedRoute>} />
+          {/* Mi Tienda (vendedor): ruta independiente, solo login (NO muro de membresía; vender no la requiere). */}
+          <Route path="/mi-tienda" element={<ProtectedRoute><MiTienda /></ProtectedRoute>} />
           {/* Paso 1: el shell del marketplace es público; AppShell protege las pantallas de interacción */}
           <Route path="/app" element={<AppShell />}>
             <Route index element={<Navigate to="/app/feed" replace />} />
