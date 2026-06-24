@@ -28,34 +28,22 @@ export default function NetworkScreen({ onBack, isDesktop }) {
 
     async function fetchReferrals() {
         try {
-            // 1. Get referral tree entries where this user is the referrer (exclude self)
-            const { data: treeData } = await supabase
-                .from('referral_tree')
-                .select('*')
-                .eq('referred_by', user.id)
-                .neq('member_id', user.id)
-                .order('created_at', { ascending: false })
+            // Red directa (1 nivel) vía RPC SECURITY DEFINER: la RLS de identity_profiles
+            // no deja leer perfiles ajenos, y la RPC solo expone columnas no sensibles.
+            const { data, error } = await supabase.rpc('get_my_referrals')
+            if (error) throw error
 
-            if (!treeData || treeData.length === 0) {
-                setReferrals([])
-                setLoading(false)
-                return
-            }
-
-            // 2. Collect all referred member IDs
-            const memberIds = treeData.map(r => r.member_id).filter(Boolean)
-
-            // 3. Fetch profiles for those members
-            const { data: profiles } = await supabase
-                .from('identity_profiles')
-                .select('user_id, email, full_name, ref_code, membership_status, chilliums_balance, created_at, direct_referrals_count')
-                .in('user_id', memberIds)
-
-            const profileMap = {}
-            ;(profiles || []).forEach(p => { profileMap[p.user_id] = p })
-
-            // 4. Build referral list — single level (only people you directly invited)
-            const combined = treeData.map(r => ({ ...r, level: 1, referred_member: profileMap[r.member_id] || null }))
+            // Forma que espera el render: { id, level, referred_member }
+            const combined = (data || []).map(r => ({
+                id: r.id,
+                level: 1,
+                referred_member: {
+                    full_name: r.full_name || r.display_name || null,
+                    membership_status: r.membership_status,
+                    direct_referrals_count: r.direct_referrals_count,
+                    created_at: r.created_at,
+                },
+            }))
 
             setReferrals(combined)
         } catch (e) {
@@ -99,7 +87,6 @@ export default function NetworkScreen({ onBack, isDesktop }) {
     const typeLabels = {
         earn_referral_level_0: 'Cashback',
         earn_referral_level_1: 'Referido',
-        earn_referral_level_2: 'Referido',
         bonus: 'Bono',
         redemption: 'Descuento aplicado',
         adjustment: 'Ajuste',
@@ -108,7 +95,6 @@ export default function NetworkScreen({ onBack, isDesktop }) {
     const typeColors = {
         earn_referral_level_0: C.primaryBright,
         earn_referral_level_1: C.tertiaryContainer,
-        earn_referral_level_2: C.tertiaryContainer,
         bonus: '#EF9F27',
         redemption: C.errorBright,
         adjustment: C.onSurfaceVariant,
@@ -223,10 +209,10 @@ export default function NetworkScreen({ onBack, isDesktop }) {
                                         {l1.map((ref) => (
                                             <div key={ref.id} style={s.treeNode(C.tertiaryContainer, '#EEEDFE', '#3C3489')}>
                                                 <div style={s.treeNodeAvatar(C.tertiaryContainer)}>
-                                                    {(ref.referred_member?.full_name || ref.referred_member?.email || '?')[0].toUpperCase()}
+                                                    {(ref.referred_member?.full_name || '?')[0].toUpperCase()}
                                                 </div>
                                                 <div style={s.treeNodeName}>
-                                                    {ref.referred_member?.full_name || ref.referred_member?.email?.split('@')[0]}
+                                                    {ref.referred_member?.full_name}
                                                 </div>
                                                 <div style={s.treeNodeStatus(ref.referred_member?.membership_status)}>
                                                     {ref.referred_member?.membership_status === 'active' ? 'Activo' : 'Pendiente'}
