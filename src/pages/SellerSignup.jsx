@@ -198,6 +198,10 @@ export default function SellerSignup() {
   const attemptsLeft = Math.max(0, MAX_ATTEMPTS - (seller?.verification_attempts || 0))
   const attemptsBlocked = lockCode === 'attempts_exhausted'
   const feeLabel = seller?.seller_type === 'company' ? '$499 MXN' : '$249 MXN'
+  const isCompany = seller?.seller_type === 'company'
+  // EMPRESA PAUSADA: hizo cuota + INE del representante, pero su verificación está en pausa
+  // porque falta la validación de RFC (aún no construida). No debe quedar como "pendiente" mudo.
+  const companyPausedAwaitingRfc = isCompany && feePaid && ineVerified && !sellerVerified
 
   return (
     <div style={S.wrap}>
@@ -223,6 +227,15 @@ export default function SellerSignup() {
             ) : (
               <>
                 {error && <div style={S.error}>{error}</div>}
+
+                {companyPausedAwaitingRfc && (
+                  <div style={S.pausedBox}>
+                    <Icon name="schedule" size={20} style={{ color: '#EF9F27', flexShrink: 0, marginTop: 1 }} />
+                    <span>
+                      <b>Verificación de empresa disponible pronto.</b> Tu identidad e INE del representante legal ya quedaron verificadas; falta la <b>validación de RFC</b>, que habilitaremos muy pronto. Te avisaremos en cuanto puedas completar la verificación de tu empresa.
+                    </span>
+                  </div>
+                )}
 
                 {/* Paso 1 — Cuota */}
                 <div style={S.step}>
@@ -395,6 +408,7 @@ const S = {
   stepLocked: { fontSize: 12.5, color: C.textFaint, lineHeight: 1.5, margin: 0 },
   privacy: { display: 'flex', gap: 8, fontSize: 12, color: C.onSurfaceVariant, lineHeight: 1.5, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, padding: '10px 12px' },
   successBox: { display: 'flex', gap: 10, alignItems: 'center', textAlign: 'left', fontSize: 13.5, color: C.onSurface, background: 'rgba(104,219,174,0.08)', border: '1px solid rgba(104,219,174,0.2)', borderRadius: 12, padding: '14px 16px', marginBottom: 16, lineHeight: 1.5 },
+  pausedBox: { display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', fontSize: 13.5, color: C.onSurface, background: 'rgba(239,159,39,0.08)', border: '1px solid rgba(239,159,39,0.25)', borderRadius: 12, padding: '14px 16px', marginBottom: 16, lineHeight: 1.5 },
   secondaryBtn: { width: '100%', background: 'transparent', border: '1px solid ' + C.outlineVariant, borderRadius: 10, padding: '12px', fontSize: 14, fontWeight: 600, color: C.onSurface, cursor: 'pointer', fontFamily: 'inherit' },
   next: { display: 'flex', gap: 8, textAlign: 'left', fontSize: 13, color: C.onSurfaceVariant, lineHeight: 1.55, background: 'rgba(104,219,174,0.06)', border: '1px solid rgba(104,219,174,0.18)', borderRadius: 10, padding: '12px 14px', marginBottom: 16 },
   button: { display: 'block', width: '100%', boxSizing: 'border-box', background: GRADIENT.primary, border: 'none', borderRadius: 10, padding: '14px', fontSize: 15, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'center', textDecoration: 'none', marginTop: 4 },
