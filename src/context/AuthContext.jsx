@@ -63,19 +63,6 @@ export function AuthProvider({ children }) {
     return data
   }
 
-  async function signUp(email, password, refCode) {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { ref_code: refCode },
-        emailRedirectTo: window.location.origin + '/verify-success'
-      }
-    })
-    if (error) throw error
-    return data
-  }
-
   async function signOut() {
     await supabase.auth.signOut()
     setUser(null)
@@ -83,7 +70,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, member, loading, signIn, signUp, signOut, fetchMember }}>
+    <AuthContext.Provider value={{ user, member, loading, signIn, signOut, fetchMember }}>
       {children}
     </AuthContext.Provider>
   )

@@ -13,7 +13,6 @@ import ComoSerVendedor from './pages/info/ComoSerVendedor'
 import RequisitosVendedor from './pages/info/RequisitosVendedor'
 import Terminos from './pages/info/Terminos'
 import Privacidad from './pages/info/Privacidad'
-import Network from './pages/Network'
 import AppShell from './components/AppShell'
 import ProtectedRoute from './components/ProtectedRoute'
 import Footer from './components/Footer'
@@ -67,7 +66,6 @@ export default function App() {
             <Route path="chat/:conversationId" element={null} />
             <Route path="*" element={<Navigate to="/app/feed" replace />} />
           </Route>
-          <Route path="/network" element={<ProtectedRoute><Network /></ProtectedRoute>} />
           {/* Catch-all raíz: cualquier URL desconocida va a la landing (nunca pantalla negra). */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

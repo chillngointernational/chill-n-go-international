@@ -21,7 +21,9 @@ El usuario es Oscar Jovani, CEO de Chill N Go International LLC.
 Chilliums son un programa de lealtad (NO dinero), valor interno 1:1 USD
 pero NUNCA mostrado así al usuario final.
 
-### 4. Auditoría de Chilliums en curso
-Existe documentación en `auditoria-chilliums-2026-04-16/`. 
-Consúltala antes de tocar código relacionado con Chilliums, webhooks
-de Stripe, o cálculos de reparto 50/35/15.
+### 4. Recompensas (Chilliums) — modelo vigente
+Antes de tocar código relacionado con Chilliums, webhooks de pago, o el
+reparto de recompensas, ten presente el modelo vigente: reparto 50/50 —
+mitad para el comprador, mitad para quien lo invitó directo (2 niveles:
+nivel 0 comprador, nivel 1 invitador directo). El diseño anterior de
+50/35/15 (etapa Stripe) quedó OFICIALMENTE MUERTO.
