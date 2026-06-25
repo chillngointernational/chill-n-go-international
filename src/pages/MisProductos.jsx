@@ -18,7 +18,7 @@ const IMG_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
 const STATUS_LABEL = { active: 'Publicado', draft: 'Borrador', suspended: 'Suspendido' }
 const STATUS_COLOR = { active: C.primary, draft: C.onSurfaceVariant, suspended: C.errorBright }
 
-const EMPTY_FORM = { title: '', description: '', categoryId: '', price: '', stock: '0', images: [] }
+const EMPTY_FORM = { title: '', description: '', categoryId: '', price: '', stock: '0', images: [], weightKg: '', lengthCm: '', widthCm: '', heightCm: '' }
 
 export default function MisProductos() {
   const { user, member, loading: authLoading } = useAuth()
@@ -51,7 +51,7 @@ export default function MisProductos() {
         .from('listings')
         .select(`
           id, title, description, status, category_id, created_at,
-          listing_variants(id, price, stock, is_active),
+          listing_variants(id, price, stock, is_active, weight_grams, length_cm, width_cm, height_cm),
           listing_images(id, url, sort_order)
         `)
         .eq('store_id', st.id)
@@ -110,6 +110,10 @@ export default function MisProductos() {
       price: v.price != null ? String(v.price) : '',
       stock: v.stock != null ? String(v.stock) : '0',
       images: imgs,
+      weightKg: v.weight_grams != null ? String(v.weight_grams / 1000) : '',
+      lengthCm: v.length_cm != null ? String(v.length_cm) : '',
+      widthCm: v.width_cm != null ? String(v.width_cm) : '',
+      heightCm: v.height_cm != null ? String(v.height_cm) : '',
     })
     setError(''); setOkMsg(''); setMode('form')
   }
@@ -124,7 +128,13 @@ export default function MisProductos() {
     const stock = form.stock === '' ? 0 : Number(form.stock)
     if (!Number.isInteger(stock) || stock < 0) { setError('El stock debe ser un entero de 0 o más.'); return null }
     if (form.images.length === 0) { setError('Agrega al menos una foto del producto.'); return null }
-    return { t, price, stock }
+    const weightKg = Number(form.weightKg)
+    if (!Number.isFinite(weightKg) || weightKg <= 0) { setError('El peso (kg) debe ser un número mayor a 0.'); return null }
+    const lengthCm = Number(form.lengthCm), widthCm = Number(form.widthCm), heightCm = Number(form.heightCm)
+    if (![lengthCm, widthCm, heightCm].every((n) => Number.isFinite(n) && n > 0)) { setError('Largo, ancho y alto (cm) deben ser números mayores a 0.'); return null }
+    const weightGrams = Math.round(weightKg * 1000)
+    if (weightGrams < 1) { setError('El peso es demasiado bajo.'); return null }
+    return { t, price, stock, weightGrams, lengthCm, widthCm, heightCm }
   }
 
   async function handleSave() {
@@ -144,6 +154,10 @@ export default function MisProductos() {
         p_images: form.images,
         p_status: 'active',
         p_listing_id: editing?.id || null,
+        p_weight_grams: v.weightGrams,
+        p_length_cm: v.lengthCm,
+        p_width_cm: v.widthCm,
+        p_height_cm: v.heightCm,
       })
       if (rpcErr) { setError('No se pudo guardar el producto. Intenta de nuevo.'); return }
       setOkMsg(editing ? 'Producto actualizado.' : '¡Producto publicado!')
@@ -306,6 +320,33 @@ export default function MisProductos() {
               <textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} rows={3} style={{ ...S.input, resize: 'vertical' }} placeholder="Detalles, material, tallas disponibles…" />
             </div>
 
+            {/* Datos de envío (REQUERIDOS: sin peso/dimensiones no se puede cotizar el envío) */}
+            <div style={S.field}>
+              <label style={S.label}>Datos de envío</label>
+              <span style={S.hint}>Necesarios para cotizar el envío. Mide y pesa el paquete ya empacado.</span>
+              <div style={S.row2}>
+                <div style={{ ...S.field, flex: 1 }}>
+                  <label style={S.subLabel}>Peso (kg)</label>
+                  <input value={form.weightKg} onChange={(e) => setForm((f) => ({ ...f, weightKg: e.target.value }))} type="number" min="0" step="0.01" style={S.input} placeholder="0.5" />
+                </div>
+                <div style={{ flex: 1 }} />
+              </div>
+              <div style={S.row2}>
+                <div style={{ ...S.field, flex: 1 }}>
+                  <label style={S.subLabel}>Largo (cm)</label>
+                  <input value={form.lengthCm} onChange={(e) => setForm((f) => ({ ...f, lengthCm: e.target.value }))} type="number" min="0" step="0.1" style={S.input} placeholder="20" />
+                </div>
+                <div style={{ ...S.field, flex: 1 }}>
+                  <label style={S.subLabel}>Ancho (cm)</label>
+                  <input value={form.widthCm} onChange={(e) => setForm((f) => ({ ...f, widthCm: e.target.value }))} type="number" min="0" step="0.1" style={S.input} placeholder="15" />
+                </div>
+                <div style={{ ...S.field, flex: 1 }}>
+                  <label style={S.subLabel}>Alto (cm)</label>
+                  <input value={form.heightCm} onChange={(e) => setForm((f) => ({ ...f, heightCm: e.target.value }))} type="number" min="0" step="0.1" style={S.input} placeholder="10" />
+                </div>
+              </div>
+            </div>
+
             <div style={S.formActions}>
               <button onClick={handleSave} disabled={submitting || uploading} style={{ ...S.primaryBtn, flex: 1, opacity: (submitting || uploading) ? 0.5 : 1 }}>
                 {submitting ? 'Guardando…' : (editing ? 'Guardar cambios' : 'Publicar producto')}
@@ -357,6 +398,7 @@ const S = {
   label: { fontSize: 13, color: C.onSurfaceVariant, fontWeight: 600 },
   input: { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '12px 14px', fontSize: 14, color: C.text, outline: 'none', fontFamily: 'inherit' },
   hint: { fontSize: 11.5, color: C.textFaint, lineHeight: 1.4 },
+  subLabel: { fontSize: 11.5, color: C.textFaint, fontWeight: 600 },
 
   thumbsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))', gap: 8, marginBottom: 4 },
   thumbWrap: { position: 'relative', aspectRatio: '1', borderRadius: 10, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' },
