@@ -3,7 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { isFullyActive } from '../utils/memberStatus'
-import { listingMinPrice, formatPrice } from '../lib/marketplace'
+import { listingMinPrice, formatPrice, clientPrice } from '../lib/marketplace'
 import { C, FONT, GRADIENT, Icon } from '../stitch'
 import ComingSoonNotice from '../components/ComingSoonNotice'
 
@@ -115,6 +115,8 @@ export default function ProductPage() {
   const chilliumsForBuyer = (price != null && !isQuote)
     ? (price * (commPct / 100) * ((100 - cushPct) / 100)) / 2
     : 0
+  // Precio FINAL que ve el cliente (base + comisión). null mientras carga la config -> placeholder.
+  const finalPrice = clientPrice(price, cfg ? Number(cfg.commission_pct) : null)
 
   return (
     <div style={S.wrap}>
@@ -142,7 +144,7 @@ export default function ProductPage() {
         {/* Info */}
         {p.category?.name && <div style={S.cat}>{p.category.name}</div>}
         <h1 style={S.title}>{p.title}</h1>
-        <div style={S.price}>{isQuote ? 'A cotizar' : (price != null ? formatPrice(price, p.currency) : '—')}</div>
+        <div style={S.price}>{isQuote ? 'A cotizar' : (finalPrice != null ? formatPrice(finalPrice, p.currency) : '—')}</div>
 
         {/* Tienda */}
         {p.store?.slug && (

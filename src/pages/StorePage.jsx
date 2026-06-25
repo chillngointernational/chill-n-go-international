@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { C, FONT, GRADIENT, Icon } from '../stitch'
 import ListingCard from '../components/marketplace/ListingCard'
 import EmptyCatalog from '../components/marketplace/EmptyCatalog'
+import { usePlatformConfig } from '../hooks/usePlatformConfig'
 
 // Página PÚBLICA de tienda (/tienda/:slug). Sin login ni membresía.
 // SOLO muestra tiendas 'active': el filtro .eq('status','active') es explícito a propósito
@@ -18,6 +19,9 @@ export default function StorePage() {
   const [state, setState] = useState('loading') // 'loading' | 'found' | 'notfound'
   const [store, setStore] = useState(null)
   const [listings, setListings] = useState([])
+  // Precio que ve el cliente = base + comisión (commission_pct de platform_config).
+  const cfg = usePlatformConfig()
+  const commissionPct = cfg ? Number(cfg.commission_pct) : null
 
   useEffect(() => {
     let alive = true
@@ -98,7 +102,7 @@ export default function StorePage() {
           ) : (
             <div style={S.grid}>
               {/* El detalle de producto y el checkout (con gate de miembros) llegan en un sub-paso posterior. */}
-              {listings.map((l) => <ListingCard key={l.id} listing={l} />)}
+              {listings.map((l) => <ListingCard key={l.id} listing={l} commissionPct={commissionPct} />)}
             </div>
           )}
         </section>

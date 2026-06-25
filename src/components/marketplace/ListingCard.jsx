@@ -1,14 +1,15 @@
 import { useNavigate } from 'react-router-dom'
 import { C, FONT, Icon } from '../../stitch'
-import { listingMinPrice, listingCoverImage, formatPrice } from '../../lib/marketplace'
+import { listingMinPrice, listingCoverImage, formatPrice, clientPrice } from '../../lib/marketplace'
 
 // Tarjeta de un listing real. Al tocarla navega al DETALLE (/producto/:id), donde vive el
 // checkout. Excepción: Travel (type='travel') abre external_url (Expedia) en pestaña nueva.
-export default function ListingCard({ listing, accent = C.primary }) {
+// El precio mostrado al cliente es el FINAL (con comisión): base × (1 + commissionPct/100).
+export default function ListingCard({ listing, accent = C.primary, commissionPct = null }) {
   const navigate = useNavigate()
   const img = listingCoverImage(listing)
-  const price = listingMinPrice(listing)
-  const priceLabel = formatPrice(price, listing.currency)
+  const finalPrice = clientPrice(listingMinPrice(listing), commissionPct)
+  const priceLabel = finalPrice != null ? formatPrice(finalPrice, listing.currency) : null
   const isTravel = listing.type === 'travel'
   const isQuote = listing.type === 'quote'
   const goDetail = () => navigate(`/producto/${listing.id}`)

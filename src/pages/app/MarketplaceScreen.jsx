@@ -10,6 +10,7 @@ import TravelShowcase, { filterTravelCards } from '../../components/marketplace/
 import MembersOnly from '../../components/MembersOnly'
 import TopBar from '../../components/TopBar'
 import { useMyStore } from '../../hooks/useMyStore'
+import { usePlatformConfig } from '../../hooks/usePlatformConfig'
 
 // GoShop — marketplace UNIFICADO estilo Amazon/Mercado Libre.
 // Una sola vista: todos los listings activos mezclados (sin importar LOB),
@@ -25,6 +26,9 @@ export default function MarketplaceScreen({ isDesktop }) {
   // Acceso de vendedor: si el logueado tiene tienda, mostramos "Mi Tienda" en la cabecera.
   // /app/explore NO tiene muro -> el vendedor no-miembro también lo ve. (Solo navegación.)
   const { store: myStore } = useMyStore()
+  // Precio que ve el cliente = base + comisión (commission_pct de platform_config).
+  const cfg = usePlatformConfig()
+  const commissionPct = cfg ? Number(cfg.commission_pct) : null
   const [searchParams, setSearchParams] = useSearchParams()
   const lobParam = searchParams.get('lob')
   const [activeLob, setActiveLob] = useState(LOBS[lobParam] ? lobParam : 'all')
@@ -149,7 +153,7 @@ export default function MarketplaceScreen({ isDesktop }) {
             {visible.length > 0 && (
               <div style={{ display: 'grid', gridTemplateColumns: `repeat(${columns}, 1fr)`, gap: 12 }}>
                 {visible.map((l) => (
-                  <ListingCard key={l.id} listing={l} accent={C.primary} />
+                  <ListingCard key={l.id} listing={l} accent={C.primary} commissionPct={commissionPct} />
                 ))}
               </div>
             )}

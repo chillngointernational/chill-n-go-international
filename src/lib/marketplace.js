@@ -64,12 +64,26 @@ export function listingCoverImage(listing) {
 export function formatPrice(value, currency = 'MXN') {
   if (value == null) return null
   try {
+    // Formato de dinero normal: SIEMPRE 2 decimales ($110.00, $109.99, $250.50).
     return new Intl.NumberFormat('es-MX', {
       style: 'currency',
       currency: currency || 'MXN',
-      maximumFractionDigits: 0,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(value)
   } catch {
-    return `$${value}`
+    return `$${Number(value).toFixed(2)}`
   }
+}
+
+// Precio FINAL que VE el cliente = precio base × (1 + commission_pct/100). La comisión se suma
+// ENCIMA (el vendedor recibe su precio base; el comprador paga el final). commission_pct viene de
+// platform_config (nunca hardcodeado -> si cambia en /admin, todos los precios al cliente cambian).
+// Devuelve null si falta el dato (base o comisión) -> la UI muestra un placeholder en vez de un
+// precio incorrecto (nunca el base "sin comisión" en una vista de cliente).
+export function clientPrice(basePrice, commissionPct) {
+  if (basePrice == null) return null
+  const pct = Number(commissionPct)
+  if (commissionPct == null || !Number.isFinite(pct)) return null
+  return Number(basePrice) * (1 + pct / 100)
 }
