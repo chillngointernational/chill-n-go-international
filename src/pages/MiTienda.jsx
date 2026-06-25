@@ -180,7 +180,7 @@ export default function MiTienda() {
 
   return (
     <div style={S.wrap}>
-      <Link to="/" style={S.back}>← Volver al inicio</Link>
+      <Link to="/app/explore" style={S.back}>← Volver a GoShop</Link>
       <div style={S.card}>
         <div style={S.logoRow}>
           <div style={S.logo}><Icon name="storefront" size={18} style={{ color: '#06140d' }} /></div>
@@ -244,7 +244,7 @@ export default function MiTienda() {
           </>
         )}
 
-        <Link to="/" style={S.secondary}>Volver al inicio</Link>
+        <Link to="/app/explore" style={S.secondary}>Volver a GoShop</Link>
       </div>
     </div>
   )

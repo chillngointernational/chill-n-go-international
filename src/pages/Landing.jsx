@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { Icon } from '../stitch'
 import Footer from '../components/Footer'
+import { useMyStore } from '../hooks/useMyStore'
 
 /**
  * Landing pública de Chill N Go (marketing).
@@ -238,6 +239,10 @@ export default function Landing() {
 
   const sectionPad = isMobile ? '72px 20px' : '104px 24px'
 
+  // Navegación context-aware: si el logueado ya tiene tienda, la pill apunta a "Mi Tienda".
+  // (Solo navegación; lectura por RLS stores_select_own, independiente de la membresía.)
+  const { store: myStore } = useMyStore()
+
   return (
     <div style={{ background: L.bg, color: L.ink, minHeight: '100vh', fontFamily: BODY, overflowX: 'hidden' }}>
       <link
@@ -296,13 +301,13 @@ export default function Landing() {
               </div>
             )}
             <Link
-              to="/vender"
+              to={myStore ? '/mi-tienda' : '/vender'}
               style={{
                 padding: '7px 15px', borderRadius: 50,
                 background: `linear-gradient(135deg, ${L.green}, ${L.greenDark})`,
                 color: '#fff', fontWeight: 600, fontSize: 13.5, textDecoration: 'none',
               }}
-            >Vender</Link>
+            >{myStore ? 'Mi Tienda' : 'Vender'}</Link>
             <Link to="/login" style={{ color: L.greenDark, textDecoration: 'none', fontWeight: 600 }}>Entrar</Link>
           </div>
         </nav>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, Link } from 'react-router-dom'
 import { C, FONT, GRADIENT, Icon } from '../../stitch'
 import { useAuth } from '../../context/AuthContext'
 import { isFullyActive } from '../../utils/memberStatus'
@@ -9,6 +9,7 @@ import EmptyCatalog from '../../components/marketplace/EmptyCatalog'
 import TravelShowcase, { filterTravelCards } from '../../components/marketplace/TravelShowcase'
 import MembersOnly from '../../components/MembersOnly'
 import TopBar from '../../components/TopBar'
+import { useMyStore } from '../../hooks/useMyStore'
 
 // GoShop — marketplace UNIFICADO estilo Amazon/Mercado Libre.
 // Una sola vista: todos los listings activos mezclados (sin importar LOB),
@@ -21,6 +22,9 @@ export default function MarketplaceScreen({ isDesktop }) {
   const { member } = useAuth()
   // Expedia TAAP es beneficio SOLO para miembros activos (verificados + pagados).
   const canTravel = isFullyActive(member)
+  // Acceso de vendedor: si el logueado tiene tienda, mostramos "Mi Tienda" en la cabecera.
+  // /app/explore NO tiene muro -> el vendedor no-miembro también lo ve. (Solo navegación.)
+  const { store: myStore } = useMyStore()
   const [searchParams, setSearchParams] = useSearchParams()
   const lobParam = searchParams.get('lob')
   const [activeLob, setActiveLob] = useState(LOBS[lobParam] ? lobParam : 'all')
@@ -87,7 +91,13 @@ export default function MarketplaceScreen({ isDesktop }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', background: '#080C14', minHeight: '100vh' }}>
-      <TopBar title="GoShop" leftIcon="menu" rightContent={<div style={{ width: 40 }} />} />
+      <TopBar title="GoShop" leftIcon="menu" rightContent={
+        myStore
+          ? <Link to="/mi-tienda" title="Mi Tienda" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 99, background: `${C.primary}1f`, border: `1px solid ${C.primary}55`, color: C.primary, textDecoration: 'none', fontSize: 12, fontWeight: 700, fontFamily: FONT.body, whiteSpace: 'nowrap' }}>
+              <Icon name="storefront" size={15} style={{ color: C.primary }} />Mi Tienda
+            </Link>
+          : <div style={{ width: 40 }} />
+      } />
 
       <div style={{ padding: '0 16px 100px', display: 'flex', flexDirection: 'column', gap: 16 }}>
 
