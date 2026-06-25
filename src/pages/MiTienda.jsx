@@ -232,6 +232,11 @@ export default function MiTienda() {
                   </div>
                 )}
 
+                <Link to="/mi-tienda/productos" style={S.manageProducts}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Icon name="inventory_2" size={18} style={{ color: C.primary }} /><b style={{ fontWeight: 700 }}>Mis productos</b></span>
+                  <Icon name="chevron_right" size={16} style={{ color: C.onSurfaceVariant }} />
+                </Link>
+
                 <p style={S.subtitle}>Dirección: <b style={{ color: C.primary }}>/tienda/{store.slug}</b> (fija)</p>
                 {renderForm('edit')}
               </>
@@ -268,6 +273,7 @@ const S = {
   bannerActive: { display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', fontSize: 13.5, color: C.onSurface, background: 'rgba(104,219,174,0.08)', border: '1px solid rgba(104,219,174,0.2)', borderRadius: 12, padding: '14px 16px', marginBottom: 16, lineHeight: 1.5 },
   bannerRejected: { display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', fontSize: 13.5, color: C.onSurface, background: 'rgba(224,49,49,0.08)', border: '1px solid rgba(224,49,49,0.25)', borderRadius: 12, padding: '14px 16px', marginBottom: 16, lineHeight: 1.5 },
   linkInline: { color: C.primary, fontWeight: 700, textDecoration: 'none' },
+  manageProducts: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', textDecoration: 'none', color: C.onSurface, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '14px 16px', fontSize: 14, marginBottom: 16 },
   button: { display: 'block', width: '100%', boxSizing: 'border-box', background: GRADIENT.primary, border: 'none', borderRadius: 10, padding: '14px', fontSize: 15, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'center', textDecoration: 'none', marginTop: 4 },
   secondaryBtn: { background: 'transparent', border: '1px solid ' + C.outlineVariant, borderRadius: 10, padding: '11px 18px', fontSize: 13, fontWeight: 600, color: C.onSurface, cursor: 'pointer', fontFamily: 'inherit' },
   secondary: { display: 'block', textAlign: 'center', color: C.primary, textDecoration: 'none', fontSize: 14, fontWeight: 600, marginTop: 16 },

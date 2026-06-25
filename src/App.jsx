@@ -6,6 +6,7 @@ import Join from './pages/Join'
 import ResetPassword from './pages/ResetPassword'
 import SellerSignup from './pages/SellerSignup'
 import MiTienda from './pages/MiTienda'
+import MisProductos from './pages/MisProductos'
 import AdminShell from './components/AdminShell'
 import StorePage from './pages/StorePage'
 import PostScreen from './pages/PostScreen'
@@ -56,6 +57,8 @@ export default function App() {
           <Route path="/dashboard" element={<ProtectedRoute><Navigate to="/app/feed" replace /></ProtectedRoute>} />
           {/* Mi Tienda (vendedor): ruta independiente, solo login (NO muro de membresía; vender no la requiere). */}
           <Route path="/mi-tienda" element={<ProtectedRoute><MiTienda /></ProtectedRoute>} />
+          {/* Gestión de productos del vendedor (solo login; la propiedad la gatea la RLS + el RPC). */}
+          <Route path="/mi-tienda/productos" element={<ProtectedRoute><MisProductos /></ProtectedRoute>} />
           {/* Panel admin: ruta independiente, solo login + guard de experiencia (cng_is_admin) dentro del shell.
               La seguridad real vive en el server (edge function + RPC) y el blindaje de stores. */}
           <Route path="/admin" element={<ProtectedRoute><AdminShell /></ProtectedRoute>} />
