@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../context/AuthContext'
+import { isFullyActive } from '../utils/memberStatus'
 import { listingMinPrice, formatPrice } from '../lib/marketplace'
 import { C, FONT, GRADIENT, Icon } from '../stitch'
 import ComingSoonNotice from '../components/ComingSoonNotice'
@@ -14,10 +16,15 @@ import ComingSoonNotice from '../components/ComingSoonNotice'
 
 export default function ProductPage() {
   const { id } = useParams()
+  const navigate = useNavigate()
+  const { user, member } = useAuth()
   const [state, setState] = useState('loading') // 'loading' | 'found' | 'notfound'
   const [p, setP] = useState(null)
   const [imgIdx, setImgIdx] = useState(0)
   const [comingSoon, setComingSoon] = useState(false)
+  const [cfg, setCfg] = useState(null)
+  const [buying, setBuying] = useState(false)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     let alive = true
@@ -43,8 +50,39 @@ export default function ProductPage() {
     return () => { alive = false }
   }, [id])
 
-  // ÚNICO punto de enganche del checkout (siguiente pieza). Hoy -> aviso neutral.
-  const onBuy = () => setComingSoon(true)
+  // Config para el gancho de Chilliums (lectura pública).
+  useEffect(() => {
+    supabase.from('platform_config').select('commission_pct, cushion_pct').eq('id', true).maybeSingle()
+      .then(({ data }) => setCfg(data || null))
+  }, [])
+
+  // Inicia el checkout: crea la orden server-side + redirige a Mercado Pago. La edge function
+  // elige los métodos de pago según si eres miembro o invitado. 'quote' -> contacto (placeholder).
+  async function onBuy() {
+    setError('')
+    if (p.type === 'quote') { setComingSoon(true); return }
+    if (!user) { navigate('/login'); return }
+    const variant = (p.listing_variants || [])[0]
+    if (!variant?.id) { setError('Este producto no está disponible.'); return }
+    setBuying(true)
+    try {
+      const { data, error: fnErr } = await supabase.functions.invoke('cng-mp-create-order', {
+        body: { listing_id: p.id, variant_id: variant.id, quantity: 1 },
+      })
+      if (fnErr) {
+        let msg = 'No se pudo iniciar la compra. Intenta de nuevo.'
+        try { const b = await fnErr.context?.json?.(); if (b?.error) msg = b.error } catch { /* sin cuerpo */ }
+        setError(msg); return
+      }
+      if (data?.error) { setError(data.error); return }
+      if (data?.init_point) { window.location.href = data.init_point; return }
+      setError('No se pudo iniciar la compra.')
+    } catch (e) {
+      setError(e?.message || 'No se pudo iniciar la compra.')
+    } finally {
+      setBuying(false)
+    }
+  }
 
   if (state === 'loading') return <div style={S.center}>Cargando…</div>
 
@@ -69,6 +107,14 @@ export default function ProductPage() {
   const inStock = stock > 0
   const isQuote = p.type === 'quote'
   const buyDisabled = !isQuote && !inStock
+  const isMember = isFullyActive(member)
+  // Chilliums que ganaría el comprador (gancho para invitados). Pool = comisión × (100−colchón)%;
+  // el comprador recibe la mitad (nivel 0). Valor interno 1:1 USD.
+  const commPct = Number(cfg?.commission_pct ?? 0)
+  const cushPct = Number(cfg?.cushion_pct ?? 0)
+  const chilliumsForBuyer = (price != null && !isQuote)
+    ? (price * (commPct / 100) * ((100 - cushPct) / 100)) / 2
+    : 0
 
   return (
     <div style={S.wrap}>
@@ -123,13 +169,30 @@ export default function ProductPage() {
           </div>
         )}
 
-        {/* CTA — onBuy es el punto de enganche del checkout (hoy: aviso "próximamente") */}
+        {/* Gancho Chilliums: el miembro gana; el invitado ve lo que se pierde. */}
+        {!isQuote && chilliumsForBuyer > 0 && (
+          isMember ? (
+            <div style={S.chilliWin}>
+              <Icon name="auto_awesome" size={16} style={{ color: C.primary, flexShrink: 0 }} />
+              <span>Ganarás <b>{chilliumsForBuyer.toFixed(2)} Chilliums</b> con esta compra.</span>
+            </div>
+          ) : (
+            <div style={S.chilliMiss}>
+              <Icon name="auto_awesome" size={16} style={{ color: C.secondary, flexShrink: 0 }} />
+              <span>Como miembro ganarías <b>{chilliumsForBuyer.toFixed(2)} Chilliums</b> en esta compra. <Link to="/join" style={S.joinLink}>Hazte miembro</Link></span>
+            </div>
+          )
+        )}
+
+        {error && <div style={S.error}>{error}</div>}
+
+        {/* CTA — onBuy crea la orden y redirige a Mercado Pago (quote -> contacto). */}
         <button
           onClick={onBuy}
-          disabled={buyDisabled}
-          style={{ ...S.buyBtn, opacity: buyDisabled ? 0.5 : 1, cursor: buyDisabled ? 'not-allowed' : 'pointer' }}
+          disabled={buyDisabled || buying}
+          style={{ ...S.buyBtn, opacity: (buyDisabled || buying) ? 0.5 : 1, cursor: (buyDisabled || buying) ? 'not-allowed' : 'pointer' }}
         >
-          {isQuote ? 'Contactar' : (inStock ? 'Comprar' : 'Agotado')}
+          {buying ? 'Procesando…' : (isQuote ? 'Contactar' : (inStock ? 'Comprar' : 'Agotado'))}
         </button>
       </div>
 
@@ -166,6 +229,10 @@ const S = {
   descTitle: { fontSize: 12, letterSpacing: 2, textTransform: 'uppercase', color: C.secondaryDark, fontWeight: 700, margin: '0 0 8px' },
   desc: { fontSize: 14.5, color: C.onSurface, lineHeight: 1.6, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' },
 
+  chilliWin: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: C.onSurface, background: 'rgba(104,219,174,0.08)', border: '1px solid rgba(104,219,174,0.2)', borderRadius: 10, padding: '10px 12px', marginTop: 18, lineHeight: 1.5 },
+  chilliMiss: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: C.onSurface, background: 'rgba(231,192,146,0.08)', border: '1px solid rgba(231,192,146,0.22)', borderRadius: 10, padding: '10px 12px', marginTop: 18, lineHeight: 1.5 },
+  joinLink: { color: C.secondary, fontWeight: 700, textDecoration: 'none' },
+  error: { background: 'rgba(226,75,74,0.1)', border: '1px solid rgba(226,75,74,0.3)', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: C.error, marginTop: 16 },
   buyBtn: { display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 28, background: GRADIENT.primary, border: 'none', borderRadius: 12, padding: '15px', fontSize: 16, fontWeight: 800, color: '#fff', fontFamily: FONT.body },
   primaryBtn: { marginTop: 6, textDecoration: 'none', background: GRADIENT.primary, borderRadius: 10, padding: '11px 22px', fontSize: 14, fontWeight: 700, color: '#fff', fontFamily: FONT.body },
 }
