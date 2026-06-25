@@ -9,6 +9,7 @@ import MiTienda from './pages/MiTienda'
 import MisProductos from './pages/MisProductos'
 import AdminShell from './components/AdminShell'
 import StorePage from './pages/StorePage'
+import ProductPage from './pages/ProductPage'
 import PostScreen from './pages/PostScreen'
 import SobreNosotros from './pages/info/SobreNosotros'
 import ComoFunciona from './pages/info/ComoFunciona'
@@ -43,6 +44,8 @@ export default function App() {
             <Route path="/vender" element={<SellerSignup />} />
             {/* Página pública de tienda (solo tiendas 'active'; no requiere login ni membresía). */}
             <Route path="/tienda/:slug" element={<StorePage />} />
+            {/* Página pública de detalle de producto (solo listings 'active'; sin login ni membresía). */}
+            <Route path="/producto/:id" element={<ProductPage />} />
             <Route path="/post/:id" element={<PostScreen />} />
             {/* Páginas informativas del sitio (contenido aprobado). */}
             <Route path="/sobre-nosotros" element={<SobreNosotros />} />

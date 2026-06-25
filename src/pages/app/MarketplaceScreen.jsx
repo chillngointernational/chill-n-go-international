@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
-import { C, FONT, GRADIENT, Icon } from '../../stitch'
+import { C, FONT, Icon } from '../../stitch'
 import { useAuth } from '../../context/AuthContext'
 import { isFullyActive } from '../../utils/memberStatus'
 import { LOBS, fetchCategories, fetchListings } from '../../lib/marketplace'
@@ -35,10 +35,6 @@ export default function MarketplaceScreen({ isDesktop }) {
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
   const [membersOnly, setMembersOnly] = useState(null)
-  // Compra/contacto: el checkout real aún no existe. Mostramos un aviso NEUTRAL
-  // "próximamente" (IGUAL para miembros y no-miembros). NO implica regla de membresía
-  // —eso se define en el modelo de compra, aún por decidir—. Travel conserva su muro propio.
-  const [comingSoon, setComingSoon] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -153,12 +149,7 @@ export default function MarketplaceScreen({ isDesktop }) {
             {visible.length > 0 && (
               <div style={{ display: 'grid', gridTemplateColumns: `repeat(${columns}, 1fr)`, gap: 12 }}>
                 {visible.map((l) => (
-                  <ListingCard
-                    key={l.id}
-                    listing={l}
-                    accent={C.primary}
-                    onOpen={() => setComingSoon(true)}
-                  />
+                  <ListingCard key={l.id} listing={l} accent={C.primary} />
                 ))}
               </div>
             )}
@@ -190,35 +181,8 @@ export default function MarketplaceScreen({ isDesktop }) {
       </div>
 
       <MembersOnly open={!!membersOnly} action={membersOnly} onClose={() => setMembersOnly(null)} />
-      <ComingSoonNotice open={comingSoon} onClose={() => setComingSoon(false)} />
     </div>
   )
-}
-
-// Aviso NEUTRAL de "próximamente" para la compra/contacto (mientras no hay checkout).
-// Sin mensaje de membresía ni de login: igual para todos. El muro "Solo para miembros"
-// (MembersOnly) queda reservado a acciones realmente gateadas por membresía (Travel).
-function ComingSoonNotice({ open, onClose }) {
-  if (!open) return null
-  return (
-    <div onClick={onClose} style={noticeStyles.overlay}>
-      <div onClick={(e) => e.stopPropagation()} style={noticeStyles.card}>
-        <div style={noticeStyles.iconWrap}><Icon name="shopping_bag" size={30} style={{ color: C.primary }} /></div>
-        <h2 style={noticeStyles.title}>Compra en línea — próximamente</h2>
-        <p style={noticeStyles.text}>Estamos afinando la compra en GoShop para que sea fácil y segura. Muy pronto podrás comprar aquí.</p>
-        <button onClick={onClose} style={noticeStyles.primary}>Entendido</button>
-      </div>
-    </div>
-  )
-}
-
-const noticeStyles = {
-  overlay: { position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(8,12,20,0.72)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: FONT.body },
-  card: { width: '100%', maxWidth: 360, background: '#10141a', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 18, padding: '28px 24px', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,0.6)' },
-  iconWrap: { width: 56, height: 56, borderRadius: 99, margin: '0 auto 14px', background: 'rgba(104,219,174,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' },
-  title: { fontFamily: FONT.headline, fontSize: 20, fontWeight: 800, color: C.text, margin: '0 0 8px' },
-  text: { fontSize: 14, color: C.onSurfaceVariant, lineHeight: 1.6, margin: '0 0 22px' },
-  primary: { display: 'block', width: '100%', boxSizing: 'border-box', background: GRADIENT.primary, color: '#fff', border: 'none', borderRadius: 10, padding: '13px', fontSize: 15, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer' },
 }
 
 function Chip({ label, active, onClick, small }) {
