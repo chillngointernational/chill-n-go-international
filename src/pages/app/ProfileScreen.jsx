@@ -15,6 +15,7 @@ export default function ProfileScreen({ onNavigate }) {
   const [userPosts, setUserPosts] = useState([])
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [isSeller, setIsSeller] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
 
   const refLink = member?.ref_code ? window.location.origin + '/join?ref=' + member.ref_code : null
   const displayName = member?.full_name || user?.email?.split('@')[0] || 'Member'
@@ -46,6 +47,13 @@ export default function ProfileScreen({ onNavigate }) {
   useEffect(() => {
     if (!user) return
     supabase.from('sellers').select('id').eq('user_id', user.id).maybeSingle().then(({ data }) => setIsSeller(!!data))
+  }, [user])
+
+  // ¿Es admin? (para mostrar el acceso a "Admin" solo a administradores). Solo UX:
+  // el server ya gatea cada acción admin por su cuenta.
+  useEffect(() => {
+    if (!user) return
+    supabase.rpc('cng_is_admin').then(({ data, error }) => setIsAdmin(!error && data === true))
   }, [user])
 
   async function handleSignOut() { await signOut(); navigate('/') }
@@ -183,6 +191,12 @@ export default function ProfileScreen({ onNavigate }) {
 
       {/* Settings */}
       <div style={{ padding: '0 24px', marginTop: 32, marginBottom: 32, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {isAdmin && (
+          <div onClick={() => navigate('/admin')} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 16, background: C.surfaceLow, borderRadius: 12, cursor: 'pointer' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}><Icon name="admin_panel_settings" size={20} style={{ color: C.primary }} /><span style={{ fontWeight: 600, fontSize: 14, color: C.onSurface }}>Admin</span></div>
+            <Icon name="chevron_right" size={16} style={{ color: C.onSurfaceVariant }} />
+          </div>
+        )}
         {isSeller && (
           <div onClick={() => navigate('/mi-tienda')} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 16, background: C.surfaceLow, borderRadius: 12, cursor: 'pointer' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}><Icon name="storefront" size={20} style={{ color: C.primary }} /><span style={{ fontWeight: 600, fontSize: 14, color: C.onSurface }}>Mi Tienda</span></div>

@@ -6,6 +6,7 @@ import Join from './pages/Join'
 import ResetPassword from './pages/ResetPassword'
 import SellerSignup from './pages/SellerSignup'
 import MiTienda from './pages/MiTienda'
+import AdminShell from './components/AdminShell'
 import PostScreen from './pages/PostScreen'
 import SobreNosotros from './pages/info/SobreNosotros'
 import ComoFunciona from './pages/info/ComoFunciona'
@@ -52,6 +53,9 @@ export default function App() {
           <Route path="/dashboard" element={<ProtectedRoute><Navigate to="/app/feed" replace /></ProtectedRoute>} />
           {/* Mi Tienda (vendedor): ruta independiente, solo login (NO muro de membresía; vender no la requiere). */}
           <Route path="/mi-tienda" element={<ProtectedRoute><MiTienda /></ProtectedRoute>} />
+          {/* Panel admin: ruta independiente, solo login + guard de experiencia (cng_is_admin) dentro del shell.
+              La seguridad real vive en el server (edge function + RPC) y el blindaje de stores. */}
+          <Route path="/admin" element={<ProtectedRoute><AdminShell /></ProtectedRoute>} />
           {/* Paso 1: el shell del marketplace es público; AppShell protege las pantallas de interacción */}
           <Route path="/app" element={<AppShell />}>
             <Route index element={<Navigate to="/app/feed" replace />} />
