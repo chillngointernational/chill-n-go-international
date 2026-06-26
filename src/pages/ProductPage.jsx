@@ -23,7 +23,6 @@ export default function ProductPage() {
   const [imgIdx, setImgIdx] = useState(0)
   const [comingSoon, setComingSoon] = useState(false)
   const [cfg, setCfg] = useState(null)
-  const [buying, setBuying] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -56,32 +55,16 @@ export default function ProductPage() {
       .then(({ data }) => setCfg(data || null))
   }, [])
 
-  // Inicia el checkout: crea la orden server-side + redirige a Mercado Pago. La edge function
-  // elige los métodos de pago según si eres miembro o invitado. 'quote' -> contacto (placeholder).
-  async function onBuy() {
+  // Abre la pantalla de checkout (/checkout): captura el destino + cotiza el envío + muestra el
+  // total. El COBRO real (Mercado Pago, con el total incluyendo envío) es la pieza siguiente (E-5).
+  // 'quote' -> contacto (placeholder). Comprar exige login (las órdenes/direcciones necesitan user).
+  function onBuy() {
     setError('')
     if (p.type === 'quote') { setComingSoon(true); return }
     if (!user) { navigate('/login'); return }
     const variant = (p.listing_variants || [])[0]
     if (!variant?.id) { setError('Este producto no está disponible.'); return }
-    setBuying(true)
-    try {
-      const { data, error: fnErr } = await supabase.functions.invoke('cng-mp-create-order', {
-        body: { listing_id: p.id, variant_id: variant.id, quantity: 1 },
-      })
-      if (fnErr) {
-        let msg = 'No se pudo iniciar la compra. Intenta de nuevo.'
-        try { const b = await fnErr.context?.json?.(); if (b?.error) msg = b.error } catch { /* sin cuerpo */ }
-        setError(msg); return
-      }
-      if (data?.error) { setError(data.error); return }
-      if (data?.init_point) { window.location.href = data.init_point; return }
-      setError('No se pudo iniciar la compra.')
-    } catch (e) {
-      setError(e?.message || 'No se pudo iniciar la compra.')
-    } finally {
-      setBuying(false)
-    }
+    navigate(`/checkout?listing=${p.id}&variant=${variant.id}&qty=1`)
   }
 
   if (state === 'loading') return <div style={S.center}>Cargando…</div>
@@ -191,10 +174,10 @@ export default function ProductPage() {
         {/* CTA — onBuy crea la orden y redirige a Mercado Pago (quote -> contacto). */}
         <button
           onClick={onBuy}
-          disabled={buyDisabled || buying}
-          style={{ ...S.buyBtn, opacity: (buyDisabled || buying) ? 0.5 : 1, cursor: (buyDisabled || buying) ? 'not-allowed' : 'pointer' }}
+          disabled={buyDisabled}
+          style={{ ...S.buyBtn, opacity: buyDisabled ? 0.5 : 1, cursor: buyDisabled ? 'not-allowed' : 'pointer' }}
         >
-          {buying ? 'Procesando…' : (isQuote ? 'Contactar' : (inStock ? 'Comprar' : 'Agotado'))}
+          {isQuote ? 'Contactar' : (inStock ? 'Comprar' : 'Agotado')}
         </button>
       </div>
 

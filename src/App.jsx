@@ -11,6 +11,7 @@ import MiDirecciones from './pages/MiDirecciones'
 import AdminShell from './components/AdminShell'
 import StorePage from './pages/StorePage'
 import ProductPage from './pages/ProductPage'
+import Checkout from './pages/Checkout'
 import PostScreen from './pages/PostScreen'
 import SobreNosotros from './pages/info/SobreNosotros'
 import ComoFunciona from './pages/info/ComoFunciona'
@@ -65,6 +66,8 @@ export default function App() {
           <Route path="/mi-tienda/productos" element={<ProtectedRoute><MisProductos /></ProtectedRoute>} />
           {/* Direcciones de origen del vendedor (E-2; RLS owner-only; cada producto elige una). */}
           <Route path="/mi-tienda/direcciones" element={<ProtectedRoute><MiDirecciones /></ProtectedRoute>} />
+          {/* Checkout (E-4): destino + cotización de envío + resumen (sin cobrar; el pago es E-5). */}
+          <Route path="/checkout" element={<ProtectedRoute><Checkout /></ProtectedRoute>} />
           {/* Panel admin: ruta independiente, solo login + guard de experiencia (cng_is_admin) dentro del shell.
               La seguridad real vive en el server (edge function + RPC) y el blindaje de stores. */}
           <Route path="/admin" element={<ProtectedRoute><AdminShell /></ProtectedRoute>} />
