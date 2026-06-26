@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { isFullyActive } from '../utils/memberStatus'
 import { clientPrice, formatPrice } from '../lib/marketplace'
 import { useBuyerAddresses } from '../hooks/useBuyerAddresses'
+import { MX_STATES } from '../lib/mxStates'
 import { C, FONT, GRADIENT, Icon } from '../stitch'
 
 // Pantalla de checkout (/checkout?listing=&variant=&qty=) — E-4. 🟢 sin dinero: SOLO captura el
@@ -256,7 +257,10 @@ export default function Checkout() {
                   <input placeholder="Colonia" value={form.district} onChange={(e) => setForm((f) => ({ ...f, district: e.target.value }))} style={S.input} />
                   <div style={S.row2}>
                     <input placeholder="Ciudad" value={form.city} onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))} style={{ ...S.input, flex: 2 }} />
-                    <input placeholder="Estado" value={form.state} onChange={(e) => setForm((f) => ({ ...f, state: e.target.value }))} style={{ ...S.input, flex: 2 }} />
+                    <select value={form.state} onChange={(e) => setForm((f) => ({ ...f, state: e.target.value }))} style={{ ...S.input, flex: 2 }}>
+                      <option value="">Estado…</option>
+                      {MX_STATES.map((s) => <option key={s.code} value={s.code}>{s.name}</option>)}
+                    </select>
                     <input placeholder="CP" value={form.postal_code} onChange={(e) => setForm((f) => ({ ...f, postal_code: e.target.value }))} inputMode="numeric" maxLength={5} style={S.input} />
                   </div>
                   <input placeholder="Referencia (opcional)" value={form.reference} onChange={(e) => setForm((f) => ({ ...f, reference: e.target.value }))} style={S.input} />

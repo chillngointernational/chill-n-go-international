@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
+import { MX_STATES } from '../lib/mxStates'
 import { C, FONT, GRADIENT, Icon } from '../stitch'
 
 // Mis direcciones de origen (/mi-tienda/direcciones) — el vendedor gestiona desde dónde ENVÍA.
@@ -266,7 +267,10 @@ export default function MiDirecciones() {
               </div>
               <div style={{ ...S.field, flex: 2 }}>
                 <label style={S.label}>Estado</label>
-                <input value={form.state} onChange={(e) => setForm((f) => ({ ...f, state: e.target.value }))} style={S.input} placeholder="Estado" />
+                <select value={form.state} onChange={(e) => setForm((f) => ({ ...f, state: e.target.value }))} style={S.input}>
+                  <option value="">Estado…</option>
+                  {MX_STATES.map((s) => <option key={s.code} value={s.code}>{s.name}</option>)}
+                </select>
               </div>
               <div style={{ ...S.field, flex: 1 }}>
                 <label style={S.label}>CP</label>
