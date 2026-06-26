@@ -18,7 +18,7 @@ const IMG_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
 const STATUS_LABEL = { active: 'Publicado', draft: 'Borrador', suspended: 'Suspendido' }
 const STATUS_COLOR = { active: C.primary, draft: C.onSurfaceVariant, suspended: C.errorBright }
 
-const EMPTY_FORM = { title: '', description: '', categoryId: '', price: '', stock: '0', images: [], weightKg: '', lengthCm: '', widthCm: '', heightCm: '' }
+const EMPTY_FORM = { title: '', description: '', categoryId: '', price: '', stock: '0', images: [], weightKg: '', lengthCm: '', widthCm: '', heightCm: '', originAddressId: '' }
 
 export default function MisProductos() {
   const { user, member, loading: authLoading } = useAuth()
@@ -28,6 +28,7 @@ export default function MisProductos() {
   const [store, setStore] = useState(null)
   const [products, setProducts] = useState([])
   const [categories, setCategories] = useState([])
+  const [addresses, setAddresses] = useState([]) // direcciones de origen del vendedor (E-2)
 
   const [mode, setMode] = useState('list')      // 'list' | 'form'
   const [editing, setEditing] = useState(null)   // listing en edición (o null = crear)
@@ -43,14 +44,17 @@ export default function MisProductos() {
   const load = useCallback(async () => {
     if (!user || !member) { setChecking(false); return }
     setChecking(true)
-    const { data: st } = await supabase
-      .from('stores').select('id, name, slug, status').eq('owner_id', member.id).maybeSingle()
+    const [{ data: st }, { data: addr }] = await Promise.all([
+      supabase.from('stores').select('id, name, slug, status').eq('owner_id', member.id).maybeSingle(),
+      supabase.from('seller_addresses').select('id, label, is_default').eq('owner_id', member.id).order('is_default', { ascending: false }).order('created_at', { ascending: true }),
+    ])
     setStore(st || null)
+    setAddresses(addr || [])
     if (st) {
       const { data: ls } = await supabase
         .from('listings')
         .select(`
-          id, title, description, status, category_id, created_at,
+          id, title, description, status, category_id, created_at, origin_address_id,
           listing_variants(id, price, stock, is_active, weight_grams, length_cm, width_cm, height_cm),
           listing_images(id, url, sort_order)
         `)
@@ -97,7 +101,9 @@ export default function MisProductos() {
 
   // ---- crear / editar ----
   function openCreate() {
-    setEditing(null); setForm(EMPTY_FORM); setError(''); setOkMsg(''); setMode('form')
+    // Preselecciona la dirección de origen predeterminada (o la única) si existe.
+    const def = addresses.find((a) => a.is_default) || addresses[0]
+    setEditing(null); setForm({ ...EMPTY_FORM, originAddressId: def?.id || '' }); setError(''); setOkMsg(''); setMode('form')
   }
   function openEdit(p) {
     const v = (p.listing_variants || [])[0] || {}
@@ -114,6 +120,7 @@ export default function MisProductos() {
       lengthCm: v.length_cm != null ? String(v.length_cm) : '',
       widthCm: v.width_cm != null ? String(v.width_cm) : '',
       heightCm: v.height_cm != null ? String(v.height_cm) : '',
+      originAddressId: p.origin_address_id || '',
     })
     setError(''); setOkMsg(''); setMode('form')
   }
@@ -134,7 +141,8 @@ export default function MisProductos() {
     if (![lengthCm, widthCm, heightCm].every((n) => Number.isFinite(n) && n > 0)) { setError('Largo, ancho y alto (cm) deben ser números mayores a 0.'); return null }
     const weightGrams = Math.round(weightKg * 1000)
     if (weightGrams < 1) { setError('El peso es demasiado bajo.'); return null }
-    return { t, price, stock, weightGrams, lengthCm, widthCm, heightCm }
+    if (!form.originAddressId) { setError('Elige la dirección de origen del envío.'); return null }
+    return { t, price, stock, weightGrams, lengthCm, widthCm, heightCm, originAddressId: form.originAddressId }
   }
 
   async function handleSave() {
@@ -158,6 +166,7 @@ export default function MisProductos() {
         p_length_cm: v.lengthCm,
         p_width_cm: v.widthCm,
         p_height_cm: v.heightCm,
+        p_origin_address_id: v.originAddressId,
       })
       if (rpcErr) { setError('No se pudo guardar el producto. Intenta de nuevo.'); return }
       setOkMsg(editing ? 'Producto actualizado.' : '¡Producto publicado!')
@@ -320,10 +329,25 @@ export default function MisProductos() {
               <textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} rows={3} style={{ ...S.input, resize: 'vertical' }} placeholder="Detalles, material, tallas disponibles…" />
             </div>
 
-            {/* Datos de envío (REQUERIDOS: sin peso/dimensiones no se puede cotizar el envío) */}
+            {/* Datos de envío (REQUERIDOS: sin origen/peso/dimensiones no se puede cotizar el envío) */}
             <div style={S.field}>
               <label style={S.label}>Datos de envío</label>
               <span style={S.hint}>Necesarios para cotizar el envío. Mide y pesa el paquete ya empacado.</span>
+
+              <div style={{ ...S.field, marginTop: 4 }}>
+                <label style={S.subLabel}>Dirección de origen (desde dónde envías)</label>
+                {addresses.length === 0 ? (
+                  <div style={S.originWarn}>
+                    Aún no tienes direcciones de origen. <Link to="/mi-tienda/direcciones" style={S.originLink}>Crea una primero</Link> para poder publicar el producto.
+                  </div>
+                ) : (
+                  <select value={form.originAddressId} onChange={(e) => setForm((f) => ({ ...f, originAddressId: e.target.value }))} style={S.input}>
+                    <option value="">Elige una dirección…</option>
+                    {addresses.map((a) => <option key={a.id} value={a.id}>{a.label}{a.is_default ? ' (predeterminada)' : ''}</option>)}
+                  </select>
+                )}
+              </div>
+
               <div style={S.row2}>
                 <div style={{ ...S.field, flex: 1 }}>
                   <label style={S.subLabel}>Peso (kg)</label>
@@ -399,6 +423,8 @@ const S = {
   input: { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '12px 14px', fontSize: 14, color: C.text, outline: 'none', fontFamily: 'inherit' },
   hint: { fontSize: 11.5, color: C.textFaint, lineHeight: 1.4 },
   subLabel: { fontSize: 11.5, color: C.textFaint, fontWeight: 600 },
+  originWarn: { fontSize: 12.5, color: C.onSurface, background: 'rgba(239,159,39,0.08)', border: '1px solid rgba(239,159,39,0.25)', borderRadius: 8, padding: '10px 12px', lineHeight: 1.5 },
+  originLink: { color: C.primary, fontWeight: 700, textDecoration: 'none' },
 
   thumbsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))', gap: 8, marginBottom: 4 },
   thumbWrap: { position: 'relative', aspectRatio: '1', borderRadius: 10, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' },
