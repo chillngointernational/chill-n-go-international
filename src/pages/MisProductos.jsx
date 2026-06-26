@@ -12,6 +12,7 @@ import { C, FONT, GRADIENT, Icon } from '../stitch'
 // Producto simple: 1 variante default (precio/stock), sin UI de variantes. Publica al instante.
 
 const NAME_MIN = 2, NAME_MAX = 80
+const DESC_MIN = 30, PHOTOS_MIN = 3
 const IMG_MAX_BYTES = 5 * 1024 * 1024
 const IMG_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
 
@@ -40,6 +41,7 @@ export default function MisProductos() {
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState('')
   const [okMsg, setOkMsg] = useState('')
+  const [missing, setMissing] = useState([]) // campos que faltan para PUBLICAR
 
   const load = useCallback(async () => {
     if (!user || !member) { setChecking(false); return }
@@ -122,54 +124,69 @@ export default function MisProductos() {
       heightCm: v.height_cm != null ? String(v.height_cm) : '',
       originAddressId: p.origin_address_id || '',
     })
-    setError(''); setOkMsg(''); setMode('form')
+    setError(''); setOkMsg(''); setMissing([]); setMode('form')
   }
-  function cancelForm() { setMode('list'); setEditing(null); setForm(EMPTY_FORM); setError('') }
+  function cancelForm() { setMode('list'); setEditing(null); setForm(EMPTY_FORM); setError(''); setMissing([]) }
 
-  function validate() {
+  // Lista de TODO lo que falta para PUBLICAR (active). Vacía = listo para publicar.
+  function collectPublishMissing() {
+    const m = []
     const t = form.title.trim()
-    if (t.length < NAME_MIN || t.length > NAME_MAX) { setError(`El nombre debe tener entre ${NAME_MIN} y ${NAME_MAX} caracteres.`); return null }
-    if (!form.categoryId) { setError('Elige una categoría.'); return null }
+    if (t.length < NAME_MIN || t.length > NAME_MAX) m.push(`Título (entre ${NAME_MIN} y ${NAME_MAX} caracteres)`)
+    if (!form.categoryId) m.push('Categoría')
     const price = Number(form.price)
-    if (!Number.isFinite(price) || price <= 0) { setError('El precio debe ser un número mayor a 0.'); return null }
-    const stock = form.stock === '' ? 0 : Number(form.stock)
-    if (!Number.isInteger(stock) || stock < 0) { setError('El stock debe ser un entero de 0 o más.'); return null }
-    if (form.images.length === 0) { setError('Agrega al menos una foto del producto.'); return null }
+    if (!Number.isFinite(price) || price <= 0) m.push('Precio mayor a 0')
+    const desc = form.description.trim()
+    if (desc.length < DESC_MIN) m.push(`Descripción (mínimo ${DESC_MIN} caracteres, tienes ${desc.length})`)
+    if (form.images.length < PHOTOS_MIN) m.push(`Mínimo ${PHOTOS_MIN} fotos (tienes ${form.images.length})`)
     const weightKg = Number(form.weightKg)
-    if (!Number.isFinite(weightKg) || weightKg <= 0) { setError('El peso (kg) debe ser un número mayor a 0.'); return null }
-    const lengthCm = Number(form.lengthCm), widthCm = Number(form.widthCm), heightCm = Number(form.heightCm)
-    if (![lengthCm, widthCm, heightCm].every((n) => Number.isFinite(n) && n > 0)) { setError('Largo, ancho y alto (cm) deben ser números mayores a 0.'); return null }
-    const weightGrams = Math.round(weightKg * 1000)
-    if (weightGrams < 1) { setError('El peso es demasiado bajo.'); return null }
-    if (!form.originAddressId) { setError('Elige la dirección de origen del envío.'); return null }
-    return { t, price, stock, weightGrams, lengthCm, widthCm, heightCm, originAddressId: form.originAddressId }
+    if (!Number.isFinite(weightKg) || weightKg <= 0) m.push('Peso (kg)')
+    const l = Number(form.lengthCm), w = Number(form.widthCm), h = Number(form.heightCm)
+    if (![l, w, h].every((n) => Number.isFinite(n) && n > 0)) m.push('Largo, ancho y alto (cm)')
+    if (!form.originAddressId) m.push('Dirección de origen')
+    return m
   }
 
-  async function handleSave() {
-    setError(''); setOkMsg('')
+  // Parámetros del RPC desde el form. null para campos vacíos -> un borrador puede ir a medias.
+  function buildParams(targetStatus) {
+    const num = (s) => (s === '' || s == null ? null : Number(s))
+    const wKg = num(form.weightKg)
+    return {
+      p_store_id: store.id,
+      p_category_id: form.categoryId || null,
+      p_title: form.title.trim(),
+      p_price: form.price === '' ? 0 : Number(form.price),
+      p_stock: form.stock === '' ? 0 : Math.floor(Number(form.stock)),
+      p_description: form.description.trim() || null,
+      p_images: form.images,
+      p_status: targetStatus,
+      p_listing_id: editing?.id || null,
+      p_weight_grams: wKg != null && wKg > 0 ? Math.round(wKg * 1000) : null,
+      p_length_cm: num(form.lengthCm),
+      p_width_cm: num(form.widthCm),
+      p_height_cm: num(form.heightCm),
+      p_origin_address_id: form.originAddressId || null,
+    }
+  }
+
+  async function handleSave(targetStatus) {
+    setError(''); setOkMsg(''); setMissing([])
     if (!store?.id) return
-    const v = validate()
-    if (!v) return
+    if (targetStatus === 'active') {
+      const miss = collectPublishMissing()
+      if (miss.length) { setMissing(miss); setError('Faltan datos para publicar.'); return }
+    } else {
+      // Borrador: mínimo título + categoría (la DB los exige). El resto puede ir vacío.
+      const t = form.title.trim()
+      if (t.length < NAME_MIN || t.length > NAME_MAX) { setError(`El nombre debe tener entre ${NAME_MIN} y ${NAME_MAX} caracteres.`); return }
+      if (!form.categoryId) { setError('Elige una categoría para guardar el borrador.'); return }
+      if (form.price !== '' && !(Number(form.price) >= 0)) { setError('El precio no es válido.'); return }
+    }
     setSubmitting(true)
     try {
-      const { error: rpcErr } = await supabase.rpc('rpc_upsert_product', {
-        p_store_id: store.id,
-        p_category_id: form.categoryId,
-        p_title: v.t,
-        p_price: v.price,
-        p_stock: v.stock,
-        p_description: form.description.trim() || null,
-        p_images: form.images,
-        p_status: 'active',
-        p_listing_id: editing?.id || null,
-        p_weight_grams: v.weightGrams,
-        p_length_cm: v.lengthCm,
-        p_width_cm: v.widthCm,
-        p_height_cm: v.heightCm,
-        p_origin_address_id: v.originAddressId,
-      })
+      const { error: rpcErr } = await supabase.rpc('rpc_upsert_product', buildParams(targetStatus))
       if (rpcErr) { setError('No se pudo guardar el producto. Intenta de nuevo.'); return }
-      setOkMsg(editing ? 'Producto actualizado.' : '¡Producto publicado!')
+      setOkMsg(targetStatus === 'active' ? '¡Producto publicado!' : 'Borrador guardado.')
       setMode('list'); setEditing(null); setForm(EMPTY_FORM)
       await load()
     } catch (e) {
@@ -297,7 +314,7 @@ export default function MisProductos() {
               <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading} style={S.secondaryBtn}>
                 {uploading ? 'Subiendo…' : (form.images.length ? 'Agregar más fotos' : 'Subir fotos')}
               </button>
-              <span style={S.hint}>La primera foto es la principal (portada). PNG, JPG, WEBP o GIF · máx 5 MB c/u.</span>
+              <span style={S.hint}>La primera foto es la principal (portada). <b>Mínimo {PHOTOS_MIN} para publicar.</b> PNG, JPG, WEBP o GIF · máx 5 MB c/u.</span>
             </div>
 
             <div style={S.field}>
@@ -325,7 +342,7 @@ export default function MisProductos() {
             </div>
 
             <div style={S.field}>
-              <label style={S.label}>Descripción (opcional)</label>
+              <label style={S.label}>Descripción <span style={S.subLabel}>(mín. {DESC_MIN} car. para publicar)</span></label>
               <textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} rows={3} style={{ ...S.input, resize: 'vertical' }} placeholder="Detalles, material, tallas disponibles…" />
             </div>
 
@@ -371,12 +388,23 @@ export default function MisProductos() {
               </div>
             </div>
 
+            {missing.length > 0 && (
+              <div style={S.missingBox}>
+                <b style={{ color: C.errorBright }}>Para publicar te falta:</b>
+                <ul style={S.missingList}>{missing.map((m, i) => <li key={i}>{m}</li>)}</ul>
+                <span style={S.hint}>Puedes <b>Guardar borrador</b> mientras lo completas (no se publica ni se vende hasta estar 100%).</span>
+              </div>
+            )}
+
             <div style={S.formActions}>
-              <button onClick={handleSave} disabled={submitting || uploading} style={{ ...S.primaryBtn, flex: 1, opacity: (submitting || uploading) ? 0.5 : 1 }}>
-                {submitting ? 'Guardando…' : (editing ? 'Guardar cambios' : 'Publicar producto')}
+              <button onClick={() => handleSave('draft')} disabled={submitting || uploading} style={{ ...S.ghostBtn, flex: 1, opacity: (submitting || uploading) ? 0.5 : 1 }}>
+                {submitting ? 'Guardando…' : 'Guardar borrador'}
               </button>
-              <button onClick={cancelForm} disabled={submitting} style={S.ghostBtn}>Cancelar</button>
+              <button onClick={() => handleSave('active')} disabled={submitting || uploading} style={{ ...S.primaryBtn, flex: 1, opacity: (submitting || uploading) ? 0.5 : 1 }}>
+                {submitting ? 'Guardando…' : 'Publicar'}
+              </button>
             </div>
+            <button onClick={cancelForm} disabled={submitting} style={{ ...S.ghostBtn, width: '100%', marginTop: 8 }}>Cancelar</button>
           </div>
         )}
 
@@ -424,6 +452,8 @@ const S = {
   hint: { fontSize: 11.5, color: C.textFaint, lineHeight: 1.4 },
   subLabel: { fontSize: 11.5, color: C.textFaint, fontWeight: 600 },
   originWarn: { fontSize: 12.5, color: C.onSurface, background: 'rgba(239,159,39,0.08)', border: '1px solid rgba(239,159,39,0.25)', borderRadius: 8, padding: '10px 12px', lineHeight: 1.5 },
+  missingBox: { background: 'rgba(226,75,74,0.08)', border: '1px solid rgba(226,75,74,0.28)', borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: C.onSurface },
+  missingList: { margin: '4px 0 0', paddingLeft: 18, lineHeight: 1.6, color: C.onSurface },
   originLink: { color: C.primary, fontWeight: 700, textDecoration: 'none' },
 
   thumbsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))', gap: 8, marginBottom: 4 },
