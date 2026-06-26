@@ -32,10 +32,10 @@ export default function ProductPage() {
       const { data, error } = await supabase
         .from('listings')
         .select(`
-          id, title, description, type, currency, status,
+          id, title, description, type, currency, status, origin_address_id,
           category:categories(id, slug, name),
           store:stores(id, name, slug, status),
-          listing_variants(id, name, price, stock, is_active),
+          listing_variants(id, name, price, stock, is_active, weight_grams, length_cm, width_cm, height_cm),
           listing_images(id, url, sort_order)
         `)
         .eq('id', id)
@@ -89,7 +89,11 @@ export default function ProductPage() {
   const stock = variant.stock ?? 0
   const inStock = stock > 0
   const isQuote = p.type === 'quote'
-  const buyDisabled = !isQuote && !inStock
+  // Envío disponible solo si el producto tiene origen + peso/dimensiones (los exige el cotizador).
+  // Los productos 'quote' no se envían (son contacto), así que no aplican el candado.
+  const hasShipData = variant.weight_grams >= 1 && variant.length_cm > 0 && variant.width_cm > 0 && variant.height_cm > 0
+  const shippable = isQuote || (!!p.origin_address_id && hasShipData)
+  const buyDisabled = !isQuote && (!inStock || !shippable)
   const isMember = isFullyActive(member)
   // Chilliums que ganaría el comprador (gancho para invitados). Pool = comisión × (100−colchón)%;
   // el comprador recibe la mitad (nivel 0). Valor interno 1:1 USD.
@@ -171,13 +175,22 @@ export default function ProductPage() {
 
         {error && <div style={S.error}>{error}</div>}
 
+        {/* Candado de envío: si el producto no tiene origen + peso/dimensiones, no se puede cotizar
+            el envío -> avisar y deshabilitar la compra (no mandar al comprador a un checkout muerto). */}
+        {!isQuote && !shippable && (
+          <div style={S.shipUnavailable}>
+            <Icon name="local_shipping" size={16} style={{ color: '#EF9F27', flexShrink: 0, marginTop: 1 }} />
+            <span>Envío no disponible — este producto aún no tiene datos de envío configurados.</span>
+          </div>
+        )}
+
         {/* CTA — onBuy crea la orden y redirige a Mercado Pago (quote -> contacto). */}
         <button
           onClick={onBuy}
           disabled={buyDisabled}
           style={{ ...S.buyBtn, opacity: buyDisabled ? 0.5 : 1, cursor: buyDisabled ? 'not-allowed' : 'pointer' }}
         >
-          {isQuote ? 'Contactar' : (inStock ? 'Comprar' : 'Agotado')}
+          {isQuote ? 'Contactar' : (!shippable ? 'Envío no disponible' : (inStock ? 'Comprar' : 'Agotado'))}
         </button>
       </div>
 
@@ -218,6 +231,7 @@ const S = {
   chilliMiss: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: C.onSurface, background: 'rgba(231,192,146,0.08)', border: '1px solid rgba(231,192,146,0.22)', borderRadius: 10, padding: '10px 12px', marginTop: 18, lineHeight: 1.5 },
   joinLink: { color: C.secondary, fontWeight: 700, textDecoration: 'none' },
   error: { background: 'rgba(226,75,74,0.1)', border: '1px solid rgba(226,75,74,0.3)', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: C.error, marginTop: 16 },
+  shipUnavailable: { display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 13, color: C.onSurface, background: 'rgba(239,159,39,0.08)', border: '1px solid rgba(239,159,39,0.25)', borderRadius: 10, padding: '10px 12px', marginTop: 16, lineHeight: 1.5 },
   buyBtn: { display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 28, background: GRADIENT.primary, border: 'none', borderRadius: 12, padding: '15px', fontSize: 16, fontWeight: 800, color: '#fff', fontFamily: FONT.body },
   primaryBtn: { marginTop: 6, textDecoration: 'none', background: GRADIENT.primary, borderRadius: 10, padding: '11px 22px', fontSize: 14, fontWeight: 700, color: '#fff', fontFamily: FONT.body },
 }

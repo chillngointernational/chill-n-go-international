@@ -282,7 +282,7 @@ export default function Checkout() {
             <div style={S.warn}><Icon name="error_outline" size={16} style={{ color: '#EF9F27', flexShrink: 0, marginTop: 1 }} /><span>{quoteError}</span></div>
           ) : sinCobertura || (options && options.length === 0) ? (
             <div style={S.warn}><Icon name="local_shipping" size={16} style={{ color: '#EF9F27', flexShrink: 0, marginTop: 1 }} /><span>No hay envío disponible a esta zona. Prueba con otra dirección.</span></div>
-          ) : (
+          ) : (options && options.length > 0) ? (
             <div style={S.shipList}>
               {options.map((o, i) => (
                 <label key={i} style={{ ...S.shipRow, ...(selectedShip === i ? S.shipRowSel : {}) }}>
@@ -295,6 +295,8 @@ export default function Checkout() {
                 </label>
               ))}
             </div>
+          ) : (
+            <p style={S.muted}>Cotizando envío…</p>
           )}
         </section>
 

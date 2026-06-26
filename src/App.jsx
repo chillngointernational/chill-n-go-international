@@ -23,6 +23,7 @@ import Privacidad from './pages/info/Privacidad'
 import AppShell from './components/AppShell'
 import ProtectedRoute from './components/ProtectedRoute'
 import Footer from './components/Footer'
+import ErrorBoundary from './components/ErrorBoundary'
 
 // Layout de páginas WEB públicas: contenido + footer del sitio.
 // NO envuelve /app/* (AppShell) -> el footer nunca entra en la app interna tipo TikTok.
@@ -34,6 +35,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <ErrorBoundary>
         <Routes>
           <Route path="/" element={<Landing />} />
           {/* Páginas WEB públicas con footer del sitio (tema oscuro). La landing integra su
@@ -91,6 +93,7 @@ export default function App() {
           {/* Catch-all raíz: cualquier URL desconocida va a la landing (nunca pantalla negra). */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </ErrorBoundary>
       </AuthProvider>
     </BrowserRouter>
   )
