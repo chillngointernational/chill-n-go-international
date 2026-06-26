@@ -10,13 +10,14 @@
 // Anti-abuso (edge público): rate-limit por IP respaldado en DB (rpc_quote_rate_hit), validación
 // estricta de entrada, cap de cantidad, y solo cotiza productos de tienda+listing 'active'.
 //
-// Fan-out: un /ship/rate/ por carrier ENABLED (tabla shipping_carriers), en paralelo con timeout
-// por carrier (uno lento/caído NO tumba al resto). Junta, descarta vacíos (sin cobertura), ordena
-// por precio. Si todos vacíos -> { options:[], sin_cobertura:true } con HTTP 200 (no es error).
+// La construcción del request /ship/rate/ y el parseo viven en ../_shared/envia-rate.ts (MISMA
+// lógica que usa el re-cotizador al pagar -> el precio coincide exacto). Fan-out: un carrier por
+// request en paralelo, con timeout por carrier. Si todos vacíos -> { options:[], sin_cobertura:true }.
 //
 // Secrets del runtime: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, ENVIA_TOKEN_TEST.
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { ENVIA_TEST_HOST, buildRateBase, quoteCarrier } from '../_shared/envia-rate.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -29,42 +30,8 @@ function json(body: unknown, status = 200): Response {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const CP_RE = /^[0-9]{5}$/
-const ENVIA_TEST_HOST = 'https://api-test.envia.com'
 const RATE_LIMIT_PER_MIN = 20      // cotizaciones por IP por minuto (anti-abuso)
-const CARRIER_TIMEOUT_MS = 8000    // un carrier lento se aborta a los 8s y aporta 0 opciones
 const MAX_QTY = 100
-
-// Cotiza UN carrier con timeout propio. Devuelve [] ante timeout / error / sin cobertura.
-async function quoteCarrier(carrier: { code: string; label: string }, base: Record<string, unknown>, token: string) {
-  const ctrl = new AbortController()
-  const t = setTimeout(() => ctrl.abort(), CARRIER_TIMEOUT_MS)
-  try {
-    const r = await fetch(`${ENVIA_TEST_HOST}/ship/rate/`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...base, shipment: { type: 1, carrier: carrier.code } }),
-      signal: ctrl.signal,
-    })
-    const data: any = await r.json().catch(() => null)
-    if (!data || data.meta !== 'rate' || !Array.isArray(data.data)) return []
-    return data.data
-      .map((o: any) => ({
-        carrier: o.carrier || carrier.code,
-        carrier_label: carrier.label,
-        service: o.service ?? null,
-        service_description: o.serviceDescription ?? null,
-        price: Number(o.totalPrice),
-        currency: o.currency || (base.settings as any)?.currency || 'MXN',
-        delivery_estimate: o.deliveryEstimate ?? null,
-        delivery_date: o.deliveryDate?.date ?? null,
-      }))
-      .filter((o: any) => Number.isFinite(o.price) && o.price >= 0)
-  } catch {
-    return [] // timeout o error de red -> este carrier no aporta, no tumba al resto
-  } finally {
-    clearTimeout(t)
-  }
-}
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -142,32 +109,17 @@ Deno.serve(async (req: Request) => {
     return json({ options: [], sin_cobertura: true }) // sin paqueterías habilitadas
   }
 
-  // Request base (anclado a la sonda E-0 que cotizó OK). Peso de gramos -> KG; dims en CM.
+  // Request base (lógica compartida con el re-cotizador al pagar). Peso gramos -> KG; dims en CM.
   const currency = listing.currency || 'MXN'
-  const base = {
-    origin: {
-      name: origin.contact_name, company: 'CNG', email: origin.email || 'envios@chillngointernational.com',
-      phone: origin.phone, street: origin.street, number: origin.ext_number,
-      district: origin.district, city: origin.city, state: origin.state, country: origin.country || 'MX',
-      postalCode: origin.postal_code,
-      reference: [origin.reference, origin.int_number ? `Int. ${origin.int_number}` : null].filter(Boolean).join(' · ') || undefined,
-    },
-    destination: {
-      name: 'Cliente', company: 'CNG', email: 'cliente@chillngointernational.com', phone: '0000000000',
-      street: '-', number: '0', district: '-',
-      city: String(dest.city || '-'), state: String(dest.state || '-'),
-      country: String(dest.country || 'MX'), postalCode: destCp,
-    },
-    packages: [{
-      type: 'box', content: String(listing.title || 'Producto').slice(0, 40), amount: quantity,
-      declaredValue: Number(variant.price) * quantity, weight: w / 1000, weightUnit: 'KG',
-      lengthUnit: 'CM', dimensions: { length: l, width: wi, height: h },
-    }],
-    settings: { currency },
-  }
+  const base = buildRateBase({
+    origin,
+    destCity: dest.city, destState: dest.state, destCountry: dest.country, destPostalCode: destCp,
+    weightGrams: w, lengthCm: l, widthCm: wi, heightCm: h,
+    declaredValue: Number(variant.price) * quantity, content: listing.title, quantity, currency,
+  })
 
   // Fan-out: un /ship/rate/ por carrier en paralelo, con timeout por carrier.
-  const settled = await Promise.allSettled(carriers.map((c) => quoteCarrier(c, base, enviaToken)))
+  const settled = await Promise.allSettled(carriers.map((c) => quoteCarrier(ENVIA_TEST_HOST, enviaToken, base, c)))
   const options: any[] = []
   for (const s of settled) if (s.status === 'fulfilled' && Array.isArray(s.value)) options.push(...s.value)
   options.sort((a, b) => a.price - b.price)

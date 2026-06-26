@@ -2,22 +2,28 @@
 // SEPARADA de la membresía (regla dura): usa la app "Chill N Go Checkout" con su PROPIO token.
 // verify_jwt:true. Molde de cng-mp-create-subscription.
 //
+// E-5: ahora integra el ENVÍO. Si el body trae { shipping_address_id, carrier, service,
+// expected_shipping_cost }, el server RE-COTIZA el envío con Envia (sandbox), valida la opción
+// elegida y obtiene el PRECIO DEL SERVIDOR (nunca confía en el precio del cliente). Suma el envío al
+// total y agrega un 3er ítem a la preferencia. Si NO trae datos de envío -> camino C-3 IDÉNTICO
+// (2 ítems, sin envío). La lógica de cotización es la MISMA de cng-shipping-quote (_shared) -> el
+// precio re-cotizado coincide exacto con el mostrado.
+//
 // Flujo:
 //  1) Usuario autenticado (getUser). Sin sesión -> 401.
-//  2) Orden SERVER-SIDE y ATÓMICA vía rpc_create_order: lee el precio real de la DB (ignora
-//     cualquier monto del cliente), aplica commission_pct (10% encima), valida active+stock,
-//     inserta orders('pending_payment') + items con snapshot. El cliente NO puede fabricar 'paid'.
-//  3) DOS CAMINOS de comprador:
-//       - Miembro (membership_status='active') -> TODOS los métodos de pago.
-//       - Invitado/no-miembro -> SOLO transferencia/depósito (excluye credit_card + debit_card).
-//         Caveat MX: account_money / billetera MP NO se puede excluir.
-//  4) Preferencia de Checkout Pro -> devuelve init_point. Respeta checkout_live: false = SANDBOX
-//     (token de PRUEBA -> sandbox_init_point; nada de dinero real).
+//  2) (E-5) Si hay envío: resuelve dirección del comprador (propia), origen del producto, dims, y
+//     RE-COTIZA el carrier+service elegido. price cambió -> shipping_price_changed; opción ida/
+//     deshabilitada -> shipping_option_unavailable. Toma el precio del servidor.
+//  3) Orden SERVER-SIDE y ATÓMICA vía rpc_create_order: lee precio real de la DB, aplica comisión
+//     (solo producto), suma envío (re-cotizado), inserta orders('pending_payment') + items.
+//  4) Métodos de pago: miembro -> todos; invitado -> solo transferencia/depósito.
+//  5) Preferencia de Checkout Pro -> init_point. Respeta checkout_live (false = SANDBOX).
 //
-// Secrets del runtime: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY,
-//   MP_CHECKOUT_ACCESS_TOKEN (PRUEBA), MP_CHECKOUT_ACCESS_TOKEN_LIVE (solo si checkout_live=true).
+// Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY, MP_CHECKOUT_ACCESS_TOKEN
+//   (PRUEBA), MP_CHECKOUT_ACCESS_TOKEN_LIVE (solo si checkout_live=true), ENVIA_TOKEN_TEST (envío sandbox).
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { ENVIA_TEST_HOST, buildRateBase, quoteCarrier } from '../_shared/envia-rate.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -32,6 +38,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // Mapea errores del RPC a mensajes amables.
 const RPC_ERRORS: Record<string, string> = {
   quantity_invalid: 'Cantidad inválida.',
+  shipping_invalid: 'Costo de envío inválido.',
   buyer_not_found: 'No encontramos tu perfil de comprador.',
   listing_not_available: 'Este producto ya no está disponible.',
   listing_not_purchasable: 'Este producto no se puede comprar en línea.',
@@ -67,7 +74,95 @@ Deno.serve(async (req: Request) => {
   if (!UUID_RE.test(variantId)) return json({ error: 'Variante inválida.', code: 'invalid_variant' }, 400)
   if (quantity < 1) return json({ error: 'Cantidad inválida.', code: 'invalid_quantity' }, 400)
 
+  // Datos de envío (opcionales -> sin ellos es el camino C-3 idéntico, sin envío).
+  const shippingAddressId = String(body.shipping_address_id || '')
+  const carrierCode = String(body.carrier || '')
+  const serviceCode = String(body.service || '')
+  const expectedShipping = body.expected_shipping_cost != null && Number.isFinite(Number(body.expected_shipping_cost))
+    ? Number(body.expected_shipping_cost) : null
+  const wantsShipping = shippingAddressId !== ''
+
   const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
+
+  // 2) RE-COTIZACIÓN del envío (server-side). Solo si el comprador eligió envío.
+  let shippingCost = 0
+  let shippingSnapshot: Record<string, unknown> | null = null
+  let shipCarrier: string | null = null
+  let shipService: string | null = null
+  if (wantsShipping) {
+    if (!UUID_RE.test(shippingAddressId)) return json({ error: 'Dirección de envío inválida.', code: 'invalid_shipping_address' }, 400)
+    if (!carrierCode || !serviceCode) return json({ error: 'Elige una opción de envío.', code: 'invalid_shipping_selection' }, 400)
+    const enviaToken = Deno.env.get('ENVIA_TOKEN_TEST')
+    if (!enviaToken) return json({ error: 'Cotizador de envío no disponible por ahora.', code: 'envia_token_missing' }, 500)
+
+    // Miembro (perfil) del comprador -> para validar que la dirección es PROPIA.
+    const { data: prof } = await admin.from('identity_profiles').select('id').eq('user_id', user.id).maybeSingle()
+    const buyerMemberId = prof?.id
+    if (!buyerMemberId) return json({ error: 'Completa tu perfil antes de comprar.', code: 'buyer_not_found' }, 400)
+
+    // Dirección de entrega del comprador (debe ser SUYA).
+    const { data: dest } = await admin.from('buyer_addresses')
+      .select('owner_id, contact_name, phone, street, ext_number, int_number, district, city, state, postal_code, country, reference')
+      .eq('id', shippingAddressId).maybeSingle()
+    if (!dest || dest.owner_id !== buyerMemberId) return json({ error: 'Dirección de envío inválida.', code: 'shipping_address_invalid' }, 400)
+
+    // Variante + listing + origen del producto (server-side; nunca del cliente).
+    const { data: variant } = await admin.from('listing_variants')
+      .select('listing_id, price, weight_grams, length_cm, width_cm, height_cm, is_active')
+      .eq('id', variantId).maybeSingle()
+    if (!variant || variant.is_active !== true || variant.listing_id !== listingId) {
+      return json({ error: 'Esta opción del producto no está disponible.', code: 'variant_not_available' }, 400)
+    }
+    const { data: listing } = await admin.from('listings')
+      .select('title, currency, origin_address_id, status').eq('id', listingId).maybeSingle()
+    if (!listing || listing.status !== 'active') return json({ error: 'Este producto ya no está disponible.', code: 'listing_not_available' }, 400)
+
+    const w = Number(variant.weight_grams), l = Number(variant.length_cm), wi = Number(variant.width_cm), h = Number(variant.height_cm)
+    if (!listing.origin_address_id || !(w >= 1) || !(l > 0) || !(wi > 0) || !(h > 0)) {
+      return json({ error: 'Este producto aún no tiene datos de envío configurados.', code: 'producto_sin_datos_envio' }, 409)
+    }
+    const { data: origin } = await admin.from('seller_addresses')
+      .select('contact_name, phone, email, street, ext_number, int_number, district, city, state, postal_code, country, reference')
+      .eq('id', listing.origin_address_id).maybeSingle()
+    if (!origin) return json({ error: 'Este producto aún no tiene datos de envío configurados.', code: 'producto_sin_datos_envio' }, 409)
+
+    // El carrier elegido debe seguir EXISTIENDO y ENABLED (el admin pudo deshabilitarlo).
+    const { data: carrierRow } = await admin.from('shipping_carriers').select('code, label, enabled').eq('code', carrierCode).maybeSingle()
+    if (!carrierRow || carrierRow.enabled !== true) {
+      return json({ error: 'La opción de envío ya no está disponible. Vuelve a elegir.', code: 'shipping_option_unavailable' }, 409)
+    }
+
+    // RE-COTIZAR el carrier elegido (misma lógica que la cotización mostrada -> precio exacto).
+    const base = buildRateBase({
+      origin,
+      destCity: dest.city, destState: dest.state, destCountry: dest.country, destPostalCode: dest.postal_code,
+      weightGrams: w, lengthCm: l, widthCm: wi, heightCm: h,
+      declaredValue: Number(variant.price) * quantity, content: listing.title, quantity, currency: listing.currency || 'MXN',
+    })
+    const opts = await quoteCarrier(ENVIA_TEST_HOST, enviaToken, base, { code: carrierRow.code, label: carrierRow.label })
+    const chosen = opts.find((o) => o.service === serviceCode)
+    if (!chosen) {
+      return json({ error: 'La opción de envío ya no está disponible. Vuelve a elegir.', code: 'shipping_option_unavailable' }, 409)
+    }
+    const serverPrice = Math.round(Number(chosen.price) * 100) / 100
+
+    // Si el precio cambió respecto al mostrado, NO cobrar: pedir reconfirmación con el nuevo precio.
+    if (expectedShipping != null && Math.abs(serverPrice - expectedShipping) >= 0.01) {
+      return json({ error: 'El costo de envío cambió.', code: 'shipping_price_changed', new_cost: serverPrice, currency: chosen.currency || (listing.currency || 'MXN') }, 409)
+    }
+
+    shippingCost = serverPrice
+    shipCarrier = carrierRow.code
+    shipService = chosen.service
+    shippingSnapshot = {
+      contact_name: dest.contact_name, phone: dest.phone,
+      street: dest.street, ext_number: dest.ext_number, int_number: dest.int_number,
+      district: dest.district, city: dest.city, state: dest.state, postal_code: dest.postal_code,
+      country: dest.country, reference: dest.reference,
+      carrier: carrierRow.code, carrier_label: carrierRow.label, service: chosen.service,
+      service_description: chosen.service_description, delivery_estimate: chosen.delivery_estimate,
+    }
+  }
 
   // ¿Miembro activo? -> define el set de métodos de pago.
   const { data: prof } = await admin.from('identity_profiles').select('membership_status').eq('user_id', user.id).maybeSingle()
@@ -77,7 +172,6 @@ Deno.serve(async (req: Request) => {
   const { data: cfg } = await admin.from('platform_config').select('checkout_live').eq('id', true).maybeSingle()
   const checkoutLive = cfg?.checkout_live === true
 
-  // Token de la app de checkout (separada de membresía). live -> prod token; sandbox -> test token.
   const mpToken = checkoutLive
     ? Deno.env.get('MP_CHECKOUT_ACCESS_TOKEN_LIVE')
     : Deno.env.get('MP_CHECKOUT_ACCESS_TOKEN')
@@ -85,12 +179,16 @@ Deno.serve(async (req: Request) => {
     return json({ error: checkoutLive ? 'Falta el token de producción de checkout.' : 'Falta MP_CHECKOUT_ACCESS_TOKEN (prueba).', code: 'mp_token_missing' }, 500)
   }
 
-  // 2) Crear la orden ATÓMICA y server-side (precio real de la DB, comisión, stock).
+  // 3) Crear la orden ATÓMICA y server-side (precio real de la DB, comisión, stock, + envío).
   const { data: created, error: rpcErr } = await admin.rpc('rpc_create_order', {
     p_buyer_user_id: user.id,
     p_listing_id: listingId,
     p_variant_id: variantId,
     p_quantity: quantity,
+    p_shipping_cost: shippingCost,
+    p_shipping_address: shippingSnapshot,
+    p_shipping_carrier: shipCarrier,
+    p_shipping_service: shipService,
   })
   if (rpcErr) {
     const key = (rpcErr.message || '').match(/[a-z_]+/)?.[0] || ''
@@ -105,19 +203,24 @@ Deno.serve(async (req: Request) => {
   const commission = Number(row.commission)
   const currency: string = row.currency || 'MXN'
 
-  // 3) Métodos de pago según el comprador.
+  // 4) Métodos de pago según el comprador.
   const payment_methods = isMember
     ? {}
     : { excluded_payment_types: [{ id: 'credit_card' }, { id: 'debit_card' }] }
 
-  // 4) Preferencia de Checkout Pro.
+  // 5) Preferencia de Checkout Pro. Ítems: producto + comisión + (envío si aplica).
+  const items: Array<Record<string, unknown>> = [
+    { title: 'Compra GoShop', quantity: 1, unit_price: subtotal, currency_id: currency },
+    { title: 'Comisión de servicio Chill N Go', quantity: 1, unit_price: commission, currency_id: currency },
+  ]
+  if (shippingCost > 0) {
+    items.push({ title: 'Envío', quantity: 1, unit_price: shippingCost, currency_id: currency })
+  }
+
   const SITE_URL = (Deno.env.get('SITE_URL') || 'https://chillngointernational.com').replace(/\/+$/, '')
   const expiresTo = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString() // P3D (recomendación MP)
   const preference = {
-    items: [
-      { title: 'Compra GoShop', quantity: 1, unit_price: subtotal, currency_id: currency },
-      { title: 'Comisión de servicio Chill N Go', quantity: 1, unit_price: commission, currency_id: currency },
-    ],
+    items,
     external_reference: orderId,
     payer: { email: user.email },
     payment_methods,
@@ -144,15 +247,16 @@ Deno.serve(async (req: Request) => {
     return json({ error: 'No se pudo crear el checkout en Mercado Pago.', mp_status: mpRes.status }, 502)
   }
 
-  // Guardar la referencia de la preferencia en la orden.
   await admin.from('orders').update({ mp_preference_id: mpData.id }).eq('id', orderId)
 
-  // En sandbox (checkout_live=false) usamos sandbox_init_point (checkout de PRUEBA).
   const checkoutUrl = checkoutLive ? mpData.init_point : (mpData.sandbox_init_point || mpData.init_point)
   return json({
     init_point: checkoutUrl,
     order_id: orderId,
-    total: subtotal + commission,
+    subtotal,
+    commission,
+    shipping_cost: shippingCost,
+    total: subtotal + commission + shippingCost,
     currency,
     is_member: isMember,
     sandbox: !checkoutLive,

@@ -6,7 +6,6 @@ import { isFullyActive } from '../utils/memberStatus'
 import { clientPrice, formatPrice } from '../lib/marketplace'
 import { useBuyerAddresses } from '../hooks/useBuyerAddresses'
 import { C, FONT, GRADIENT, Icon } from '../stitch'
-import ComingSoonNotice from '../components/ComingSoonNotice'
 
 // Pantalla de checkout (/checkout?listing=&variant=&qty=) — E-4. 🟢 sin dinero: SOLO captura el
 // destino, cotiza el envío (cng-shipping-quote) y muestra el total; el COBRO real es E-5.
@@ -44,7 +43,8 @@ export default function Checkout() {
   const [quoteError, setQuoteError] = useState('')
   const [selectedShip, setSelectedShip] = useState(null) // índice de la opción elegida
 
-  const [payNotice, setPayNotice] = useState(false)
+  const [paying, setPaying] = useState(false)
+  const [payError, setPayError] = useState('')
 
   // Exigir login (el detalle del producto es público, pero comprar requiere sesión).
   useEffect(() => { if (!authLoading && !user) navigate('/login') }, [authLoading, user, navigate])
@@ -138,6 +138,44 @@ export default function Checkout() {
       await reloadAddresses()
       if (data?.id) setSelectedAddressId(data.id) // seleccionarla -> dispara la cotización
     } finally { setSavingAddr(false) }
+  }
+
+  // Inicia el pago real: el server RE-COTIZA el envío y crea la orden + checkout de Mercado Pago.
+  async function onPay() {
+    if (!shipOpt) return
+    setPayError(''); setPaying(true)
+    try {
+      const { data, error: fnErr } = await supabase.functions.invoke('cng-mp-create-order', {
+        body: {
+          listing_id: listingId, variant_id: variantId, quantity: qty,
+          shipping_address_id: selectedAddressId,
+          carrier: shipOpt.carrier, service: shipOpt.service,
+          expected_shipping_cost: Number(shipOpt.price),
+        },
+      })
+      if (fnErr) {
+        let code = '', msg = 'No se pudo iniciar el pago. Intenta de nuevo.', newCost = null
+        try { const b = await fnErr.context?.json?.(); code = b?.code || ''; if (b?.error) msg = b.error; newCost = b?.new_cost ?? null } catch { /* sin cuerpo */ }
+        const addr = addresses.find((a) => a.id === selectedAddressId)
+        if (code === 'shipping_price_changed') {
+          setPayError(`El costo de envío cambió${newCost != null ? ` a ${formatPrice(newCost, product.currency)}` : ''}. Actualizamos las opciones; confirma de nuevo.`)
+          if (addr) runQuote(addr)
+        } else if (code === 'shipping_option_unavailable') {
+          setPayError('La opción de envío ya no está disponible. Elige otra.')
+          if (addr) runQuote(addr)
+        } else {
+          setPayError(msg)
+        }
+        return
+      }
+      if (data?.error) { setPayError(data.error); return }
+      if (data?.init_point) { window.location.href = data.init_point; return }
+      setPayError('No se pudo iniciar el pago.')
+    } catch (e) {
+      setPayError(e?.message || 'No se pudo iniciar el pago.')
+    } finally {
+      setPaying(false)
+    }
   }
 
   // Precios. Producto = base + comisión (clientPrice). Envío = opción elegida. Total = ambos.
@@ -274,14 +312,13 @@ export default function Checkout() {
               : <>Como invitado pagarás por transferencia o depósito. <Link to="/join" style={S.joinLink}>Hazte miembro</Link> para más opciones y ganar Chilliums.</>}</span>
           </div>
 
-          <button onClick={() => setPayNotice(true)} disabled={!canContinue} style={{ ...S.payBtn, opacity: canContinue ? 1 : 0.5, cursor: canContinue ? 'pointer' : 'not-allowed' }}>
-            Continuar al pago
+          {payError && <div style={S.error}>{payError}</div>}
+          <button onClick={onPay} disabled={!canContinue || paying} style={{ ...S.payBtn, opacity: (canContinue && !paying) ? 1 : 0.5, cursor: (canContinue && !paying) ? 'pointer' : 'not-allowed' }}>
+            {paying ? 'Procesando…' : 'Continuar al pago'}
           </button>
-          <span style={S.hint}>El pago se habilita en el siguiente paso. Aquí eliges tu envío y ves el total.</span>
+          <span style={S.hint}>Pago seguro con Mercado Pago. El envío se recalcula al confirmar.</span>
         </section>
       </div>
-
-      <ComingSoonNotice open={payNotice} onClose={() => setPayNotice(false)} />
     </div>
   )
 }
