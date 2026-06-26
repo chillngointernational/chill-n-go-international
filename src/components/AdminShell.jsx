@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
 import { C, FONT, GRADIENT, Icon } from '../stitch'
 import PendingStores from '../pages/admin/PendingStores'
 import PaymentConfig from '../pages/admin/PaymentConfig'
+import ShippingCarriers from '../pages/admin/ShippingCarriers'
 
 // AdminShell (/admin) — layout del panel de administración. CRECE: hoy una sección
 // ("Tiendas por aprobar"); mañana se cuelgan más sin rehacer el shell.
@@ -48,6 +49,7 @@ export default function AdminShell() {
       <main style={S.main}>
         <PendingStores />
         <PaymentConfig />
+        <ShippingCarriers />
         {/* Próximas secciones del panel se agregan aquí. */}
       </main>
     </div>
