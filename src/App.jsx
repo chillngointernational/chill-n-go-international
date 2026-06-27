@@ -7,6 +7,7 @@ import ResetPassword from './pages/ResetPassword'
 import SellerSignup from './pages/SellerSignup'
 import MiTienda from './pages/MiTienda'
 import MisProductos from './pages/MisProductos'
+import MisVentas from './pages/MisVentas'
 import MiDirecciones from './pages/MiDirecciones'
 import AdminShell from './components/AdminShell'
 import StorePage from './pages/StorePage'
@@ -66,6 +67,8 @@ export default function App() {
           <Route path="/mi-tienda" element={<ProtectedRoute><MiTienda /></ProtectedRoute>} />
           {/* Gestión de productos del vendedor (solo login; la propiedad la gatea la RLS + el RPC). */}
           <Route path="/mi-tienda/productos" element={<ProtectedRoute><MisProductos /></ProtectedRoute>} />
+          {/* Ventas del vendedor: ver pedidos + marcar enviado (RLS owner-only; escribe vía edge cng-mark-shipped). */}
+          <Route path="/mi-tienda/ventas" element={<ProtectedRoute><MisVentas /></ProtectedRoute>} />
           {/* Direcciones de origen del vendedor (E-2; RLS owner-only; cada producto elige una). */}
           <Route path="/mi-tienda/direcciones" element={<ProtectedRoute><MiDirecciones /></ProtectedRoute>} />
           {/* Checkout (E-4): destino + cotización de envío + resumen (sin cobrar; el pago es E-5). */}

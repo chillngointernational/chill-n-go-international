@@ -237,6 +237,11 @@ export default function MiTienda() {
                   <Icon name="chevron_right" size={16} style={{ color: C.onSurfaceVariant }} />
                 </Link>
 
+                <Link to="/mi-tienda/ventas" style={S.manageProducts}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Icon name="receipt_long" size={18} style={{ color: C.primary }} /><b style={{ fontWeight: 700 }}>Mis ventas</b></span>
+                  <Icon name="chevron_right" size={16} style={{ color: C.onSurfaceVariant }} />
+                </Link>
+
                 <Link to="/mi-tienda/direcciones" style={S.manageProducts}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Icon name="local_shipping" size={18} style={{ color: C.primary }} /><b style={{ fontWeight: 700 }}>Direcciones de origen</b></span>
                   <Icon name="chevron_right" size={16} style={{ color: C.onSurfaceVariant }} />
