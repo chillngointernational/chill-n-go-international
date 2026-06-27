@@ -1,13 +1,15 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { C, FONT, GRADIENT, Icon } from '../../stitch'
 
-// Paso 1 del muro (nuevo orden PAGO -> VERIFICACIÓN). El usuario sin pago confirmado llega
-// aquí. Debe aceptar los términos (no-reembolso, v1) ANTES de poder pagar. Al pagar, crea la
-// suscripción MP (140 MXN/mes) enviando terms_accepted. Al volver, refresca (el webhook activa
-// membership_paid; luego sigue el paso de identidad).
+// Paso 1 del muro (orden PAGO -> VERIFICACIÓN). El usuario sin pago confirmado llega aquí. Debe
+// aceptar los términos (no-reembolso, v1) ANTES de poder pagar. Al aceptar, se monta el Card
+// Payment Brick de Mercado Pago: la tarjeta se tokeniza en el navegador (NUNCA toca el servidor),
+// y el card_token + device_id se envían al edge cng-mp-create-subscription, que crea la suscripción
+// ($140/mes) enganchada al plan con status:'authorized'. Al autorizar, el edge activa la membresía
+// al instante; el poll refresca y el muro avanza al paso de identidad.
 
 const PRICE_LABEL = '$140 MXN / mes'
 const TERMS_VERSION = 'v1'
@@ -18,14 +20,46 @@ const TERMS = [
   'Acepto el tratamiento de mis datos según el Aviso de Privacidad.',
 ]
 
+const MP_PUBLIC_KEY = import.meta.env.VITE_MP_PUBLIC_KEY
+const AMOUNT = 140
+
+// Carga un <script> externo una sola vez (scoped a esta pantalla; no se mete en index.html).
+function loadScript(src, attrs = {}) {
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[src="${src}"]`)
+    if (existing && existing.dataset.loaded === '1') return resolve()
+    const el = existing || document.createElement('script')
+    el.src = src
+    Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v))
+    el.addEventListener('load', () => { el.dataset.loaded = '1'; resolve() })
+    el.addEventListener('error', () => reject(new Error('No se pudo cargar el componente de pago.')))
+    if (!existing) document.head.appendChild(el)
+  })
+}
+
 export default function SubscriptionScreen() {
   const { user, member, fetchMember, signOut } = useAuth()
-  const [loading, setLoading] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
   const [consent, setConsent] = useState(false)
+  const [paid, setPaid] = useState(false)
+  const [paidRef, setPaidRef] = useState('')   // preapproval_id, por si hay que dar soporte
+  const [stuck, setStuck] = useState(false)     // pago hecho pero la activación no avanza
+  const [brickLoading, setBrickLoading] = useState(false)
+  const brickRef = useRef(null)
+  const submittingRef = useRef(false)           // serializa el onSubmit del Brick (anti doble cargo)
 
-  // Si volvió del checkout (?sub=return), refrescar; y poll suave mientras siga pendiente.
+  // Aviso temprano si falta la clave pública (variable de build determinista).
+  useEffect(() => { if (!MP_PUBLIC_KEY) setError('Falta configurar el pago. Contacta a soporte.') }, [])
+
+  // Si el pago se hizo pero tras ~40s la membresía no avanzó, mostrar referencia para soporte.
+  useEffect(() => {
+    if (!paid) return
+    const t = setTimeout(() => setStuck(true), 40000)
+    return () => clearTimeout(t)
+  }, [paid])
+
+  // Si volvió de un retorno (?sub=return), refrescar; y poll suave mientras siga pendiente.
   const refresh = useCallback(async () => {
     if (!user) return
     setRefreshing(true)
@@ -39,32 +73,81 @@ export default function SubscriptionScreen() {
     return () => clearInterval(interval)
   }, [refresh])
 
-  async function handleSubscribe() {
-    if (!consent) { setError('Debes aceptar los términos para continuar.'); return }
-    setError('')
-    setLoading(true)
-    try {
-      const { data, error: fnErr } = await supabase.functions.invoke('cng-mp-create-subscription', {
-        body: { return_url: window.location.origin, terms_accepted: true, terms_version: TERMS_VERSION },
-      })
-      if (fnErr) {
-        let msg = 'No se pudo iniciar la suscripción. Intenta de nuevo.'
-        try { const b = await fnErr.context?.json?.(); if (b?.error) msg = b.error } catch { /* sin cuerpo */ }
-        setError(msg)
-        return
+  // Monta el Card Payment Brick SOLO cuando el usuario aceptó el consentimiento.
+  useEffect(() => {
+    if (!consent || paid) return
+    if (brickRef.current) return
+    if (!MP_PUBLIC_KEY) { setError('Falta configurar el pago. Contacta a soporte.'); return }
+    let cancelled = false
+    setBrickLoading(true)
+    ;(async () => {
+      try {
+        // security.js -> genera window.MP_DEVICE_SESSION_ID (device_id, antifraude).
+        await loadScript('https://www.mercadopago.com/v2/security.js', { view: 'checkout' })
+        await loadScript('https://sdk.mercadopago.com/js/v2')
+        if (cancelled || !window.MercadoPago) return
+        const mp = new window.MercadoPago(MP_PUBLIC_KEY, { locale: 'es-MX' })
+        const controller = await mp.bricks().create('cardPayment', 'cardPaymentBrick_container', {
+          initialization: { amount: AMOUNT, payer: { email: user?.email || '' } },
+          customization: {
+            paymentMethods: { minInstallments: 1, maxInstallments: 1 },
+            visual: { style: { theme: 'dark' } },
+          },
+          callbacks: {
+            onReady: () => { if (!cancelled) setBrickLoading(false) },
+            onError: (err) => { console.error('[cardPaymentBrick]', err) },
+            // formData.token = card_token (un solo uso). La tarjeta NO sale de los iframes de MP.
+            // onSubmit DEBE devolver una Promise: resolver = éxito (botón queda listo), RECHAZAR
+            // (throw) = el Brick re-habilita su botón para reintentar tras un rechazo.
+            onSubmit: async (formData) => {
+              if (submittingRef.current) return // evita doble envío -> doble suscripción
+              submittingRef.current = true
+              let success = false
+              try {
+                setError('')
+                // device_id (antifraude): si security.js aún no lo pobló, esperar brevemente.
+                let deviceId = window.MP_DEVICE_SESSION_ID || ''
+                for (let i = 0; i < 10 && !deviceId; i++) {
+                  await new Promise((r) => setTimeout(r, 50))
+                  deviceId = window.MP_DEVICE_SESSION_ID || ''
+                }
+                const { data, error: fnErr } = await supabase.functions.invoke('cng-mp-create-subscription', {
+                  body: {
+                    card_token: formData?.token,
+                    device_id: deviceId,
+                    terms_accepted: true,
+                    terms_version: TERMS_VERSION,
+                  },
+                })
+                if (fnErr) {
+                  let msg = 'No se pudo procesar el pago. Intenta de nuevo.'
+                  try { const b = await fnErr.context?.json?.(); if (b?.error) msg = b.error } catch { /* sin cuerpo */ }
+                  setError(msg); throw new Error(msg)
+                }
+                if (data?.error) { setError(data.error); throw new Error(data.error) } // MOTIVO REAL del rechazo
+                if (data?.ok) { success = true; setPaidRef(data.preapproval_id || ''); setPaid(true); refresh(); return }
+                const m = 'Respuesta inesperada del servidor. Intenta de nuevo.'
+                setError(m); throw new Error(m)
+              } finally {
+                if (!success) submittingRef.current = false // permitir reintento solo si no fue éxito
+              }
+            },
+          },
+        })
+        if (cancelled) { try { controller?.unmount?.() } catch { /* noop */ } return }
+        brickRef.current = controller
+      } catch (e) {
+        if (!cancelled) { setError(e?.message || 'No se pudo iniciar el pago.'); setBrickLoading(false) }
       }
-      if (data?.error) { setError(data.error); return }
-      if (data?.init_point) {
-        window.location.href = data.init_point
-        return
-      }
-      setError('Respuesta inesperada del servidor.')
-    } catch (e) {
-      setError(e?.message || 'Error al iniciar la suscripción.')
-    } finally {
-      setLoading(false)
+    })()
+    return () => {
+      cancelled = true
+      try { brickRef.current?.unmount?.() } catch { /* noop */ }
+      brickRef.current = null
     }
-  }
+    // Monta el Brick una sola vez al aceptar (user/refresh son estables tras el muro de auth).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [consent, paid])
 
   const name = member?.full_name || member?.display_name || ''
 
@@ -96,19 +179,36 @@ export default function SubscriptionScreen() {
           </ul>
         </div>
         <label style={styles.consentRow}>
-          <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} style={{ marginTop: 3 }} />
+          <input type="checkbox" checked={consent} disabled={!MP_PUBLIC_KEY} onChange={(e) => setConsent(e.target.checked)} style={{ marginTop: 3 }} />
           <span>Acepto estos términos.</span>
         </label>
 
         {error && <div style={styles.error}>{error}</div>}
 
-        <button
-          onClick={handleSubscribe}
-          style={{ ...styles.button, opacity: (loading || !consent) ? 0.5 : 1 }}
-          disabled={loading || !consent}
-        >
-          {loading ? 'Redirigiendo a Mercado Pago…' : 'Suscribirme con Mercado Pago'}
-        </button>
+        {paid ? (
+          <div style={styles.paidBox}>
+            <Icon name="check_circle" size={22} style={{ color: C.primary }} />
+            <div>
+              <p style={styles.paidTitle}>¡Pago recibido!</p>
+              {stuck ? (
+                <p style={styles.priceNote}>
+                  Tu pago se procesó{paidRef ? ` (ref: ${paidRef})` : ''}. Estamos activando tu cuenta;
+                  si no avanza en unos minutos, contacta a soporte con esa referencia.
+                </p>
+              ) : (
+                <p style={styles.priceNote}>Activando tu membresía… sigue el paso de identidad.</p>
+              )}
+            </div>
+          </div>
+        ) : consent ? (
+          <div style={styles.brickWrap}>
+            {brickLoading && <p style={styles.brickHint}>Cargando el formulario de pago seguro…</p>}
+            {/* El Brick dibuja: tarjeta + nombre del titular + identificación (CURP/RFC) + su botón de pago */}
+            <div id="cardPaymentBrick_container" />
+          </div>
+        ) : (
+          <p style={styles.brickHint}>Acepta los términos para mostrar el formulario de pago.</p>
+        )}
 
         <button onClick={refresh} style={styles.secondary} disabled={refreshing}>
           {refreshing ? 'Verificando…' : 'Ya pagué · Actualizar estado'}
@@ -182,19 +282,20 @@ const styles = {
     marginBottom: 16,
     textAlign: 'center',
   },
-  button: {
-    width: '100%',
-    background: GRADIENT.primary,
-    border: 'none',
-    borderRadius: 10,
-    padding: '14px',
-    fontSize: 15,
-    fontWeight: 700,
-    color: '#fff',
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    marginBottom: 12,
+  brickWrap: { marginBottom: 16, minHeight: 40 },
+  brickHint: { fontSize: 12.5, color: C.onSurfaceVariant, marginBottom: 16, textAlign: 'center' },
+  paidBox: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+    textAlign: 'left',
+    padding: '14px 16px',
+    borderRadius: 12,
+    background: 'rgba(104,219,174,0.08)',
+    border: '1px solid rgba(104,219,174,0.2)',
+    marginBottom: 16,
   },
+  paidTitle: { fontSize: 14, fontWeight: 800, color: C.primary, margin: '0 0 2px' },
   secondary: {
     width: '100%',
     background: 'transparent',
