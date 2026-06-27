@@ -46,6 +46,8 @@ export default function SubscriptionScreen() {
   const [paidRef, setPaidRef] = useState('')   // preapproval_id, por si hay que dar soporte
   const [stuck, setStuck] = useState(false)     // pago hecho pero la activación no avanza
   const [brickLoading, setBrickLoading] = useState(false)
+  const [brickReady, setBrickReady] = useState(false)
+  const [brickDiag, setBrickDiag] = useState('') // DIAG TEMPORAL: error real del Brick + entorno
   const brickRef = useRef(null)
   const submittingRef = useRef(false)           // serializa el onSubmit del Brick (anti doble cargo)
 
@@ -94,8 +96,17 @@ export default function SubscriptionScreen() {
             visual: { style: { theme: 'dark' } },
           },
           callbacks: {
-            onReady: () => { if (!cancelled) setBrickLoading(false) },
-            onError: (err) => { console.error('[cardPaymentBrick]', err) },
+            onReady: () => { if (!cancelled) { setBrickLoading(false); setBrickReady(true) } },
+            onError: (err) => {
+              console.error('[cardPaymentBrick]', err)
+              let msg = ''
+              try { msg = JSON.stringify(err) } catch { msg = String(err?.message || err) }
+              if (!cancelled) {
+                setBrickLoading(false)
+                setBrickDiag('onError: ' + msg)
+                setError('No se pudo cargar el formulario de pago (ver diagnóstico abajo).')
+              }
+            },
             // formData.token = card_token (un solo uso). La tarjeta NO sale de los iframes de MP.
             // onSubmit DEBE devolver una Promise: resolver = éxito (botón queda listo), RECHAZAR
             // (throw) = el Brick re-habilita su botón para reintentar tras un rechazo.
@@ -137,7 +148,11 @@ export default function SubscriptionScreen() {
         if (cancelled) { try { controller?.unmount?.() } catch { /* noop */ } return }
         brickRef.current = controller
       } catch (e) {
-        if (!cancelled) { setError(e?.message || 'No se pudo iniciar el pago.'); setBrickLoading(false) }
+        if (!cancelled) {
+          setError(e?.message || 'No se pudo iniciar el pago.')
+          setBrickLoading(false)
+          setBrickDiag('catch: ' + (e?.message || String(e)))
+        }
       }
     })()
     return () => {
@@ -205,6 +220,15 @@ export default function SubscriptionScreen() {
             {brickLoading && <p style={styles.brickHint}>Cargando el formulario de pago seguro…</p>}
             {/* El Brick dibuja: tarjeta + nombre del titular + identificación (CURP/RFC) + su botón de pago */}
             <div id="cardPaymentBrick_container" />
+            {/* DIAG TEMPORAL: para leer el error real del Brick + entorno (UA delata WebView/in-app). */}
+            <pre style={styles.diagBox}>
+{`— DIAGNÓSTICO (temporal) —
+SDK cargado: ${typeof window !== 'undefined' && !!window.MercadoPago}
+Brick onReady: ${brickReady}
+viewport: ${typeof window !== 'undefined' ? window.innerWidth + 'x' + window.innerHeight : '?'}
+UA: ${typeof navigator !== 'undefined' ? navigator.userAgent : '?'}
+${brickDiag || '(sin onError aún — si los campos no salen y esto no muestra error, el Brick ni siquiera lanzó onError)'}`}
+            </pre>
           </div>
         ) : (
           <p style={styles.brickHint}>Acepta los términos para mostrar el formulario de pago.</p>
@@ -284,6 +308,21 @@ const styles = {
   },
   brickWrap: { marginBottom: 16, minHeight: 40 },
   brickHint: { fontSize: 12.5, color: C.onSurfaceVariant, marginBottom: 16, textAlign: 'center' },
+  diagBox: {
+    marginTop: 12,
+    padding: '10px 12px',
+    borderRadius: 8,
+    background: 'rgba(255,255,255,0.04)',
+    border: '1px solid rgba(255,255,255,0.12)',
+    color: C.onSurfaceVariant,
+    fontSize: 10.5,
+    lineHeight: 1.5,
+    textAlign: 'left',
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-all',
+    fontFamily: 'monospace',
+    userSelect: 'text',
+  },
   paidBox: {
     display: 'flex',
     alignItems: 'center',
