@@ -16,6 +16,8 @@ function VerifyStep() {
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
   const [lockCode, setLockCode] = useState(null)
+  const [opened, setOpened] = useState(false)        // verificación abierta en pestaña nueva
+  const [fallbackUrl, setFallbackUrl] = useState('') // si el navegador bloquea el popup
 
   const idStatus = member?.identity_verification_status || 'unverified'
 
@@ -33,25 +35,44 @@ function VerifyStep() {
     return () => clearInterval(interval)
   }, [refresh])
 
+  // Abre la verificación en una PESTAÑA NUEVA: así nuestra app sigue viva. Si el widget de
+  // Verificamex falla (p.ej. "La petición no es válida"), el usuario cierra esa pestaña y reintenta
+  // AQUÍ sin recargar ni perder avance (el edge reusa la sesión en curso por su candado anti-duplicado).
+  // La pestaña se abre SÍNCRONO (antes del await) para que Safari/iOS no bloqueen el popup; luego se le
+  // fija la URL. Fallback: si el navegador la bloquea, mostramos un enlace manual.
   async function handleVerify() {
+    if (loading) return
     setError('')
     setLockCode(null)
+    setFallbackUrl('')
+    let win = null
+    try { win = window.open('about:blank', '_blank') } catch { win = null }
+    if (win) { try { win.document.write('<p style="font-family:sans-serif;padding:24px;color:#333">Abriendo verificación de identidad…</p>') } catch { /* noop */ } }
     setLoading(true)
     try {
       const { data, error: fnErr } = await supabase.functions.invoke('cng-create-identity-verification', {
         body: { return_url: window.location.origin, phone_number: phone },
       })
       if (fnErr) {
-        let msg = 'No se pudo iniciar la verificación. Intenta de nuevo.'
+        if (win) { try { win.close() } catch { /* noop */ } }
+        let msg = 'No se pudo iniciar la verificación. Reinténtalo en unos segundos.'
         try { const b = await fnErr.context?.json?.(); if (b?.error) msg = b.error; if (b?.code) setLockCode(b.code) } catch { /* sin cuerpo */ }
         setError(msg)
         return
       }
-      if (data?.error) { setError(data.error); return }
-      if (data?.form_url) { window.location.href = data.form_url; return }
-      setError('Respuesta inesperada del servidor.')
-    } catch (e) {
-      setError(e?.message || 'Error al iniciar la verificación.')
+      if (data?.error) { if (win) { try { win.close() } catch { /* noop */ } } setError(data.error); return }
+      if (data?.form_url) {
+        let navigated = false
+        if (win && !win.closed) { try { win.location.replace(data.form_url); navigated = true } catch { navigated = false } }
+        if (navigated) setOpened(true)
+        else { if (win) { try { win.close() } catch { /* noop */ } } setFallbackUrl(data.form_url) } // popup bloqueado -> enlace manual
+        return
+      }
+      if (win) { try { win.close() } catch { /* noop */ } }
+      setError('No pudimos abrir la verificación. Reinténtalo en unos segundos.')
+    } catch {
+      if (win) { try { win.close() } catch { /* noop */ } }
+      setError('No pudimos iniciar la verificación. Revisa tu conexión y reinténtalo.')
     } finally {
       setLoading(false)
     }
@@ -112,6 +133,28 @@ function VerifyStep() {
 
         {error && <div style={styles.error}>{error}</div>}
 
+        {/* Verificación abierta en otra pestaña: nuestra app sigue viva para reintentar sin recargar. */}
+        {opened && (
+          <div style={styles.openedBox}>
+            Abrimos tu verificación en <b>otra pestaña</b>. Cuando termines, <b>regresa aquí</b>:
+            detectaremos tu verificación automáticamente (puede tardar unos segundos). Si tuviste un
+            error, puedes <b>reintentar sin perder tu avance</b>.
+          </div>
+        )}
+
+        {/* Fallback: el navegador bloqueó el popup -> enlace manual (lo abre el gesto del usuario). */}
+        {fallbackUrl && (
+          <a
+            href={fallbackUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => { setOpened(true); setFallbackUrl('') }}
+            style={{ ...styles.button, display: 'block', textAlign: 'center', textDecoration: 'none' }}
+          >
+            Tu navegador bloqueó la ventana · Toca aquí para abrir la verificación
+          </a>
+        )}
+
         {/* Siempre permitimos iniciar/reanudar/reintentar: nadie queda encerrado en 'processing'. */}
         <label style={styles.consentRow}>
           <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} style={{ marginTop: 3 }} />
@@ -131,7 +174,11 @@ function VerifyStep() {
               style={{ ...styles.button, opacity: (loading || !consent) ? 0.5 : 1 }}
               disabled={loading || !consent}
             >
-              {loading ? 'Abriendo verificación…' : (processing ? 'Reanudar verificación' : (failed ? 'Reintentar verificación' : 'Verificar mi identidad'))}
+              {loading
+                ? 'Abriendo verificación…'
+                : (opened
+                    ? 'Reintentar verificación'
+                    : (processing ? 'Reanudar verificación' : (failed ? 'Reintentar verificación' : 'Verificar mi identidad')))}
             </button>
 
             <button onClick={refresh} style={styles.secondary} disabled={refreshing}>
@@ -170,6 +217,7 @@ const styles = {
   input: { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '11px 14px', fontSize: 14, color: C.text, outline: 'none', fontFamily: 'inherit' },
   phoneHelp: { fontSize: 11.5, color: C.textFaint },
   error: { background: 'rgba(224,49,49,0.1)', border: '1px solid rgba(224,49,49,0.3)', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: C.error, marginBottom: 14, textAlign: 'center' },
+  openedBox: { textAlign: 'left', fontSize: 12.5, color: C.onSurfaceVariant, lineHeight: 1.5, background: 'rgba(104,219,174,0.06)', border: '1px solid rgba(104,219,174,0.18)', borderRadius: 10, padding: '12px 14px', marginBottom: 14 },
   consentRow: { display: 'flex', gap: 10, textAlign: 'left', fontSize: 13, color: C.onSurface, lineHeight: 1.5, marginBottom: 16, cursor: 'pointer' },
   button: { width: '100%', background: GRADIENT.primary, border: 'none', borderRadius: 10, padding: '14px', fontSize: 15, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', marginBottom: 12 },
   secondary: { width: '100%', background: 'transparent', border: '1px solid ' + C.outlineVariant, borderRadius: 10, padding: '12px', fontSize: 14, fontWeight: 600, color: C.onSurface, cursor: 'pointer', fontFamily: 'inherit', marginBottom: 16 },
