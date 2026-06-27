@@ -82,8 +82,13 @@ export default function AppShell() {
     const isSubScreen = SUB_SCREENS.includes(currentScreen)
     const isChat = !!chatConversationId
     const activeTab = (!isSubScreen && !isChat) ? currentScreen : null
-    const isFs = currentScreen === 'feed' && !isSubScreen && !isChat
-    const showNav = !isSubScreen && !isChat
+    // El muro de activación/pago se renderiza dentro del contenedor de scroll. NO debe heredar el
+    // modo "feed fullscreen" (overflow hidden) o el formulario de pago no se puede scrollear en
+    // móvil. Tampoco mostramos la barra inferior en el muro: checkout enfocado.
+    const walledForPending = isChat || !PUBLIC_SCREENS.includes(currentScreen)
+    const isWalled = !loading && !!user && !isFullyActive(member) && walledForPending
+    const isFs = currentScreen === 'feed' && !isSubScreen && !isChat && !isWalled
+    const showNav = !isSubScreen && !isChat && !isWalled
 
     const nav = (screen) => {
         navigate('/app/' + screen)
@@ -113,7 +118,7 @@ export default function AppShell() {
         // walledForPending = lo que un usuario logueado-sin-activar ve tras el muro de activación
         //   (todo menos el marketplace; el feed SÍ los manda al muro para empujar la activación).
         const publicForAnon = !isChat && (currentScreen === 'feed' || PUBLIC_SCREENS.includes(currentScreen))
-        const walledForPending = isChat || !PUBLIC_SCREENS.includes(currentScreen)
+        // walledForPending se calcula a nivel de componente (ver arriba) y se reutiliza aquí.
 
         // Mientras carga la sesión, esperar solo en pantallas que dependen del estado de auth.
         if (loading && walledForPending) {
