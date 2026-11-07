@@ -89,6 +89,10 @@ Deno.serve(async (req: Request) => {
   let shippingSnapshot: Record<string, unknown> | null = null
   let shipCarrier: string | null = null
   let shipService: string | null = null
+  // E-6 Pieza 2: snapshots congelados al cobrar (se llenan solo si hay envío; null si no aplica).
+  let originSnapshot: Record<string, unknown> | null = null
+  let packageSnapshot: Record<string, unknown> | null = null
+  let declaredValueCents: number | null = null
   if (wantsShipping) {
     if (!UUID_RE.test(shippingAddressId)) return json({ error: 'Dirección de envío inválida.', code: 'invalid_shipping_address' }, 400)
     if (!carrierCode || !serviceCode) return json({ error: 'Elige una opción de envío.', code: 'invalid_shipping_selection' }, 400)
@@ -162,6 +166,21 @@ Deno.serve(async (req: Request) => {
       carrier: carrierRow.code, carrier_label: carrierRow.label, service: chosen.service,
       service_description: chosen.service_description, delivery_estimate: chosen.delivery_estimate,
     }
+    // E-6 Pieza 2: congelar EXACTAMENTE los insumos que se usaron para cotizar esta orden.
+    // origin = la misma fila seller_addresses que alimentó buildRateBase (reproduce sus defaults
+    // de email/country y el fold de int_number en reference, tal cual viajó a Envia).
+    originSnapshot = {
+      name: origin.contact_name, phone: origin.phone,
+      email: origin.email || 'envios@chillngointernational.com',
+      street: origin.street, number: origin.ext_number,
+      district: origin.district, city: origin.city, state: origin.state,
+      postal_code: origin.postal_code, country: origin.country || 'MX',
+      reference: [origin.reference, origin.int_number ? `Int. ${origin.int_number}` : null].filter(Boolean).join(' · ') || null,
+    }
+    // package = mismas dimensiones validadas (w/l/wi/h) que recibió buildRateBase.
+    packageSnapshot = { weight_grams: w, length_cm: l, width_cm: wi, height_cm: h }
+    // valor declarado = precio del vendedor × cantidad (solo mercancía), en centavos.
+    declaredValueCents = Math.round(Number(variant.price) * quantity * 100)
   }
 
   // ¿Miembro activo? -> define el set de métodos de pago.
@@ -202,6 +221,17 @@ Deno.serve(async (req: Request) => {
   const subtotal = Number(row.subtotal)
   const commission = Number(row.commission)
   const currency: string = row.currency || 'MXN'
+
+  // E-6 Pieza 2: congelar origen/paquete/valor declarado en la orden recién creada. Additive y
+  // fail-soft (igual que el update de mp_preference_id de abajo): si falla, no rompe el checkout.
+  // NO toca precio/comisión/total.
+  if (originSnapshot) {
+    await admin.from('orders').update({
+      origin_snapshot: originSnapshot,
+      package_snapshot: packageSnapshot,
+      declared_value_cents: declaredValueCents,
+    }).eq('id', orderId)
+  }
 
   // 4) Métodos de pago según el comprador.
   const payment_methods = isMember
